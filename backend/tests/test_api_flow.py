@@ -53,7 +53,7 @@ async def new_club(c, h, name="Дракон", chat="-100123"):
 # ---------------------------------------------------------------- авторизация
 async def test_auth(client):
     h, uid = await reg(client, 1)
-    r = await client.post("/auth/register", json={"email": "U1@test.io", "password": "password1", "nickname": "x"})
+    r = await client.post("/auth/register", json={"email": "U1@test.io", "password": "password1", "nickname": "xx"})
     assert r.status_code == 409
     assert (await client.post("/auth/login", json={"email": "u1@test.io", "password": "bad-pass"})).status_code == 401
     r = await client.post("/auth/login", json={"email": "u1@test.io", "password": "password1"})
@@ -71,7 +71,7 @@ async def test_swiss_flow(client):
                           headers=org)
     assert r.status_code == 201, r.text
     tid = r.json()["id"]
-    assert (await client.post("/tournaments", json={"club_id": club["id"], "name": "X"}, headers=users[1][0])).status_code == 403
+    assert (await client.post("/tournaments", json={"club_id": club["id"], "name": "Чужой"}, headers=users[1][0])).status_code == 403
 
     for h, _ in users:
         assert (await client.post(f"/tournaments/{tid}/register", headers=h)).status_code == 204
