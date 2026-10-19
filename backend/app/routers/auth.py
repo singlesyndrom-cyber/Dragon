@@ -83,7 +83,7 @@ async def _login_or_create(session: AsyncSession, provider: Provider, ext_id: st
                            nickname: str, link_to: User | None = None) -> User:
     acc = await _find_account(session, provider, ext_id)
     if acc:
-        return acc.user
+        return await session.get(User, acc.user_id)
     user = link_to or User(nickname=nickname)
     user.accounts.append(AuthAccount(provider=provider, external_id=ext_id))
     session.add(user)
@@ -128,6 +128,6 @@ async def vk_login(data: VkIn, session: AsyncSession = Depends(get_session)):
 
 
 @router.get("/me")
-async def me(user: User = Depends(current_user)):
-    return {"id": user.id, "nickname": user.nickname, "role": user.role,
-            "providers": [a.provider for a in user.accounts]}
+async def me(user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    providers = (await session.execute(select(AuthAccount.provider).where(AuthAccount.user_id == user.id))).scalars()
+    return {"id": user.id, "nickname": user.nickname, "role": user.role, "providers": list(providers)}

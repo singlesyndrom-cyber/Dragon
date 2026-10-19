@@ -19,6 +19,7 @@ for suite in suites:
             node = case.find(tag)
             if node is not None:
                 fails += 1
-                text = ((node.get("message") or "") + "\n" + (node.text or ""))[-3500:]
+                body = node.text or ""
+                text = (node.get("message") or "")[:800] + "\n...\n" + body[-2500:]
                 print(f"::error title={case.get('name')}::{esc(text)}")
 print(f"::notice title=pytest::всего {total}, упало {fails}, пропущено {skipped}")
