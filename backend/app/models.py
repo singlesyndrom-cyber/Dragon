@@ -1,0 +1,341 @@
+import enum
+from datetime import datetime
+
+from sqlalchemy import (DateTime, Enum, Float, ForeignKey, Integer, String,
+                        Text, UniqueConstraint, func)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from .db import Base
+
+
+class GlobalRole(str, enum.Enum):
+    player = "player"
+    admin = "admin"
+
+
+class ClubRole(str, enum.Enum):
+    member = "member"
+    organizer = "organizer"
+
+
+class Provider(str, enum.Enum):
+    email = "email"
+    telegram = "telegram"
+    vk = "vk"
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nickname: Mapped[str] = mapped_column(String(64))
+    role: Mapped[GlobalRole] = mapped_column(Enum(GlobalRole), default=GlobalRole.player)
+    is_banned: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    accounts: Mapped[list["AuthAccount"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+
+class AuthAccount(Base):
+    """Один пользователь - несколько способов входа (email, Telegram, VK)."""
+    __tablename__ = "auth_accounts"
+    __table_args__ = (UniqueConstraint("provider", "external_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    provider: Mapped[Provider] = mapped_column(Enum(Provider))
+    external_id: Mapped[str] = mapped_column(String(255))  # email / telegram id / vk id
+    password_hash: Mapped[str | None] = mapped_column(String(255))  # только для email
+
+    user: Mapped[User] = relationship(back_populates="accounts")
+
+
+class Club(Base):
+    __tablename__ = "clubs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True)
+    slug: Mapped[str] = mapped_column(String(128), unique=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    city: Mapped[str] = mapped_column(String(64), default="")
+    telegram_chat_id: Mapped[str | None] = mapped_column(String(64))  # для автоотчётов (блок 7)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    members: Mapped[list["ClubMember"]] = relationship(back_populates="club", cascade="all, delete-orphan")
+    stats: Mapped["ClubStats"] = relationship(back_populates="club", uselist=False, cascade="all, delete-orphan")
+
+
+class ClubMember(Base):
+    """Игрок в клубе + его локальный рейтинг (независимый для каждого клуба)."""
+    __tablename__ = "club_members"
+    __table_args__ = (UniqueConstraint("club_id", "user_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    role: Mapped[ClubRole] = mapped_column(Enum(ClubRole), default=ClubRole.member)
+    league_points: Mapped[int] = mapped_column(Integer, default=0)   # лига для швейцарки
+    edh_bank: Mapped[float] = mapped_column(Float, default=1000.0)   # банк EDH (блок 3)
+    events_played: Mapped[int] = mapped_column(Integer, default=0)
+    last_bonus_week: Mapped[str | None] = mapped_column(String(10))  # '2026-W43': надбавка +150 раз в неделю
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    club: Mapped[Club] = relationship(back_populates="members")
+    user: Mapped[User] = relationship()
+
+
+class ClubStats(Base):
+    """Рейтинг клуба и агрегированная статистика прошлых турниров.
+    Обновляется после завершения каждого турнира (блок 2/3)."""
+    __tablename__ = "club_stats"
+
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id", ondelete="CASCADE"), primary_key=True)
+    club_rating: Mapped[float] = mapped_column(Float, default=0.0)
+    tournaments_total: Mapped[int] = mapped_column(Integer, default=0)
+    participants_total: Mapped[int] = mapped_column(Integer, default=0)
+    avg_participants: Mapped[float] = mapped_column(Float, default=0.0)
+    busiest_weekday: Mapped[int | None] = mapped_column(Integer)  # 0=пн ... 6=вс
+
+    club: Mapped[Club] = relationship(back_populates="stats")
+
+
+# ---------------- Блок 2: турниры ----------------
+class TournamentFormat(str, enum.Enum):
+    swiss = "swiss"
+    fast_swiss = "fast_swiss"   # «Быстрый швейцарец» для «Берсерка» (по умолчанию 1 тур)
+    edh = "edh"                 # реализуется в блоке 3
+
+
+class TournamentStatus(str, enum.Enum):
+    registration = "registration"
+    running = "running"
+    finished = "finished"
+
+
+class MatchResult(str, enum.Enum):
+    p1 = "p1"
+    p2 = "p2"
+    draw = "draw"
+
+
+class Tournament(Base):
+    __tablename__ = "tournaments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(128))
+    game: Mapped[str] = mapped_column(String(32), default="mtg")  # mtg | berserk
+    format: Mapped[TournamentFormat] = mapped_column(Enum(TournamentFormat))
+    status: Mapped[TournamentStatus] = mapped_column(Enum(TournamentStatus), default=TournamentStatus.registration)
+    rounds_total: Mapped[int | None] = mapped_column(Integer)
+    current_round: Mapped[int] = mapped_column(Integer, default=0)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+
+    players: Mapped[list["TournamentPlayer"]] = relationship(cascade="all, delete-orphan")
+    matches: Mapped[list["Match"]] = relationship(cascade="all, delete-orphan")
+
+
+class TournamentPlayer(Base):
+    __tablename__ = "tournament_players"
+    __table_args__ = (UniqueConstraint("tournament_id", "user_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tournament_id: Mapped[int] = mapped_column(ForeignKey("tournaments.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    seed: Mapped[int] = mapped_column(Integer)  # случайный жребий для паринга 1 тура и последнего тайбрейка
+    bracket: Mapped[int] = mapped_column(Integer, default=2)       # брекет колоды EDH (1-5)
+    checked_in: Mapped[bool] = mapped_column(default=False)        # пришёл на ивент (отмечает организатор)
+    deck_id: Mapped[int | None] = mapped_column(ForeignKey("decks.id", ondelete="SET NULL"))
+
+    user: Mapped[User] = relationship()
+
+
+class Match(Base):
+    __tablename__ = "matches"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tournament_id: Mapped[int] = mapped_column(ForeignKey("tournaments.id", ondelete="CASCADE"))
+    round_no: Mapped[int] = mapped_column(Integer)
+    table_no: Mapped[int] = mapped_column(Integer)
+    p1_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    p2_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))  # None = bye
+    result: Mapped[MatchResult | None] = mapped_column(Enum(MatchResult))
+
+
+# ---------------- Блок 3: EDH ----------------
+class EdhTableStatus(str, enum.Enum):
+    playing = "playing"
+    finished = "finished"
+
+
+class EdhTable(Base):
+    __tablename__ = "edh_tables"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tournament_id: Mapped[int] = mapped_column(ForeignKey("tournaments.id", ondelete="CASCADE"))
+    round_no: Mapped[int] = mapped_column(Integer)
+    table_no: Mapped[int] = mapped_column(Integer)
+    bracket: Mapped[int] = mapped_column(Integer)
+    status: Mapped[EdhTableStatus] = mapped_column(Enum(EdhTableStatus), default=EdhTableStatus.playing)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))   # started_at + 70 минут
+    outcome: Mapped[str | None] = mapped_column(String(16))               # win | draw | timeout
+    winner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+    seats: Mapped[list["EdhSeat"]] = relationship(cascade="all, delete-orphan")
+
+
+class EdhSeat(Base):
+    __tablename__ = "edh_seats"
+    __table_args__ = (UniqueConstraint("table_id", "user_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    table_id: Mapped[int] = mapped_column(ForeignKey("edh_tables.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    bank_before: Mapped[float] = mapped_column(Float)
+    bank_after: Mapped[float | None] = mapped_column(Float)
+    delta: Mapped[float | None] = mapped_column(Float)
+
+    user: Mapped[User] = relationship()
+
+
+# ---------------- Блок 4: карты и деклисты ----------------
+from sqlalchemy.dialects.postgresql import JSONB  # noqa: E402
+
+
+class Card(Base):
+    __tablename__ = "cards"
+    __table_args__ = (UniqueConstraint("game", "external_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game: Mapped[str] = mapped_column(String(16), index=True)            # mtg | berserk
+    external_id: Mapped[str] = mapped_column(String(64))                 # oracle_id / id из JSON
+    name: Mapped[str] = mapped_column(String(255))
+    name_lower: Mapped[str] = mapped_column(String(255), index=True)
+    name_front: Mapped[str] = mapped_column(String(255), index=True)     # лицевая сторона двусторонних карт
+    set_code: Mapped[str | None] = mapped_column(String(16))
+    set_name: Mapped[str | None] = mapped_column(String(128))
+    type_line: Mapped[str | None] = mapped_column(String(255))
+    mana_cost: Mapped[str | None] = mapped_column(String(64))
+    text: Mapped[str | None] = mapped_column(Text)
+    rarity: Mapped[str | None] = mapped_column(String(32))
+    image_url: Mapped[str | None] = mapped_column(String(512))           # CDN-ссылка, без хранения файлов
+    cmc: Mapped[float | None] = mapped_column(Float)
+    commander_legal: Mapped[bool | None] = mapped_column()
+    is_game_changer: Mapped[bool] = mapped_column(default=False)
+    extra: Mapped[dict] = mapped_column(JSONB, default=dict)             # всё, что не вошло в основную схему
+
+
+class Deck(Base):
+    __tablename__ = "decks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(128))
+    game: Mapped[str] = mapped_column(String(16), default="mtg")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    cards: Mapped[list["DeckCard"]] = relationship(cascade="all, delete-orphan", passive_deletes=True)
+
+
+class DeckCard(Base):
+    __tablename__ = "deck_cards"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    deck_id: Mapped[int] = mapped_column(ForeignKey("decks.id", ondelete="CASCADE"), index=True)
+    card_id: Mapped[int | None] = mapped_column(ForeignKey("cards.id", ondelete="SET NULL"))  # None = не найдена в базе
+    name: Mapped[str] = mapped_column(String(255))
+    qty: Mapped[int] = mapped_column(Integer, default=1)
+    is_commander: Mapped[bool] = mapped_column(default=False)
+    section: Mapped[str] = mapped_column(String(16), default="main")  # main | side | commander
+
+
+# ---------------- Блок 6: новости ----------------
+class ArticleStatus(str, enum.Enum):
+    draft = "draft"
+    published = "published"
+
+
+class NewsCategory(Base):
+    __tablename__ = "news_categories"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True)
+    slug: Mapped[str] = mapped_column(String(64), unique=True)
+
+
+class Tag(Base):
+    __tablename__ = "tags"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(32))
+    slug: Mapped[str] = mapped_column(String(40), unique=True)
+
+
+class Article(Base):
+    """club_id = NULL - глобальная статья (пишет админ), иначе новость клуба (пишет организатор)."""
+    __tablename__ = "articles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    club_id: Mapped[int | None] = mapped_column(ForeignKey("clubs.id", ondelete="CASCADE"), index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("news_categories.id", ondelete="SET NULL"))
+    title: Mapped[str] = mapped_column(String(200))
+    slug: Mapped[str] = mapped_column(String(100), unique=True)
+    summary: Mapped[str] = mapped_column(String(500), default="")
+    body_md: Mapped[str] = mapped_column(Text)          # сырой Markdown; санитайзинг - на фронтенде при рендере
+    cover_url: Mapped[str | None] = mapped_column(String(512))
+    status: Mapped[ArticleStatus] = mapped_column(Enum(ArticleStatus), default=ArticleStatus.draft, index=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ArticleTag(Base):
+    __tablename__ = "article_tags"
+
+    article_id: Mapped[int] = mapped_column(ForeignKey("articles.id", ondelete="CASCADE"), primary_key=True)
+    tag_id: Mapped[int] = mapped_column(ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
+
+
+class Comment(Base):
+    __tablename__ = "comments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    article_id: Mapped[int] = mapped_column(ForeignKey("articles.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    body: Mapped[str] = mapped_column(Text)
+    is_hidden: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------- Блок 7: очередь сообщений Telegram (outbox) ----------------
+from sqlalchemy import Index  # noqa: E402
+
+
+class OutboxStatus(str, enum.Enum):
+    pending = "pending"
+    sent = "sent"
+    failed = "failed"
+
+
+class OutboxMessage(Base):
+    """Событие кладётся в очередь в той же транзакции, что и изменение данных;
+    отправляет его отдельный процесс бота (повторы с задержкой при сбоях Telegram)."""
+    __tablename__ = "outbox"
+    __table_args__ = (Index("ix_outbox_pending", "status", "next_attempt_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    chat_id: Mapped[str] = mapped_column(String(64))
+    text: Mapped[str] = mapped_column(Text)
+    photo_url: Mapped[str | None] = mapped_column(String(512))
+    parse_mode: Mapped[str] = mapped_column(String(8), default="HTML")
+    status: Mapped[OutboxStatus] = mapped_column(Enum(OutboxStatus), default=OutboxStatus.pending)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_error: Mapped[str | None] = mapped_column(Text)
+    dedup_key: Mapped[str | None] = mapped_column(String(128), unique=True)  # защита от повторной публикации
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

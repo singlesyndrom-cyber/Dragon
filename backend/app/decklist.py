@@ -1,0 +1,86 @@
+"""Парсер текстовых деклистов (Moxfield / Archidekt / MTGO / просто «1 Название») и проверка EDH."""
+import re
+from collections import Counter
+from dataclasses import dataclass
+
+HEADERS = {
+    "commander": "commander", "commanders": "commander", "командир": "commander", "командиры": "commander",
+    "deck": "main", "main": "main", "maindeck": "main", "mainboard": "main", "колода": "main",
+    "sideboard": "side", "side": "side", "сайдборд": "side", "companion": "side", "maybeboard": "side",
+}
+BASICS = {"plains", "island", "swamp", "mountain", "forest", "wastes", "равнина", "остров", "болото", "гора", "лес"}
+LINE_RE = re.compile(r"^(?:SB:\s*)?(\d+)\s*[xXхХ]?\s+(.+)$")
+
+
+@dataclass
+class ParsedCard:
+    qty: int
+    name: str
+    section: str = "main"        # main | side | commander
+    is_commander: bool = False
+
+
+def _clean_name(name: str) -> str:
+    name = name.strip()
+    name = re.sub(r"(\s*\[[^\]]*\])+$", "", name)               # [Ramp] - категории Archidekt
+    name = re.sub(r"\s+\*\w+\*$", "", name)                      # *F* - фойл
+    name = re.sub(r"\s+\([A-Za-z0-9]{2,6}\)(\s+[\w★-]+)?$", "", name)  # (CMM) 400
+    return name.strip()
+
+
+def parse_decklist(text: str) -> tuple[list[ParsedCard], list[str]]:
+    cards: list[ParsedCard] = []
+    errors: list[str] = []
+    section = "main"
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("//") or line.startswith("#"):
+            continue
+        header = re.sub(r"\s*\(\d+\)\s*:?\s*$|:\s*$", "", line).lower()
+        if header in HEADERS and not LINE_RE.match(line):
+            section = HEADERS[header]
+            continue
+        sb = line.upper().startswith("SB:")
+        m = LINE_RE.match(line)
+        qty, name = (int(m.group(1)), m.group(2)) if m else (1, line)
+        name = _clean_name(name)
+        if not name:
+            errors.append(raw)
+            continue
+        sec = "side" if sb else section
+        cards.append(ParsedCard(qty, name, sec, is_commander=sec == "commander"))
+    return cards, errors
+
+
+def apply_commander(cards: list[ParsedCard], commander: str | None) -> list[ParsedCard]:
+    """Если командир передан отдельно и в списке не отмечен - отмечаем (или добавляем)."""
+    if not commander or any(c.is_commander for c in cards):
+        return cards
+    target = commander.strip().lower()
+    for c in cards:
+        if c.name.lower() == target:
+            c.is_commander, c.section = True, "commander"
+            return cards
+    cards.append(ParsedCard(1, commander.strip(), "commander", True))
+    return cards
+
+
+def validate_edh(cards: list[ParsedCard]) -> list[str]:
+    """Предупреждения (не блокируют сохранение): размер, командир, singleton."""
+    warns = []
+    playing = [c for c in cards if c.section != "side"]
+    total = sum(c.qty for c in playing)
+    if total != 100:
+        warns.append(f"В колоде {total} карт вместо 100")
+    cmd = [c for c in cards if c.is_commander]
+    if not cmd:
+        warns.append("Командир не указан")
+    elif sum(c.qty for c in cmd) > 2:
+        warns.append("Командиров больше двух")
+    counts = Counter()
+    for c in playing:
+        counts[c.name.lower()] += c.qty
+    dupes = sorted(n for n, q in counts.items() if q > 1 and n not in BASICS)
+    if dupes:
+        warns.append("Повторяются карты (singleton): " + ", ".join(dupes[:10]))
+    return warns
