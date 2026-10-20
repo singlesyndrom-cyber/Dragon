@@ -4,7 +4,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .config import settings
-from .db import Base, engine
+from .db import engine
+from .schema import sync_schema
 from .routers import auctions, auth, cards, clubs, decks, edh, meta, news, outbox, tournaments
 
 
@@ -12,7 +13,7 @@ from .routers import auctions, auth, cards, clubs, decks, edh, meta, news, outbo
 async def lifespan(app: FastAPI):
     if settings.auto_create_tables:  # только для разработки; в проде схему ведёт Alembic
         async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(sync_schema)   # новые таблицы и колонки без пересоздания базы
     expirer = asyncio.create_task(edh.expire_overdue_loop())  # авто-закрытие столов по таймеру 70 минут
     yield
     expirer.cancel()

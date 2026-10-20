@@ -38,18 +38,25 @@ function Scryfall() {
     const h = setInterval(load, 10000);
     return () => clearInterval(h);
   }, [load]);
+  const last = st?.last;
   return (
     <div className="panel">
       <h3>База MTG из Scryfall</h3>
-      <p className="small muted">Загрузка всех карт занимает несколько минут и идёт в фоне.</p>
+      <p className="small muted">
+        Загружается сама при первом запуске и обновляется раз в неделю. Полная загрузка с русскими названиями
+        занимает 5–10 минут.
+      </p>
       {st ? (
         <p className="small">
-          {st.running ? "Идёт синхронизация…" : st.finished ? `Последняя: ${dateTime(st.finished)}, карт: ${st.count}` : "Ещё не запускалась"}
-          {st.error ? <span className="loss"> Ошибка: {st.error}</span> : null}
+          {st.running ? "Идёт загрузка…" : last ? (
+            <>Последняя: {dateTime(last.finished || last.started)} ({last.trigger === "auto" ? "автоматически" : "вручную"}),
+              карт {last.cards.toLocaleString("ru-RU")}, русских названий {last.russian.toLocaleString("ru-RU")}.</>
+          ) : "Ещё не загружалась."}
+          {last?.error ? <span className="loss"> {last.error}</span> : null}
         </p>
       ) : null}
       <button className="primary" disabled={busy || st?.running}
-        onClick={() => run(() => api("/admin/cards/sync/scryfall", { method: "POST" })).then(load)}>Обновить базу</button>
+        onClick={() => run(() => api("/admin/cards/sync/scryfall", { method: "POST" })).then(load)}>Обновить сейчас</button>
       <Status error={error} />
     </div>
   );

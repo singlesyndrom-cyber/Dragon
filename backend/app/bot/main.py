@@ -4,6 +4,7 @@ import logging
 
 from aiogram import Bot, Dispatcher
 
+from .. import scryfall
 from ..config import settings
 from . import auctions, handlers
 from .worker import run_outbox
@@ -19,6 +20,8 @@ async def main() -> None:
     dp.include_router(auctions.router)   # раньше handlers: /start с параметром ставки
     dp.include_router(handlers.router)
     tasks = [asyncio.create_task(run_outbox(bot)), asyncio.create_task(auctions.finish_loop(bot))]
+    if settings.scryfall_auto_sync:
+        tasks.append(asyncio.create_task(scryfall.auto_sync_loop()))
     try:
         await dp.start_polling(bot)
     finally:

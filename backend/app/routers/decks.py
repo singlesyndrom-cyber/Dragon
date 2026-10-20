@@ -33,11 +33,15 @@ async def _fill(session: AsyncSession, deck: Deck, data: DeckIn) -> dict:
     for c in parsed:
         names |= {norm_name(c.name), norm_name(front_face(c.name))}
     found = (await session.execute(select(Card).where(
-        Card.game == deck.game, or_(Card.name_lower.in_(names), Card.name_front.in_(names))))).scalars()
+        Card.game == deck.game,
+        or_(Card.name_lower.in_(names), Card.name_front.in_(names), Card.name_ru_lower.in_(names))))).scalars()
     by_full, by_front = {}, {}
     for card in found:
         by_full[card.name_lower] = card
         by_front.setdefault(card.name_front, card)
+        if card.name_ru_lower:                      # деклист на русском: «1 Кольцо Сола»
+            by_full.setdefault(card.name_ru_lower, card)
+            by_front.setdefault(norm_name(front_face(card.name_ru)), card)
 
     await session.execute(delete(DeckCard).where(DeckCard.deck_id == deck.id))
     unmatched = []

@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     telegram_trade_chat_id: str = ""    # общий торговый канал для аукционов   # канал платформы для глобальных статей
     public_base_url: str = ""           # адрес сайта для ссылок в сообщениях
     app_timezone: str = "Europe/Moscow"
+    scryfall_auto_sync: bool = True     # бот сам загружает базу MTG при пустой базе и раз в неделю
     auto_create_tables: bool = False  # только для разработки; в проде - Alembic
 
 

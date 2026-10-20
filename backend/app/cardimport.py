@@ -54,6 +54,9 @@ def _finalize(card: dict, game: str) -> dict:
     card.setdefault("commander_legal", None)
     card.setdefault("is_game_changer", False)
     card.setdefault("extra", {})
+    card.setdefault("legalities", {})
+    card.setdefault("prices", {})
+    card.setdefault("scryfall_uri", None)
     return card
 
 
@@ -89,22 +92,60 @@ def normalize_generic(row: dict, mapping: dict | None = None, game: str = "berse
     return _finalize(out, game)
 
 
+LEGAL_FORMATS = ("commander", "standard", "pioneer", "modern", "legacy", "vintage", "pauper", "duel", "brawl")
+
+
+def _num(v) -> float | None:
+    try:
+        return float(v) if v not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
 def normalize_scryfall(obj: dict) -> dict | None:
+    """Карта из bulk-файла Scryfall «Oracle Cards» (одна запись на карту, а не на печать)."""
     if not obj.get("oracle_id") or obj.get("layout") in ("token", "double_faced_token", "emblem", "art_series"):
         return None
     faces = obj.get("card_faces") or []
     f0 = faces[0] if faces else {}
-    image = (obj.get("image_uris") or f0.get("image_uris") or {}).get("normal")
+    uris = obj.get("image_uris") or f0.get("image_uris") or {}
     text = obj.get("oracle_text") or "\n//\n".join(f.get("oracle_text", "") for f in faces) or None
-    legal = (obj.get("legalities") or {}).get("commander")
+    legal_all = obj.get("legalities") or {}
+    legal = legal_all.get("commander")
+    prices = obj.get("prices") or {}
     card = {
         "external_id": obj["oracle_id"], "name": obj["name"], "set_code": obj.get("set"),
         "set_name": obj.get("set_name"), "type_line": obj.get("type_line") or f0.get("type_line"),
         "mana_cost": obj.get("mana_cost") or f0.get("mana_cost") or None, "text": text,
-        "rarity": obj.get("rarity"), "image_url": image,
+        "rarity": obj.get("rarity"), "image_url": uris.get("normal"),
         "cmc": float(obj["cmc"]) if obj.get("cmc") is not None else None,
         "commander_legal": None if legal is None else legal == "legal",
         "is_game_changer": bool(obj.get("game_changer", False)),
-        "extra": {"color_identity": obj.get("color_identity", [])},
+        "legalities": {f: legal_all[f] for f in LEGAL_FORMATS if f in legal_all},
+        "prices": {k: _num(prices.get(k)) for k in ("usd", "usd_foil", "eur") if _num(prices.get(k)) is not None},
+        "scryfall_uri": (obj.get("scryfall_uri") or "")[:512] or None,
+        "extra": {"color_identity": obj.get("color_identity", []), "colors": obj.get("colors") or f0.get("colors") or [],
+                  "keywords": obj.get("keywords", []), "artist": obj.get("artist") or f0.get("artist"),
+                  "power": obj.get("power") or f0.get("power"), "toughness": obj.get("toughness") or f0.get("toughness"),
+                  "loyalty": obj.get("loyalty") or f0.get("loyalty"),
+                  "image_large": uris.get("large"),
+                  "faces": [{"name": f.get("name"), "mana_cost": f.get("mana_cost"), "type_line": f.get("type_line"),
+                             "text": f.get("oracle_text"), "image": (f.get("image_uris") or {}).get("normal")}
+                            for f in faces] if len(faces) > 1 else []},
     }
     return _finalize(card, "mtg")
+
+
+def normalize_ru(obj: dict) -> dict | None:
+    """Русская печать карты из поиска Scryfall (lang:ru): печатное название, тип и текст.
+    Привязка к нашей карте - по oracle_id."""
+    if obj.get("lang") != "ru" or not obj.get("oracle_id"):
+        return None
+    faces = obj.get("card_faces") or []
+    name = obj.get("printed_name") or " // ".join(f.get("printed_name") or "" for f in faces).strip(" /")
+    if not name:
+        return None
+    type_ru = obj.get("printed_type_line") or " // ".join(f.get("printed_type_line") or "" for f in faces).strip(" /")
+    text_ru = obj.get("printed_text") or "\n//\n".join(f.get("printed_text") or "" for f in faces).strip("\n/")
+    return {"oracle_id": obj["oracle_id"], "name_ru": name[:255], "name_ru_lower": norm_name(name)[:255],
+            "type_ru": (type_ru or None) and type_ru[:255], "text_ru": text_ru or None}

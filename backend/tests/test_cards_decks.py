@@ -71,3 +71,32 @@ def test_scryfall_dfc_and_filters():
     assert c["name_front"] == "delver of secrets" and "Flying" in c["text"]
     assert normalize_scryfall({"oracle_id": "t", "name": "Token", "layout": "token"}) is None
     assert norm_name("  Atraxa’s   Hold ") == "atraxa's hold"
+
+
+def test_scryfall_extended_fields():
+    from app.cardimport import normalize_scryfall
+    obj = {"oracle_id": "o1", "name": "Sol Ring", "layout": "normal", "set": "cmm", "set_name": "Commander Masters",
+           "type_line": "Artifact", "mana_cost": "{1}", "oracle_text": "{T}: Add {C}{C}.", "rarity": "uncommon",
+           "cmc": 1, "image_uris": {"normal": "n.jpg", "large": "l.jpg"}, "artist": "Mike Bierek",
+           "legalities": {"commander": "legal", "vintage": "restricted", "standard": "not_legal", "future": "x"},
+           "prices": {"usd": "1.50", "eur": None, "usd_foil": "abc"}, "scryfall_uri": "https://scryfall.com/card/x",
+           "color_identity": [], "game_changer": True}
+    c = normalize_scryfall(obj)
+    assert c["legalities"] == {"commander": "legal", "vintage": "restricted", "standard": "not_legal"}
+    assert c["prices"] == {"usd": 1.5} and c["is_game_changer"] and c["scryfall_uri"].startswith("https://")
+    assert c["extra"]["artist"] == "Mike Bierek" and c["extra"]["image_large"] == "l.jpg" and c["extra"]["faces"] == []
+
+
+def test_normalize_ru():
+    from app.cardimport import normalize_ru
+    single = {"lang": "ru", "oracle_id": "o1", "printed_name": "Кольцо Сола", "printed_type_line": "Артефакт",
+              "printed_text": "{T}: добавьте {C}{C}."}
+    r = normalize_ru(single)
+    assert r == {"oracle_id": "o1", "name_ru": "Кольцо Сола", "name_ru_lower": "кольцо сола",
+                 "type_ru": "Артефакт", "text_ru": "{T}: добавьте {C}{C}."}
+    dfc = {"lang": "ru", "oracle_id": "o2", "card_faces": [
+        {"printed_name": "Хранитель Тайн", "printed_type_line": "Существо", "printed_text": "А"},
+        {"printed_name": "Насекомое-Мутант", "printed_type_line": "Существо", "printed_text": "Б"}]}
+    r2 = normalize_ru(dfc)
+    assert r2["name_ru"] == "Хранитель Тайн // Насекомое-Мутант" and r2["text_ru"] == "А\n//\nБ"
+    assert normalize_ru({**single, "lang": "en"}) is None and normalize_ru({"lang": "ru", "oracle_id": "x"}) is None

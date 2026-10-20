@@ -74,3 +74,22 @@ jobs:
           docker run --rm -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" -e SITE_ADDRESS=:80 caddy:2 caddy validate --config /etc/caddy/Caddyfile 2>&1 | tee build.log
       - if: failure()
         run: python3 .github/scripts/log_annotation.py build.log
+
+  scryfall-smoke:
+    runs-on: ubuntu-latest
+    continue-on-error: true   # внешний сервис: сбой Scryfall не должен блокировать остальное
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r backend/requirements.txt
+      - name: Real Scryfall responses match our parser
+        env:
+          DATABASE_URL: postgresql+asyncpg://x:x@localhost/x
+          JWT_SECRET: x
+        run: |
+          set -o pipefail
+          python .github/scripts/scryfall_smoke.py 2>&1 | tee smoke.log
+      - if: failure()
+        run: python3 .github/scripts/log_annotation.py smoke.log

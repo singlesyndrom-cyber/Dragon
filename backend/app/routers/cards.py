@@ -1,21 +1,18 @@
-import asyncio
 import json
-import tempfile
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..cardimport import extract_rows, normalize_generic, normalize_scryfall
-from ..db import SessionLocal, get_session
+from .. import scryfall
+from ..cardimport import extract_rows, norm_name, normalize_generic
+from ..db import get_session
 from ..deps import require_admin
 from ..models import Card, User
 
 router = APIRouter(tags=["cards"])
 MAX_UPLOAD = 50 * 1024 * 1024
-sync_state: dict = {"running": False, "started": None, "finished": None, "count": 0, "error": None}
 
 
 async def upsert_cards(session: AsyncSession, rows: list[dict]) -> int:
@@ -32,23 +29,38 @@ async def upsert_cards(session: AsyncSession, rows: list[dict]) -> int:
 
 
 # ---------- публичный поиск ----------
+def _brief(c: Card) -> dict:
+    return {"id": c.id, "game": c.game, "name": c.name, "name_ru": c.name_ru, "set": c.set_code,
+            "type": c.type_line, "mana_cost": c.mana_cost, "rarity": c.rarity, "image_url": c.image_url}
+
+
 @router.get("/cards")
 async def search_cards(q: str = "", game: str | None = None, set_code: str | None = None,
                        limit: int = 30, offset: int = 0, session: AsyncSession = Depends(get_session)):
-    limit = max(1, min(limit, 50))
-    ql = q.strip().lower()
+    """Поиск по названию на английском или русском."""
+    limit = max(1, min(limit, 60))
+    ql = norm_name(q)
     stmt = select(Card)
     if game:
         stmt = stmt.where(Card.game == game)
     if set_code:
-        stmt = stmt.where(Card.set_code == set_code)
+        stmt = stmt.where(Card.set_code == set_code.lower())
     if ql:
-        stmt = stmt.where(Card.name_lower.contains(ql)).order_by(Card.name_lower.startswith(ql).desc(), Card.name_lower)
+        prefix = or_(Card.name_lower.startswith(ql), Card.name_ru_lower.startswith(ql))
+        stmt = (stmt.where(or_(Card.name_lower.contains(ql), Card.name_ru_lower.contains(ql)))
+                .order_by(prefix.desc(), Card.name_lower))
     else:
         stmt = stmt.order_by(Card.name_lower)
     rows = (await session.execute(stmt.limit(limit).offset(offset))).scalars()
-    return [{"id": c.id, "game": c.game, "name": c.name, "set": c.set_code, "type": c.type_line,
-             "mana_cost": c.mana_cost, "rarity": c.rarity, "image_url": c.image_url} for c in rows]
+    return [_brief(c) for c in rows]
+
+
+@router.get("/cards/stats")
+async def card_stats(session: AsyncSession = Depends(get_session)):
+    rows = (await session.execute(select(Card.game, func.count(), func.count(Card.name_ru)).group_by(Card.game))).all()
+    last = await scryfall.last_run(session)
+    return {"games": {g: {"cards": n, "russian": ru} for g, n, ru in rows},
+            "scryfall_updated": last.finished_at if last and last.cards else None}
 
 
 @router.get("/cards/{card_id}")
@@ -56,57 +68,36 @@ async def get_card(card_id: int, session: AsyncSession = Depends(get_session)):
     c = await session.get(Card, card_id)
     if not c:
         raise HTTPException(404, "Карта не найдена")
-    return {"id": c.id, "game": c.game, "name": c.name, "set": c.set_code, "set_name": c.set_name,
-            "type": c.type_line, "mana_cost": c.mana_cost, "text": c.text, "rarity": c.rarity,
-            "image_url": c.image_url, "commander_legal": c.commander_legal, "extra": c.extra}
+    return {**_brief(c), "set_name": c.set_name, "text": c.text, "type_ru": c.type_ru, "text_ru": c.text_ru,
+            "cmc": c.cmc, "commander_legal": c.commander_legal, "is_game_changer": c.is_game_changer,
+            "legalities": c.legalities or {}, "prices": c.prices or {}, "scryfall_uri": c.scryfall_uri,
+            "extra": c.extra or {}}
 
 
 # ---------- админка: Scryfall ----------
-def _parse_bulk(path: str) -> list[dict]:
-    import ijson
-    out = []
-    with open(path, "rb") as f:
-        for obj in ijson.items(f, "item"):
-            card = normalize_scryfall(obj)
-            if card:
-                out.append(card)
-    return out
-
-
-async def run_scryfall_sync():
-    import httpx
-    sync_state.update(running=True, started=datetime.now(timezone.utc).isoformat(), error=None, count=0)
-    headers = {"User-Agent": "KKIPlatform/1.0", "Accept": "application/json;q=0.9,*/*;q=0.8"}
+async def _run_sync():
     try:
-        async with httpx.AsyncClient(headers=headers, timeout=180, follow_redirects=True) as client:
-            meta = (await client.get("https://api.scryfall.com/bulk-data")).json()
-            uri = next(x["download_uri"] for x in meta["data"] if x["type"] == "oracle_cards")
-            with tempfile.NamedTemporaryFile(suffix=".json") as tmp:
-                async with client.stream("GET", uri) as resp:
-                    resp.raise_for_status()
-                    async for chunk in resp.aiter_bytes():
-                        tmp.write(chunk)
-                tmp.flush()
-                rows = await asyncio.to_thread(_parse_bulk, tmp.name)  # разбор не блокирует event loop
-        async with SessionLocal() as session:
-            sync_state["count"] = await upsert_cards(session, rows)
-    except Exception as e:  # noqa: BLE001
-        sync_state["error"] = repr(e)
-    finally:
-        sync_state.update(running=False, finished=datetime.now(timezone.utc).isoformat())
+        await scryfall.sync(trigger="admin")
+    except scryfall.SyncBusy:
+        pass
 
 
 @router.post("/admin/cards/sync/scryfall", status_code=202)
-async def sync_scryfall(bg: BackgroundTasks, admin: User = Depends(require_admin)):
-    if sync_state["running"]:
-        raise HTTPException(409, "Синхронизация уже идёт")
-    bg.add_task(run_scryfall_sync)
+async def sync_scryfall(bg: BackgroundTasks, admin: User = Depends(require_admin),
+                        session: AsyncSession = Depends(get_session)):
+    if await scryfall.is_running(session):
+        raise HTTPException(409, "Загрузка уже идёт")
+    bg.add_task(_run_sync)
     return {"status": "started"}
 
 
 @router.get("/admin/cards/sync/status")
-async def sync_status(admin: User = Depends(require_admin)):
-    return sync_state
+async def sync_status(admin: User = Depends(require_admin), session: AsyncSession = Depends(get_session)):
+    last = await scryfall.last_run(session)
+    return {"running": await scryfall.is_running(session),
+            "last": None if not last else {"started": last.started_at, "finished": last.finished_at,
+                                           "trigger": last.trigger, "cards": last.cards,
+                                           "russian": last.russian, "error": last.error}}
 
 
 # ---------- админка: «Берсерк» и любые другие JSON-базы ----------
