@@ -5,6 +5,8 @@ set -e
 docker compose up -d
 for i in $(seq 1 90); do curl -sf localhost:8000/health >/dev/null && break; sleep 2; done
 for i in $(seq 1 90); do curl -sf localhost:3000/ >/dev/null && break; sleep 2; done
+curl -sf localhost:8000/health >/dev/null || { echo "FAIL: API не поднялся"; docker compose ps; docker compose logs --tail=80 backend; exit 1; }
+curl -sf localhost:3000/ >/dev/null || { echo "FAIL: сайт не поднялся"; docker compose logs --tail=60 frontend; exit 1; }
 
 # POST к API: печатает ответ при ошибке, иначе возвращает поле из JSON
 post() {  # путь, json, поле, [токен]
