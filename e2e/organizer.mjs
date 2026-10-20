@@ -11,6 +11,10 @@ const API = process.env.API || "http://localhost:8000";
 mkdirSync("shots", { recursive: true });
 
 const step = (n) => console.log(`\n▶ ${n}`);
+const visible = async (locator, msg) => {
+  await locator.first().waitFor({ state: "visible", timeout: 15000 }).catch(() => { throw new Error("ПРОВЕРКА НЕ ПРОШЛА: " + msg); });
+  console.log("  ✓", msg);
+};
 const check = (cond, msg) => { if (!cond) throw new Error("ПРОВЕРКА НЕ ПРОШЛА: " + msg); console.log("  ✓", msg); };
 
 async function apiCall(path, { token, method, body } = {}) {
@@ -38,21 +42,22 @@ try {
   await page.getByLabel("Пароль").fill("e2e-password-1");
   await page.getByRole("button", { name: "Создать аккаунт" }).click();
   await page.waitForURL("**/me");
-  check(await page.getByText("Мои клубы").isVisible(), "в кабинете есть блок «Мои клубы»");
+  await visible(page.getByRole("heading", { name: "Мои клубы" }), "в кабинете есть блок «Мои клубы»");
   await shot("cabinet");
 
   step("Создание клуба с русским названием");
-  await page.getByRole("link", { name: "Создать клуб" }).click();
+  await page.getByRole("link", { name: "Создать клуб" }).first().click();
   await page.getByLabel("Название").fill(`Клуб Е2Е ${run}`);
   await page.getByLabel("Город").fill("Казань");
   await page.getByRole("button", { name: "Создать клуб" }).click();
   await page.waitForURL(/\/clubs\/klub-e2e-/);
-  check(await page.getByRole("heading", { name: `Клуб Е2Е ${run}` }).isVisible(), "страница клуба открылась по латинскому адресу");
+  await visible(page.getByRole("heading", { name: `Клуб Е2Е ${run}` }), "страница клуба открылась по латинскому адресу");
   await shot("club");
 
   step("Кнопка «Создать турнир» на странице турниров");
   await page.goto(BASE + "/tournaments");
-  await page.getByRole("link", { name: "Создать турнир" }).click();
+  await visible(page.getByRole("link", { name: "Создать турнир" }), "на странице турниров есть «Создать турнир»");
+  await page.getByRole("link", { name: "Создать турнир" }).first().click();
   await page.waitForURL(/\/manage\/clubs\/\d+/);
   await page.getByLabel("Название").first().fill("Е2Е швейцарка");
   await page.getByLabel("Туров").fill("2");
@@ -68,12 +73,14 @@ try {
     await apiCall(`/tournaments/${tid}/register`, { token: r.access_token, method: "POST" });
   }
   await page.goto(`${BASE}/tournaments/${tid}`);
+  await visible(page.getByRole("button", { name: "Записаться" }), "есть кнопка «Записаться»");
   await page.getByRole("button", { name: "Записаться" }).click();
   await page.getByText("Вы записаны").waitFor();
   check((await page.getByText("Вы записаны").count()) === 1, "сообщение «Вы записаны» показано один раз");
   await shot("registered");
 
   step("Старт и первый тур");
+  await visible(page.getByRole("link", { name: "Управлять турниром" }), "организатор видит «Управлять турниром»");
   await page.getByRole("link", { name: "Управлять турниром" }).click();
   await page.getByRole("button", { name: "Начать турнир" }).click();
   await page.getByRole("heading", { name: "Тур 1: результаты" }).waitFor();
