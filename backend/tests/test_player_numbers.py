@@ -96,9 +96,12 @@ async def test_old_accounts_get_numbers_on_schema_sync(client):
     await reg(client, 1)
     await reg(client, 2)
     org, _ = await reg(client, 3)
-    club = (await client.post("/clubs", json={"name": "Старый клуб"}, headers=org)).json()
-    tid = (await client.post("/tournaments", json={"club_id": club["id"], "name": "Т", "format": "swiss", "rounds": 1},
-                             headers=org)).json()["id"]
+    r = await client.post("/clubs", json={"name": "Старый клуб"}, headers=org)
+    assert r.status_code == 201, r.text
+    r = await client.post("/tournaments", json={"club_id": r.json()["id"], "name": "Турнир", "format": "swiss",
+                                                "rounds": 1}, headers=org)
+    assert r.status_code == 201, r.text
+    tid = r.json()["id"]
     await client.post(f"/tournaments/{tid}/players", json={"nickname": "Гость"}, headers=org)
     async with engine.begin() as conn:
         await conn.execute(text("ALTER TABLE users DROP COLUMN player_no"))

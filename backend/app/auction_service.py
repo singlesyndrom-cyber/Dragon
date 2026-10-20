@@ -38,6 +38,7 @@ async def get_or_create_tg_user(session: AsyncSession, tg_id: int, username: str
     await session.flush()
     session.add(AuthAccount(user_id=user.id, provider=Provider.telegram, external_id=str(tg_id)))
     await session.commit()
+    await session.refresh(user)   # номер игрока выдаёт база (последовательность) - перечитываем его
     return user
 
 
