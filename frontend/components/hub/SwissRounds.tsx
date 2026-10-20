@@ -40,7 +40,7 @@ export default function SwissRounds({ t, reload }: { t: any; reload: () => Promi
         </p>
         {missing ? (
           <ConfirmButton className="primary" disabled={busy || t.participants.length < 2}
-            question={`Деклист не подали ${missing} игр. Начать всё равно?`} confirmLabel="Начать" onConfirm={() => start(true)}>
+            question={`Деклист не подали: ${missing}. Начать всё равно?`} confirmLabel="Начать" onConfirm={() => start(true)}>
             Начать турнир
           </ConfirmButton>
         ) : (

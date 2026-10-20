@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import ConfirmButton from "@/components/ConfirmButton";
 import { Status, useAction } from "@/components/Form";
 import { api } from "@/lib/api";
+import { plural } from "@/lib/format";
 
 /** Участники: добавить по имени (гость) или из игроков клуба, отметка прихода и брекет (EDH),
  *  удаление до старта, «выбыл» во время турнира, привязка гостя к аккаунту. */
@@ -78,7 +79,7 @@ export default function Participants({ t, reload }: { t: any; reload: () => Prom
       <Status error={error} done={done} />
 
       <p className="hint">
-        {t.participants.length} {t.max_players ? `из ${t.max_players} ` : ""}участников
+        {t.max_players ? `Участников: ${t.participants.length} из ${t.max_players}` : `${t.participants.length} ${plural(t.participants.length, "участник", "участника", "участников")}`}
         {edh ? `, пришли ${checked}. Отметьте пришедших: только они сядут за столы и получат недельную надбавку +150.` : "."}
         {!t.self_registration ? " Игроки не могут записаться сами — добавляйте их здесь." : ""}
       </p>

@@ -5,6 +5,7 @@ import ConfirmButton from "@/components/ConfirmButton";
 import { Status, useAction } from "@/components/Form";
 import { Delta } from "@/components/Standings";
 import { api } from "@/lib/api";
+import { plural } from "@/lib/format";
 
 /** EDH: рассадка, таймеры столов, победа / ничья / таймаут, завершение ивента. */
 export default function EdhTables({ t, reload }: { t: any; reload: () => Promise<void> }) {
@@ -31,7 +32,7 @@ export default function EdhTables({ t, reload }: { t: any; reload: () => Promise
       {t.status !== "finished" ? (
         <div className="panel actions">
           <p style={{ margin: 0 }}>
-            {t.round ? `Идёт тур ${t.round}.` : "Ивент ещё не начат."} Пришли {checkedIn} игр.
+            {t.round ? `Идёт тур ${t.round}.` : "Ивент ещё не начат."} Пришли {checkedIn} {plural(checkedIn, "игрок", "игрока", "игроков")}.
             Столы по 3–5 человек, рассадка случайная внутри брекетов, 70 минут на партию.
           </p>
           <div className="row">
