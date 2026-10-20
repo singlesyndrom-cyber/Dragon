@@ -57,6 +57,18 @@ main.wrap { padding-top: 28px; padding-bottom: 72px; min-height: 70vh; }
 .nav a { text-decoration: none; color: var(--muted); padding: 4px 0; border-bottom: 2px solid transparent; }
 .nav a:hover, .nav a[aria-current="page"] { color: var(--ivory); border-bottom-color: var(--gilt); }
 .who { display: flex; gap: 12px; align-items: center; color: var(--muted); font-size: 0.95rem; }
+/* Телефон: логотип и вход в первой строке, разделы — прокручиваемой строкой под ними */
+@media (max-width: 760px) {
+  .top .wrap { gap: 0 16px; padding-top: 8px; }
+  .brand { flex: 1; }
+  .nav {
+    order: 3; flex: 0 0 100%; flex-wrap: nowrap; overflow-x: auto; gap: 20px;
+    padding: 6px 0 8px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav a { white-space: nowrap; }
+  .who .btn { padding: 6px 12px; }
+}
 
 /* ---------- текст ---------- */
 .lead { color: var(--muted); font-size: 1.1rem; max-width: 60ch; }
@@ -133,7 +145,7 @@ input, select, textarea {
   background: var(--vellum-2); border: 1px solid var(--line); border-radius: var(--radius-s);
 }
 textarea { min-height: 140px; max-width: 760px; }
-input[type="checkbox"] { width: auto; }
+input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--gilt); cursor: pointer; }
 input:focus, select:focus, textarea:focus { border-color: var(--gilt); outline: none; }
 .inline input, .inline select { width: auto; }
 
@@ -145,7 +157,12 @@ button:hover, .btn:hover { border-color: var(--gilt); color: var(--ivory); }
 button.primary, .btn.primary { background: var(--gilt); border-color: var(--gilt); color: #1a1406; font-weight: 600; }
 button.primary:hover, .btn.primary:hover { filter: brightness(1.08); color: #1a1406; }
 button.danger { border-color: var(--loss); color: var(--loss); background: transparent; }
-button:disabled { opacity: 0.5; cursor: not-allowed; }
+button:disabled, button.primary:disabled {
+  opacity: 1; cursor: not-allowed; background: transparent; border-color: var(--line); color: var(--muted); filter: none;
+}
+.hint { color: var(--muted); font-size: 0.875rem; margin: 6px 0 0; }
+tr.winner td { background: var(--gilt-soft); }
+tr.winner td:first-child { box-shadow: inset 3px 0 0 var(--gilt); color: var(--gilt); font-weight: 600; }
 .link-btn { background: none; border: none; padding: 0; color: var(--muted); text-decoration: underline; }
 
 /* ---------- статьи ---------- */

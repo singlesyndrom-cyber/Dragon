@@ -91,7 +91,7 @@ function SwissPanel({ t, reload }: { t: any; reload: () => Promise<void> }) {
               </tbody>
             </table>
           </div>
-          <p className="muted small">{pending ? `Не введено результатов: ${pending}` : "Все результаты тура введены."}</p>
+          <p className="hint">{pending ? `Не введено результатов: ${pending}. Следующий тур откроется, когда будут введены все.` : "Все результаты тура введены."}</p>
           <div className="row">
             {!last ? <button className="primary" disabled={busy || pending > 0} onClick={() => act(`/tournaments/${t.id}/next-round`, "Пары следующего тура готовы")}>Следующий тур</button> : null}
             <button className={last ? "primary" : ""} disabled={busy || pending > 0}
@@ -164,7 +164,8 @@ function EdhPanel({ t, reload }: { t: any; reload: () => Promise<void> }) {
               </button>
             ) : null}
           </div>
-          {checkedIn < 3 ? <p className="muted small">Нужно минимум 3 пришедших игрока, сейчас {checkedIn}.</p> : null}
+          {open > 0 ? <p className="hint">Новый тур и завершение станут доступны, когда все столы текущего тура будут закрыты.</p>
+            : checkedIn < 3 ? <p className="hint">Нужно минимум 3 пришедших игрока, сейчас {checkedIn}.</p> : null}
         </>
       ) : <p>Ивент завершён. Итоги на <Link href={`/tournaments/${t.id}`}>публичной странице</Link>.</p>}
 
@@ -183,7 +184,10 @@ function EdhPanel({ t, reload }: { t: any; reload: () => Promise<void> }) {
               <thead><tr><th>Игрок</th><th className="r">Банк</th><th className="r">Изменение</th></tr></thead>
               <tbody>
                 {tb.seats.map((s: any) => (
-                  <tr key={s.user_id}><td>{s.nickname}</td><td className="r">{Math.round(s.bank_after ?? s.bank_before)}</td><td className="r"><Delta v={s.delta} /></td></tr>
+                  <tr key={s.user_id} className={tb.outcome === "win" && s.delta > 0 ? "winner" : undefined}>
+                    <td>{s.nickname}{tb.outcome === "win" && s.delta > 0 ? ", победитель" : ""}</td>
+                    <td className="r">{Math.round(s.bank_after ?? s.bank_before)}</td><td className="r"><Delta v={s.delta} /></td>
+                  </tr>
                 ))}
               </tbody>
             </table>

@@ -39,8 +39,8 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
                     <thead><tr><th>Игрок</th><th className="r">Банк до</th><th className="r">Изменение</th></tr></thead>
                     <tbody>
                       {tb.seats.map((s: any) => (
-                        <tr key={s.user_id}>
-                          <td>{s.nickname}</td>
+                        <tr key={s.user_id} className={tb.outcome === "win" && s.delta > 0 ? "winner" : undefined}>
+                          <td>{s.nickname}{tb.outcome === "win" && s.delta > 0 ? ", победитель" : ""}</td>
                           <td className="r">{Math.round(s.bank_before)}</td>
                           <td className="r"><Delta v={s.delta} /></td>
                         </tr>
