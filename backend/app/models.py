@@ -31,6 +31,7 @@ class User(Base):
     nickname: Mapped[str] = mapped_column(String(64))
     role: Mapped[GlobalRole] = mapped_column(Enum(GlobalRole), default=GlobalRole.player)
     is_banned: Mapped[bool] = mapped_column(default=False)
+    tg_username: Mapped[str | None] = mapped_column(String(64))  # для связи сторон сделки
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     accounts: Mapped[list["AuthAccount"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -332,6 +333,7 @@ class OutboxMessage(Base):
     text: Mapped[str] = mapped_column(Text)
     photo_url: Mapped[str | None] = mapped_column(String(512))
     parse_mode: Mapped[str] = mapped_column(String(8), default="HTML")
+    buttons: Mapped[list | None] = mapped_column(JSONB)   # [[{"text", "callback_data"|"url"}]]
     status: Mapped[OutboxStatus] = mapped_column(Enum(OutboxStatus), default=OutboxStatus.pending)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -339,3 +341,85 @@ class OutboxMessage(Base):
     dedup_key: Mapped[str | None] = mapped_column(String(128), unique=True)  # защита от повторной публикации
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# ---------------- Блок 8: аукционы ----------------
+class LotStatus(str, enum.Enum):
+    active = "active"
+    sold = "sold"
+    unsold = "unsold"
+    cancelled = "cancelled"
+
+
+class Lot(Base):
+    __tablename__ = "lots"
+    __table_args__ = (Index("ix_lots_status_ends", "status", "ends_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    title: Mapped[str] = mapped_column(String(100))
+    condition: Mapped[str] = mapped_column(String(4))
+    photo_file_id: Mapped[str | None] = mapped_column(String(255))   # file_id фото в Telegram
+    start_price: Mapped[int] = mapped_column(Integer)
+    current_price: Mapped[int | None] = mapped_column(Integer)
+    leader_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    bids_count: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[LotStatus] = mapped_column(Enum(LotStatus), default=LotStatus.active)
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    chat_id: Mapped[str | None] = mapped_column(String(64))           # торговый канал
+    message_id: Mapped[int | None] = mapped_column(Integer)           # пост лота в канале
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Bid(Base):
+    __tablename__ = "bids"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lot_id: Mapped[int] = mapped_column(ForeignKey("lots.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    amount: Mapped[int] = mapped_column(Integer)
+    extended: Mapped[bool] = mapped_column(default=False)             # сработал антиснайпинг
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Deal(Base):
+    """Сделка по проданному лоту. Платежи вне системы; стороны подтверждают результат,
+    оценки доступны только после подтверждения обеими (status=completed)."""
+    __tablename__ = "deals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lot_id: Mapped[int] = mapped_column(ForeignKey("lots.id", ondelete="CASCADE"), unique=True)
+    seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    buyer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    price: Mapped[int] = mapped_column(Integer)
+    seller_ok: Mapped[bool | None] = mapped_column()
+    buyer_ok: Mapped[bool | None] = mapped_column()
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending|completed|failed|disputed
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DealRating(Base):
+    __tablename__ = "deal_ratings"
+    __table_args__ = (UniqueConstraint("deal_id", "from_user_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    deal_id: Mapped[int] = mapped_column(ForeignKey("deals.id", ondelete="CASCADE"))
+    from_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    to_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    role: Mapped[str] = mapped_column(String(8))     # роль оцениваемого: seller | buyer
+    score: Mapped[int] = mapped_column(Integer)
+    comment: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Complaint(Base):
+    __tablename__ = "complaints"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    from_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    against_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    deal_id: Mapped[int | None] = mapped_column(ForeignKey("deals.id", ondelete="SET NULL"))
+    text: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="open")  # open | resolved
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

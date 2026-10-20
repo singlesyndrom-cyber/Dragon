@@ -5,7 +5,7 @@ import logging
 from aiogram import Bot, Dispatcher
 
 from ..config import settings
-from . import handlers
+from . import auctions, handlers
 from .worker import run_outbox
 
 
@@ -15,12 +15,15 @@ async def main() -> None:
         raise SystemExit("TELEGRAM_BOT_TOKEN не задан")
     bot = Bot(settings.telegram_bot_token)
     dp = Dispatcher()
+    auctions.BOT["username"] = (await bot.get_me()).username or ""
+    dp.include_router(auctions.router)   # раньше handlers: /start с параметром ставки
     dp.include_router(handlers.router)
-    sender = asyncio.create_task(run_outbox(bot))
+    tasks = [asyncio.create_task(run_outbox(bot)), asyncio.create_task(auctions.finish_loop(bot))]
     try:
         await dp.start_polling(bot)
     finally:
-        sender.cancel()
+        for t in tasks:
+            t.cancel()
         await bot.session.close()
 
 

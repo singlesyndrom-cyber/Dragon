@@ -16,12 +16,12 @@ def site_url(path: str) -> str | None:
     return f"{base}{path}" if base else None
 
 
-async def enqueue(session, kind: str, chat_id: str | None, text: str, photo_url: str | None = None,
-                  dedup_key: str | None = None) -> None:
+async def enqueue(session, kind: str, chat_id: str | int | None, text: str, photo_url: str | None = None,
+                  dedup_key: str | None = None, buttons: list | None = None) -> None:
     if not chat_id:
         return
     stmt = pg_insert(OutboxMessage).values(
-        kind=kind, chat_id=str(chat_id), text=text, photo_url=photo_url, parse_mode="HTML",
+        kind=kind, chat_id=str(chat_id), text=text, photo_url=photo_url, parse_mode="HTML", buttons=buttons,
         status=OutboxStatus.pending, attempts=0, next_attempt_at=datetime.now(timezone.utc), dedup_key=dedup_key)
     if dedup_key:
         stmt = stmt.on_conflict_do_nothing(index_elements=[OutboxMessage.dedup_key])

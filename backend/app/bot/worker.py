@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
-from aiogram.types import LinkPreviewOptions
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions
 from sqlalchemy import select
 
 from ..botutil import MAX_ATTEMPTS, backoff_seconds, parse_chat_id
@@ -16,15 +16,22 @@ from ..models import OutboxMessage, OutboxStatus
 log = logging.getLogger("outbox")
 
 
+def keyboard(buttons: list | None) -> InlineKeyboardMarkup | None:
+    if not buttons:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(**b) for b in row] for row in buttons])
+
+
 async def deliver(bot: Bot, m: OutboxMessage) -> None:
     chat = parse_chat_id(m.chat_id)
+    markup = keyboard(m.buttons)
     if m.photo_url and len(m.text) <= 1024:
         try:
-            await bot.send_photo(chat, m.photo_url, caption=m.text, parse_mode=m.parse_mode)
+            await bot.send_photo(chat, m.photo_url, caption=m.text, parse_mode=m.parse_mode, reply_markup=markup)
             return
         except TelegramBadRequest:
             pass  # недоступная картинка не должна терять сообщение - шлём без неё
-    await bot.send_message(chat, m.text, parse_mode=m.parse_mode,
+    await bot.send_message(chat, m.text, parse_mode=m.parse_mode, reply_markup=markup,
                            link_preview_options=LinkPreviewOptions(is_disabled=True))
 
 

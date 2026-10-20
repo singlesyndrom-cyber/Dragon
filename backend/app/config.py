@@ -10,7 +10,8 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     vk_app_id: str = ""
     vk_app_secret: str = ""
-    telegram_global_chat_id: str = ""   # канал платформы для глобальных статей
+    telegram_global_chat_id: str = ""
+    telegram_trade_chat_id: str = ""    # общий торговый канал для аукционов   # канал платформы для глобальных статей
     public_base_url: str = ""           # адрес сайта для ссылок в сообщениях
     app_timezone: str = "Europe/Moscow"
     auto_create_tables: bool = False  # только для разработки; в проде - Alembic

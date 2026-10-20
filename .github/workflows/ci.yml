@@ -34,6 +34,8 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt pytest pytest-asyncio
       - run: python -m compileall -q app
+      - name: Import check (API and bot)
+        run: python -c "import app.main, app.bot.main, app.bot.auctions"
       - run: pytest -v --tb=short --junitxml=junit.xml
       - if: always()
         run: python ../.github/scripts/junit_annotations.py junit.xml
