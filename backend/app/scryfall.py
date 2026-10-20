@@ -86,8 +86,15 @@ async def _apply_russian(session, ru: dict[str, dict]) -> int:
             .where(Card.__table__.c.game == "mtg", Card.__table__.c.external_id == bindparam("oid"))
             .values(name_ru=bindparam("nr"), name_ru_lower=bindparam("nrl"),
                     type_ru=bindparam("tr"), text_ru=bindparam("xr")))
+    keys = list(ru)
+    known: set[str] = set()
+    for i in range(0, len(keys), 5000):    # обновляем и считаем только карты, которые есть в нашей базе
+        known |= set((await session.execute(select(Card.external_id).where(
+            Card.game == "mtg", Card.external_id.in_(keys[i:i + 5000])))).scalars())
     rows = [{"oid": k, "nr": v["name_ru"], "nrl": v["name_ru_lower"], "tr": v["type_ru"], "xr": v["text_ru"]}
-            for k, v in ru.items()]
+            for k, v in ru.items() if k in known]
+    if not rows:
+        return 0
     conn = await session.connection()
     for i in range(0, len(rows), 2000):
         await conn.execute(stmt, rows[i:i + 2000])

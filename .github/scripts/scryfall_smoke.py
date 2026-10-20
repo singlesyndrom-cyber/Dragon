@@ -25,6 +25,5 @@ assert card["prices"], "нет цен"
 assert dfc and len(dfc["extra"]["faces"]) == 2 and dfc["image_url"], dfc
 assert len(ru) > 100 and all(re.search("[а-яё]", r["name_ru"], re.I) for r in ru[:20]), ru[:3]
 assert page.get("has_more") and page.get("next_page")
-mb = oracle.get("size", 0) / 1e6
-print(f"::notice title=scryfall::oracle_cards {mb:.0f} МБ; русских на 1-й странице {len(ru)} "
+print(f"::notice title=scryfall::oracle_cards обновлён {oracle.get('updated_at', '?')[:10]}; русских на 1-й странице {len(ru)} "
       f"(всего {page.get('total_cards')}), пример: {ru[0]['name_ru']}; Sol Ring ${card['prices'].get('usd')}")
