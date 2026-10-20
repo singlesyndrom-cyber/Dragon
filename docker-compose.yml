@@ -27,6 +27,8 @@ services:
       args:
         API_URL: http://backend:8000
         NEXT_PUBLIC_TG_BOT_NAME: ${NEXT_PUBLIC_TG_BOT_NAME:-}
+    environment:
+      API_URL: http://backend:8000
     depends_on: [backend]
     ports: ["3000:3000"]
     restart: unless-stopped
