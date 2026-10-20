@@ -16,13 +16,13 @@ export default function CreateTournamentLink({ clubId }: { clubId?: number }) {
   const mine = clubId ? clubs.filter((c) => c.id === clubId) : clubs;
   if (!mine.length) return null;
   if (mine.length === 1) {
-    return <Link href={`/manage/clubs/${mine[0].id}#new-tournament`} className="btn primary">Создать турнир</Link>;
+    return <Link href={`/tournaments/new?club=${mine[0].id}`} className="btn primary">Создать турнир</Link>;
   }
   return (
     <details className="menu">
       <summary className="btn primary">Создать турнир</summary>
       <div className="menu-list">
-        {mine.map((c) => <Link key={c.id} href={`/manage/clubs/${c.id}#new-tournament`}>{c.name}</Link>)}
+        {mine.map((c) => <Link key={c.id} href={`/tournaments/new?club=${c.id}`}>{c.name}</Link>)}
       </div>
     </details>
   );

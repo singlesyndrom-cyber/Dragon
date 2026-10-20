@@ -178,7 +178,7 @@ function MyClubs() {
           {clubs.map((c) => (
             <li key={c.id} className="row" style={{ justifyContent: "space-between", padding: "8px 0" }}>
               <Link href={`/clubs/${c.slug}`}>{c.name}</Link>
-              <Link href={`/manage/clubs/${c.id}#new-tournament`} className="small">Создать турнир</Link>
+              <Link href={`/tournaments/new?club=${c.id}`} className="small">Создать турнир</Link>
             </li>
           ))}
         </ul>

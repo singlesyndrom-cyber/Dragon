@@ -40,6 +40,10 @@ export default function TournamentActions({ t }: { t: any }) {
       {mine ? (
         <p style={{ margin: 0 }}>Вы записаны{t.format === "edh" ? `, брекет ${mine.bracket}` : ""}.
           {mine.has_deck ? " Деклист подан." : ""}</p>
+      ) : open && !t.self_registration ? (
+        <p className="muted" style={{ margin: 0 }}>На этот турнир игроков записывает организатор клуба.</p>
+      ) : open && t.max_players && t.participants.length >= t.max_players ? (
+        <p className="muted" style={{ margin: 0 }}>Мест нет: записано {t.max_players} из {t.max_players}.</p>
       ) : open ? (
         <>
           {t.format === "edh" ? (
@@ -58,7 +62,7 @@ export default function TournamentActions({ t }: { t: any }) {
         </>
       ) : <p className="muted" style={{ margin: 0 }}>{t.status === "finished" ? "Турнир завершён." : "Регистрация закрыта: турнир уже идёт."}</p>}
 
-      {mine && open ? (
+      {mine && open && t.deck_policy !== "none" ? (
         <>
           <label>
             <span>Деклист</span>

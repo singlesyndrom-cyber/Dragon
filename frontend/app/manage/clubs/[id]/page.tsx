@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { use, useEffect, useState } from "react";
 import { Status, useAction } from "@/components/Form";
 import ArticleForm from "@/components/ArticleForm";
+import ConfirmButton from "@/components/ConfirmButton";
 import Guard from "@/components/Guard";
 import { api } from "@/lib/api";
 import { FORMATS, T_STATUS } from "@/lib/format";
@@ -31,6 +31,7 @@ function ManageClub({ clubId }: { clubId: number }) {
         <div>
           <NewTournament clubId={clubId} />
           <ClubTournaments clubId={clubId} />
+          <Seasons clubId={clubId} />
           <ArticleForm clubId={clubId} />
         </div>
         <aside><Settings clubId={clubId} initial={m.settings} /></aside>
@@ -66,52 +67,86 @@ function Settings({ clubId, initial }: { clubId: number; initial: any }) {
 }
 
 function NewTournament({ clubId }: { clubId: number }) {
-  const router = useRouter();
-  const [f, setF] = useState({ name: "", game: "mtg", format: "swiss", rounds: "", starts_at: "" });
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => {
-    const v = e.target.value;
-    setF((cur) => ({ ...cur, [k]: v }));   // функциональное обновление: быстрые правки не затирают друг друга
-  };
-  const { busy, error, run } = useAction();
   return (
-    <form id="new-tournament" onSubmit={(e) => {
-      e.preventDefault();
-      run(async () => {
-        const body: any = { club_id: clubId, name: f.name.trim(), game: f.game, format: f.format };
-        if (f.rounds && f.format !== "edh") body.rounds = +f.rounds;
-        if (f.starts_at) body.starts_at = f.starts_at;   // без пояса: сервер считает его московским временем
-        const r = await api("/tournaments", { body });
-        router.push(`/manage/tournaments/${r.id}`);     // сразу к управлению: повторный клик не создаст дубль
-      });
-    }}>
-      <h2 style={{ marginTop: 0 }}>Новый турнир</h2>
-      <label><span>Название</span><input required minLength={2} value={f.name} onChange={set("name")} /></label>
-      <div className="row inline">
-        <label><span>Игра</span>
-          <select value={f.game} onChange={set("game")}>
-            <option value="mtg">Magic: The Gathering</option><option value="berserk">Берсерк</option>
-          </select>
-        </label>
-        <label><span>Формат</span>
-          <select value={f.format} onChange={set("format")}>
-            {Object.entries(FORMATS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </label>
-        {f.format !== "edh" ? (
-          <label><span>Туров</span>
-            <input type="number" min={1} max={15} placeholder={f.format === "fast_swiss" ? "1" : "авто"} value={f.rounds} onChange={set("rounds")} style={{ width: 90 }} />
-          </label>
-        ) : null}
-        <label><span>Начало</span><input type="datetime-local" value={f.starts_at} onChange={set("starts_at")} /></label>
-      </div>
+    <section id="new-tournament" className="panel actions">
+      <h2 style={{ margin: 0 }}>Новый турнир</h2>
+      <p style={{ margin: 0 }} className="muted">Швейцарка, EDH-ивент или «Берсерк»: формат, сезон лиги, участники и деклисты настраиваются на следующем шаге.</p>
+      <Link href={`/tournaments/new?club=${clubId}`} className="btn primary">Создать турнир</Link>
+    </section>
+  );
+}
+
+const KIND_LABEL: Record<string, string> = { edh: "EDH", berserk: "Берсерк" };
+
+function Seasons({ clubId }: { clubId: number }) {
+  const [items, setItems] = useState<any[]>([]);
+  const [f, setF] = useState({ name: "", kind: "edh", months: "1", starts_on: "" });
+  const { busy, error, done, run } = useAction();
+  const load = () => api<any[]>(`/leagues?club_id=${clubId}`).then(setItems).catch(() => {});
+  useEffect(() => { load(); }, [clubId]);
+  const on = (k: keyof typeof f) => (e: { target: { value: string } }) => { const v = e.target.value; setF((c) => ({ ...c, [k]: v })); };
+  return (
+    <section>
+      <h2>Сезоны лиги</h2>
       <p className="hint">
-        {f.format === "edh" ? "Столы по 3–5 игроков, 70 минут на партию, рассадка по брекетам."
-          : f.format === "fast_swiss" ? "Обычно один тур. Пустое поле — 1 тур."
-          : "Пустое поле «Туров» — число туров посчитается по числу игроков при старте."}
+        Сезон длится 1, 2 или 3 месяца. EDH: каждый начинает сезон с банком 1000, ивенты сезона двигают этот банк.
+        «Берсерк»: таблица сезона — сумма очков турниров. Ивенты привязываются к сезону при создании турнира.
       </p>
-      <button className="primary" disabled={busy}>Создать турнир</button>
-      <Status error={error} />
-    </form>
+      {items.length ? (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Сезон</th><th>Формат</th><th>Даты</th><th className="r">Ивентов</th><th></th></tr></thead>
+            <tbody>
+              {items.map((l) => (
+                <tr key={l.id}>
+                  <td><Link href={`/leagues/${l.id}`}>{l.name}</Link></td>
+                  <td>{KIND_LABEL[l.kind]}</td>
+                  <td className="num small">{new Date(l.starts_on).toLocaleDateString("ru-RU")} — {new Date(l.ends_on).toLocaleDateString("ru-RU")}
+                    {l.status === "finished" ? <span className="badge" style={{ marginLeft: 8 }}>завершён</span>
+                      : l.status === "upcoming" ? <span className="badge" style={{ marginLeft: 8 }}>скоро</span>
+                      : <span className="badge live" style={{ marginLeft: 8 }}>идёт</span>}
+                  </td>
+                  <td className="r">{l.events}</td>
+                  <td className="r">
+                    {l.status !== "finished" ? (
+                      <ConfirmButton className="link-btn" disabled={busy} question={`Завершить «${l.name}» досрочно? Таблица зафиксируется.`}
+                        confirmLabel="Завершить" onConfirm={() => run(() => api(`/leagues/${l.id}/close`, { method: "POST" }), "Сезон завершён").then(load)}>
+                        Завершить
+                      </ConfirmButton>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      <form className="panel" onSubmit={(e) => {
+        e.preventDefault();
+        run(async () => {
+          await api("/leagues", { body: { club_id: clubId, name: f.name.trim(), kind: f.kind, months: +f.months, ...(f.starts_on ? { starts_on: f.starts_on } : {}) } });
+          setF((c) => ({ ...c, name: "" }));
+          await load();
+        }, "Сезон создан");
+      }}>
+        <h3>Новый сезон</h3>
+        <label><span>Название</span><input required minLength={2} maxLength={128} value={f.name} onChange={on("name")} placeholder="Например, Осень 2026" /></label>
+        <div className="row inline">
+          <label><span>Формат</span>
+            <select value={f.kind} onChange={on("kind")}><option value="edh">EDH</option><option value="berserk">Берсерк</option></select>
+          </label>
+          <label><span>Длительность</span>
+            <select value={f.months} onChange={on("months")}>
+              <option value="1">1 месяц</option><option value="2">2 месяца</option><option value="3">3 месяца</option>
+            </select>
+          </label>
+          <label><span>Начало</span><input type="date" value={f.starts_on} onChange={on("starts_on")} /></label>
+        </div>
+        <p className="hint">Пустая дата начала — сезон стартует сегодня.</p>
+        <button className="primary" disabled={busy}>Создать сезон</button>
+        <Status error={error} done={done} />
+      </form>
+    </section>
   );
 }
 

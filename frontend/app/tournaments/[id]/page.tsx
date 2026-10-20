@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import Markdown from "@/components/Markdown";
 import Standings, { Delta } from "@/components/Standings";
 import TournamentActions from "@/components/TournamentActions";
 import { sget } from "@/lib/api";
@@ -114,8 +115,10 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
             <dt>Формат</dt><dd>{FORMATS[t.format] || t.format}, {GAMES[t.game] || t.game}</dd>
             <dt>Начало</dt><dd>{dateTime(t.starts_at)}</dd>
             <dt>Статус</dt><dd>{T_STATUS[t.status]}{t.round ? `, тур ${t.round}${t.rounds_total ? ` из ${t.rounds_total}` : ""}` : ""}</dd>
-            <dt>Участники</dt><dd>{t.players}</dd>
+            <dt>Участники</dt><dd>{t.players}{t.max_players ? ` из ${t.max_players}` : ""}</dd>
+            {t.league ? (<><dt>Сезон лиги</dt><dd><Link href={`/leagues/${t.league.id}`}>{t.league.name}</Link></dd></>) : null}
           </dl>
+          {t.description ? <div className="section"><Markdown text={t.description} /></div> : null}
           {isEdh ? (
             <p className="muted small" style={{ marginTop: 16 }}>
               Партия длится 70 минут. Победитель забирает по 7% банка у каждого соперника; если победителя нет,
@@ -133,6 +136,8 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
                 <li key={p.user_id} style={{ padding: "8px 0" }}>
                   {p.nickname}
                   {isEdh ? <span className="muted small">, брекет {p.bracket}</span> : null}
+                  {p.guest ? <span className="badge" style={{ marginLeft: 8 }}>гость</span> : null}
+                  {p.dropped ? <span className="badge" style={{ marginLeft: 8 }}>выбыл</span> : null}
                 </li>
               ))}
             </ul>

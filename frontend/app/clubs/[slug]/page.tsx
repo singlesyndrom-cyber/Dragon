@@ -11,11 +11,13 @@ export default async function ClubPage({ params }: { params: Promise<{ slug: str
   const slug = decodeURIComponent((await params).slug);   // адрес может прийти уже закодированным
   const club = await sget<any>(`/clubs/${encodeURIComponent(slug)}`);
   if (!club) notFound();
-  const [board, tournaments, news] = await Promise.all([
+  const [board, tournaments, news, seasons] = await Promise.all([
     sget<any[]>(`/clubs/${club.id}/leaderboard`),
     sget<any[]>(`/tournaments?club_id=${club.id}&limit=20`),
     sget<any[]>(`/news?club_id=${club.id}&limit=5`),
+    sget<any[]>(`/leagues?club_id=${club.id}`),
   ]);
+  const liveSeasons = (seasons || []).filter((s) => s.status !== "finished");
   const rows = board || [];
   const byBank = [...rows].sort((a, b) => b.edh_bank - a.edh_bank).filter((r) => r.events_played > 0);
   const upcoming = (tournaments || []).filter((t) => t.status !== "finished");
@@ -40,6 +42,23 @@ export default async function ClubPage({ params }: { params: Promise<{ slug: str
             <CreateTournamentLink clubId={club.id} />
           </div>
           <EventList items={upcoming} empty="Анонсов пока нет." />
+
+          {liveSeasons.length ? (
+            <>
+              <h2>Сезоны лиги</h2>
+              <ul className="news-list">
+                {liveSeasons.map((s) => (
+                  <li key={s.id} style={{ padding: "10px 0" }}>
+                    <Link href={`/leagues/${s.id}`}>{s.name}</Link>{" "}
+                    <span className="muted small">
+                      {s.kind === "edh" ? "EDH" : "Берсерк"}, {dateOnly(s.starts_on)} — {dateOnly(s.ends_on)}
+                      {s.status === "upcoming" ? ", скоро" : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
 
           <h2>Лига клуба</h2>
           <Standings head={["Очки", "Ивентов"]} empty="Таблица заполнится после первого турнира."
