@@ -14,7 +14,7 @@ if os.getenv("RUN_INTEGRATION"):
     from app.auction import AuctionError
     from app.db import Base, SessionLocal, engine
     from app.main import app
-    from app.models import GlobalRole, Lot, OutboxMessage, User
+    from app.models import GlobalRole, OutboxMessage, User
     from app.security import create_token
 
 NOW = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)
@@ -35,9 +35,9 @@ def auth(user):
     return {"Authorization": f"Bearer {create_token(user.id)}"}
 
 
-async def outbox(s):
-    s.expire_all()
-    return (await s.execute(select(OutboxMessage).order_by(OutboxMessage.id))).scalars().all()
+async def outbox(_s=None):
+    async with SessionLocal() as fresh:   # отдельная сессия: видим то, что закоммитили сервис и API
+        return (await fresh.execute(select(OutboxMessage).order_by(OutboxMessage.id))).scalars().all()
 
 
 async def test_full_auction(env):
@@ -98,8 +98,9 @@ async def test_full_auction(env):
     assert set(finished) == {lot.id, lot2.id}
     with pytest.raises(AuctionError, match="завершены"):
         await svc.place_bid(s, lot.id, b2, 1000, now=NOW + timedelta(days=2))
-    s.expire_all()
-    assert (await s.get(Lot, lot.id)).status.value == "sold" and (await s.get(Lot, lot2.id)).status.value == "unsold"
+    await s.refresh(lot)
+    await s.refresh(lot2)
+    assert lot.status.value == "sold" and lot2.status.value == "unsold"
 
     msgs = [(m.kind, m.chat_id) for m in await outbox(s)]
     assert ("auction_won", "1002") in msgs and ("auction_sold", "1001") in msgs and ("auction_unsold", "1001") in msgs
@@ -164,8 +165,8 @@ async def test_disputed_complaint_ban(env):
 
     # блокировка: продавец больше не может выставлять лоты и ставить
     assert (await c.post(f"/admin/users/{seller.id}/ban", json={"banned": True}, headers=auth(admin))).status_code == 204
-    s.expire_all()
-    seller = await s.get(User, seller.id)
+    await s.refresh(seller)
+    assert seller.is_banned
     with pytest.raises(AuctionError, match="заблокирован"):
         await svc.create_lot(s, seller, "Mox Pearl", "NM", 100, 1, None, now=NOW)
     assert (await c.get("/auth/me", headers=auth(seller))).status_code == 401
