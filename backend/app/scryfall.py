@@ -8,6 +8,8 @@
 Параллельные запуски исключены advisory-блокировкой PostgreSQL; результат пишется в sync_runs.
 """
 import asyncio
+import gzip
+import json
 import logging
 import tempfile
 from datetime import datetime, timedelta, timezone
@@ -50,27 +52,63 @@ def explain(e: Exception) -> str:
     return raw
 
 
-def _parse_bulk(path: str) -> list[dict]:
-    import ijson
-    out = []
+def _open_bulk(path: str):
+    """Файл выгрузки как текстовый поток: распаковывает gzip, если он сжат."""
     with open(path, "rb") as f:
-        for obj in ijson.items(f, "item"):
-            card = normalize_scryfall(obj)
-            if card:
-                out.append(card)
+        compressed = f.read(2) == b"\x1f\x8b"
+    return gzip.open(path, "rt", encoding="utf-8") if compressed else open(path, encoding="utf-8")
+
+
+def iter_bulk(path: str):
+    """Карты из выгрузки Scryfall. Поддерживает оба формата: JSON-массив (старый download_uri)
+    и JSON Lines, по объекту на строку (jsonl_download_uri, в т.ч. .jsonl.gz)."""
+    with _open_bulk(path) as f:
+        head = f.read(4096).lstrip()
+    if head.startswith("["):
+        import ijson
+        with _open_bulk(path) as f:
+            yield from ijson.items(f, "item")
+        return
+    with _open_bulk(path) as f:
+        for line in f:
+            line = line.strip().rstrip(",")
+            if line and line not in ("[", "]"):
+                yield json.loads(line)
+
+
+def _parse_bulk(path: str) -> list[dict]:
+    out = []
+    for obj in iter_bulk(path):
+        card = normalize_scryfall(obj)
+        if card:
+            out.append(card)
     return out
+
+
+def bulk_url(meta: dict, kind: str = "oracle_cards") -> str:
+    """Ссылка на выгрузку: новый формат (jsonl_download_uri) или старый (download_uri)."""
+    item = next((x for x in meta.get("data", []) if x.get("type") == kind), None)
+    if not item:
+        raise ValueError(f"Scryfall не отдал выгрузку {kind}")
+    url = item.get("jsonl_download_uri") or item.get("download_uri")
+    if not url:
+        raise ValueError(f"В описании выгрузки {kind} нет ссылки на файл: поля {sorted(item)}")
+    return url
 
 
 async def _download_oracle(client: httpx.AsyncClient) -> list[dict]:
     meta = (await client.get(f"{API}/bulk-data")).raise_for_status().json()
-    uri = next(x["download_uri"] for x in meta["data"] if x["type"] == "oracle_cards")
-    with tempfile.NamedTemporaryFile(suffix=".json") as tmp:
+    uri = bulk_url(meta)
+    with tempfile.NamedTemporaryFile(suffix=".bulk") as tmp:
         async with client.stream("GET", uri) as resp:
             resp.raise_for_status()
             async for chunk in resp.aiter_bytes():
                 tmp.write(chunk)
         tmp.flush()
-        return await asyncio.to_thread(_parse_bulk, tmp.name)   # разбор ~150 МБ не блокирует event loop
+        cards = await asyncio.to_thread(_parse_bulk, tmp.name)   # разбор не блокирует event loop
+    if not cards:
+        raise ValueError("Выгрузка Scryfall скачалась, но карт в ней не найдено")
+    return cards
 
 
 async def _fetch_russian(client: httpx.AsyncClient, max_pages: int = 400) -> dict[str, dict]:

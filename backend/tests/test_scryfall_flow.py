@@ -1,4 +1,5 @@
 """Загрузка базы MTG: подменённый сервер Scryfall, настоящий PostgreSQL."""
+import gzip
 import json
 import os
 
@@ -45,12 +46,14 @@ def fake_scryfall(seen: list):
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
         url = str(request.url)
-        if url == "https://api.scryfall.com/bulk-data":
+        if url == "https://api.scryfall.com/bulk-data":   # формат Scryfall с октября 2026: JSON Lines в gzip
             return httpx.Response(200, json={"data": [
-                {"type": "default_cards", "download_uri": "https://data.test/default.json"},
-                {"type": "oracle_cards", "download_uri": "https://data.test/oracle.json"}]})
-        if url == "https://data.test/oracle.json":
-            return httpx.Response(200, content=json.dumps(ORACLE).encode())
+                {"type": "default_cards", "jsonl_download_uri": "https://data.test/default.jsonl.gz"},
+                {"type": "oracle_cards", "jsonl_download_uri": "https://data.test/oracle.jsonl.gz",
+                 "compressed_size": 123}]})
+        if url == "https://data.test/oracle.jsonl.gz":
+            body = "\n".join(json.dumps(c, ensure_ascii=False) for c in ORACLE).encode()
+            return httpx.Response(200, content=gzip.compress(body), headers={"content-type": "application/gzip"})
         if request.url.path == "/cards/search":
             return httpx.Response(200, json=RU_PAGE2 if request.url.params.get("page") == "2" else RU_PAGE1)
         return httpx.Response(404)
@@ -105,6 +108,19 @@ async def test_sync_search_and_decks(client):
     assert deck["unmatched"] == ["Непонятная"]
     names = [c["name"] for c in (await client.get(f"/decks/{deck['id']}", headers=h)).json()["cards"]]
     assert "Sol Ring" in names and "Delver of Secrets // Insectile Aberration" in names
+
+
+async def test_legacy_json_array_format(client):
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url.endswith("/bulk-data"):
+            return httpx.Response(200, json={"data": [{"type": "oracle_cards", "download_uri": "https://data.test/o.json"}]})
+        if url == "https://data.test/o.json":
+            return httpx.Response(200, content=json.dumps(ORACLE).encode())
+        return httpx.Response(404)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        run = await scryfall.sync(client=http, russian=False)
+    assert run.error is None and run.cards == 2
 
 
 async def test_admin_endpoints_and_lock(client):
