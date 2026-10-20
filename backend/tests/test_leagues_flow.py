@@ -58,7 +58,7 @@ async def test_edh_season_bank_resets_and_tracks(client):
     assert (await client.post("/leagues", json={"club_id": club["id"], "name": "Берсерк", "kind": "berserk", "months": 3},
                               headers=org)).status_code == 201
     other, _ = await reg(client, 99)
-    assert (await client.post("/leagues", json={"club_id": club["id"], "name": "X", "kind": "edh", "months": 1},
+    assert (await client.post("/leagues", json={"club_id": club["id"], "name": "Чужой", "kind": "edh", "months": 1},
                               headers=other)).status_code == 403
 
     # швейцарка к EDH-сезону не привязывается
