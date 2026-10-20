@@ -32,6 +32,12 @@ def sync_schema(conn) -> list[str]:
                 continue
             ddl = (f"ALTER TABLE {q(table.name)} ADD COLUMN IF NOT EXISTS {q(col.name)} "
                    f"{col.type.compile(dialect=conn.dialect)}")
+            if col.server_default is not None:
+                # значение по умолчанию: PostgreSQL сразу проставит его в уже существующих строках
+                arg = col.server_default.arg
+                ddl += f" DEFAULT {arg.text if hasattr(arg, 'text') else repr(str(arg))}"
+                if not col.nullable:
+                    ddl += " NOT NULL"
             conn.exec_driver_sql(ddl)
             changes.append(ddl)
         for idx in table.indexes:

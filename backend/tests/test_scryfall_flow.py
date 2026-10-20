@@ -172,3 +172,24 @@ async def test_schema_catch_up(client):
     assert {"name_ru_lower", "text_ru"} <= cols and idx and runs == 0
     async with engine.begin() as conn:
         assert await conn.run_sync(sync_schema) == []      # повторный запуск ничего не меняет
+
+    # колонки со значением по умолчанию: у старых строк появляется значение, а не NULL
+    async with engine.begin() as conn:
+        await conn.exec_driver_sql("INSERT INTO users (nickname, role, is_banned) VALUES ('Старый', 'player', false)")
+        await conn.exec_driver_sql("ALTER TABLE users DROP COLUMN is_guest")
+        await conn.exec_driver_sql("INSERT INTO clubs (name, slug, description, city) VALUES ('Старый клуб', 'old', '', '')")
+        cid = (await conn.exec_driver_sql("SELECT id FROM clubs WHERE slug='old'")).scalar()
+        uid = (await conn.exec_driver_sql("SELECT id FROM users WHERE nickname='Старый'")).scalar()
+        await conn.exec_driver_sql(
+            f"INSERT INTO tournaments (club_id, name, game, format, status, current_round, created_by) "
+            f"VALUES ({cid}, 'Старый', 'mtg', 'swiss', 'registration', 0, {uid})")
+        await conn.exec_driver_sql("ALTER TABLE tournaments DROP COLUMN self_registration, DROP COLUMN deck_policy, "
+                                   "DROP COLUMN description")
+    async with engine.begin() as conn:
+        changes = await conn.run_sync(sync_schema)
+    assert any("self_registration" in c and "DEFAULT true NOT NULL" in c for c in changes), changes
+    async with engine.begin() as conn:
+        row = (await conn.exec_driver_sql(
+            "SELECT self_registration, deck_policy, description FROM tournaments WHERE name='Старый'")).one()
+        guest = (await conn.exec_driver_sql("SELECT is_guest FROM users WHERE nickname='Старый'")).scalar()
+    assert tuple(row) == (True, "optional", "") and guest is False
