@@ -165,3 +165,67 @@ async def membership(club_id: int, user: User = Depends(current_user), session: 
         out["settings"] = {"description": club.description, "city": club.city,
                            "telegram_chat_id": club.telegram_chat_id}
     return out
+
+
+@router.get("/{club_id}/players")
+async def club_players(club_id: int, q: str = "", user: User = Depends(current_user),
+                       session: AsyncSession = Depends(get_session)):
+    """Подсказки для «Добавить игрока»: участники клуба (и гости клуба) по началу ника."""
+    if not await is_club_organizer(session, club_id, user):
+        raise HTTPException(403, "Нужны права организатора клуба")
+    stmt = (select(User.id, User.nickname, User.is_guest).join(ClubMember, ClubMember.user_id == User.id)
+            .where(ClubMember.club_id == club_id))
+    if q.strip():
+        stmt = stmt.where(User.nickname.ilike(f"%{q.strip()}%"))
+    rows = (await session.execute(stmt.order_by(User.is_guest, User.nickname).limit(20))).all()
+    return [{"user_id": uid, "nickname": nick, "guest": guest} for uid, nick, guest in rows]
+
+
+class MergeIn(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+
+
+@router.post("/{club_id}/guests/{guest_id}/merge")
+async def merge_guest(club_id: int, guest_id: int, data: MergeIn, user: User = Depends(current_user),
+                      session: AsyncSession = Depends(get_session)):
+    """Гость зарегистрировался: переносим его историю (турниры, матчи, столы EDH, банки) на аккаунт по email."""
+    from sqlalchemy import delete, update
+    from ..models import AuthAccount, EdhSeat, EdhTable, LeagueMember, Match, Provider, TournamentPlayer
+
+    if not await is_club_organizer(session, club_id, user):
+        raise HTTPException(403, "Нужны права организатора клуба")
+    guest = await session.get(User, guest_id)
+    if not guest or not guest.is_guest or guest.guest_club_id != club_id:
+        raise HTTPException(404, "Гость этого клуба не найден")
+    acc = (await session.execute(select(AuthAccount).where(
+        AuthAccount.provider == Provider.email, AuthAccount.external_id == data.email.strip().lower()))).scalar_one_or_none()
+    if not acc:
+        raise HTTPException(404, "Аккаунт с таким email не найден: игрок должен сначала зарегистрироваться")
+    target = acc.user_id
+    both = (await session.execute(select(TournamentPlayer.tournament_id).where(TournamentPlayer.user_id == target)
+                                  .intersect(select(TournamentPlayer.tournament_id).where(
+                                      TournamentPlayer.user_id == guest_id)))).all()
+    if both:
+        raise HTTPException(409, "Гость и аккаунт записаны в один и тот же турнир — объединение невозможно")
+    g_leagues = set((await session.execute(select(LeagueMember.league_id).where(LeagueMember.user_id == guest_id))).scalars())
+    t_leagues = set((await session.execute(select(LeagueMember.league_id).where(LeagueMember.user_id == target))).scalars())
+    if g_leagues & t_leagues:
+        raise HTTPException(409, "Гость и аккаунт уже играют в одном сезоне лиги — объединение невозможно")
+
+    for model, col in ((TournamentPlayer, TournamentPlayer.user_id), (Match, Match.p1_user_id), (Match, Match.p2_user_id),
+                       (EdhSeat, EdhSeat.user_id), (EdhTable, EdhTable.winner_user_id), (LeagueMember, LeagueMember.user_id)):
+        await session.execute(update(model).where(col == guest_id).values({col.key: target}))
+    g_mem = (await session.execute(select(ClubMember).where(ClubMember.club_id == club_id,
+                                                            ClubMember.user_id == guest_id))).scalar_one_or_none()
+    t_mem = (await session.execute(select(ClubMember).where(ClubMember.club_id == club_id,
+                                                            ClubMember.user_id == target))).scalar_one_or_none()
+    if g_mem and t_mem:
+        t_mem.league_points += g_mem.league_points
+        t_mem.events_played += g_mem.events_played
+        await session.delete(g_mem)
+    elif g_mem:
+        g_mem.user_id = target
+    await session.flush()
+    await session.execute(delete(User).where(User.id == guest_id))   # без ленивой загрузки связей
+    await session.commit()
+    return {"merged_into": target}

@@ -89,12 +89,16 @@ def _pair(order: list[int], played: set[frozenset]) -> list[tuple[int, int]] | N
     return None
 
 
-def pair_round(players: dict[int, tuple[float, int]], matches: list[MatchRec]) -> list[tuple[int, int | None]]:
-    """Возвращает пары (p1, p2); p2=None означает bye."""
+def pair_round(players: dict[int, tuple[float, int]], matches: list[MatchRec],
+               active: set[int] | None = None) -> list[tuple[int, int | None]]:
+    """Возвращает пары (p1, p2); p2=None означает bye.
+    players - все участники (для таблицы); active - кто играет дальше (без выбывших)."""
     if not matches:
         order = [pid for pid, _ in sorted(players.items(), key=lambda kv: kv[1][1])]  # жребий
     else:
         order = [r.player_id for r in compute_standings(players, matches)]
+    if active is not None:
+        order = [p for p in order if p in active]
 
     played = {frozenset((m.p1, m.p2)) for m in matches if m.p2 is not None}
     had_bye = {m.p1 for m in matches if m.p2 is None}

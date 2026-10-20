@@ -142,6 +142,8 @@ async def attach(deck_id: int, tid: int, user: User = Depends(current_user),
         raise HTTPException(404, "Колода или турнир не найдены")
     if t.status != TournamentStatus.registration:
         raise HTTPException(400, "Деклист можно подать только до начала турнира")
+    if t.deck_policy == "none":
+        raise HTTPException(400, "На этот турнир деклисты не принимаются")
     if t.game != deck.game:
         raise HTTPException(400, f"Игра колоды ({deck.game}) не совпадает с игрой турнира ({t.game})")
     tp = (await session.execute(select(TournamentPlayer).where(

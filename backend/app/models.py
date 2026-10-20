@@ -1,7 +1,7 @@
 import enum
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import (DateTime, Enum, Float, ForeignKey, Integer, String,
+from sqlalchemy import (Date, DateTime, Enum, Float, ForeignKey, Integer, String, text,
                         Text, UniqueConstraint, func)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,6 +32,9 @@ class User(Base):
     role: Mapped[GlobalRole] = mapped_column(Enum(GlobalRole), default=GlobalRole.player)
     is_banned: Mapped[bool] = mapped_column(default=False)
     tg_username: Mapped[str | None] = mapped_column(String(64))  # для связи сторон сделки
+    # гость: игрок, которого организатор добавил по имени, без аккаунта; позже сливается с настоящим
+    is_guest: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    guest_club_id: Mapped[int | None] = mapped_column(Integer)   # клуб, где гость был добавлен
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     accounts: Mapped[list["AuthAccount"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -132,6 +135,12 @@ class Tournament(Base):
     current_round: Mapped[int] = mapped_column(Integer, default=0)
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    # настройки как в AetherHub: описание, деклисты, кто записывает игроков, лимит, сезон лиги
+    description: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
+    deck_policy: Mapped[str] = mapped_column(String(10), default="optional", server_default=text("'optional'"))  # none|optional|required
+    self_registration: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
+    max_players: Mapped[int | None] = mapped_column(Integer)
+    league_id: Mapped[int | None] = mapped_column(ForeignKey("leagues.id", ondelete="SET NULL"), index=True)
 
     players: Mapped[list["TournamentPlayer"]] = relationship(cascade="all, delete-orphan")
     matches: Mapped[list["Match"]] = relationship(cascade="all, delete-orphan")
@@ -148,6 +157,7 @@ class TournamentPlayer(Base):
     bracket: Mapped[int] = mapped_column(Integer, default=2)       # брекет колоды EDH (1-5)
     checked_in: Mapped[bool] = mapped_column(default=False)        # пришёл на ивент (отмечает организатор)
     deck_id: Mapped[int | None] = mapped_column(ForeignKey("decks.id", ondelete="SET NULL"))
+    dropped: Mapped[bool] = mapped_column(default=False, server_default=text("false"))   # выбыл: без пар в следующих турах
 
     user: Mapped[User] = relationship()
 
@@ -447,3 +457,39 @@ class SyncRun(Base):
     cards: Mapped[int] = mapped_column(Integer, default=0)
     russian: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text)
+
+
+# ---------------- Сезоны лиг ----------------
+class LeagueKind(str, enum.Enum):
+    edh = "edh"            # EDH: банк на сезон (старт 1000), таблица по банку
+    berserk = "berserk"    # «Берсерк»: сумма очков турниров сезона (3/1/0)
+
+
+class League(Base):
+    """Сезон лиги клуба длиной 1-3 месяца. Турниры сезона привязываются через Tournament.league_id."""
+    __tablename__ = "leagues"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    kind: Mapped[LeagueKind] = mapped_column(Enum(LeagueKind))
+    months: Mapped[int] = mapped_column(Integer)
+    starts_on: Mapped[date] = mapped_column(Date)
+    ends_on: Mapped[date] = mapped_column(Date)
+    description: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
+    closed: Mapped[bool] = mapped_column(default=False, server_default=text("false"))  # закрыт досрочно вручную
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LeagueMember(Base):
+    """Участник сезона. Для EDH здесь банк сезона: сбрасывается до 1000 с каждым новым сезоном."""
+    __tablename__ = "league_members"
+    __table_args__ = (UniqueConstraint("league_id", "user_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    league_id: Mapped[int] = mapped_column(ForeignKey("leagues.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    edh_bank: Mapped[float] = mapped_column(Float, default=1000.0, server_default=text("1000"))
+    last_bonus_week: Mapped[str | None] = mapped_column(String(10))
+    events_played: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))

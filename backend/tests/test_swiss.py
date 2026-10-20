@@ -53,3 +53,12 @@ def test_draw_and_bye_scoring():
 
 def test_default_rounds():
     assert [default_rounds(n) for n in (2, 3, 8, 9, 16)] == [1, 2, 3, 4, 4]
+
+
+def test_dropped_player_gets_no_pairing_but_stays_in_standings():
+    players = mk(5)
+    ms = [MatchRec(1, 2, "p1"), MatchRec(3, 4, "p1"), MatchRec(5, None, None)]
+    pairs = pair_round(players, ms, active={1, 3, 4, 5})
+    ids = [x for p in pairs for x in p if x is not None]
+    assert 2 not in ids and sorted(ids) == [1, 3, 4, 5] and all(b is not None for _, b in pairs)
+    assert {r.player_id for r in compute_standings(players, ms)} == {1, 2, 3, 4, 5}

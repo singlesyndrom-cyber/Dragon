@@ -8,10 +8,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .. import edh, notify
+from .. import edh, leagues, notify
 from ..db import SessionLocal, get_session
 from ..deps import current_user, is_club_organizer
-from ..models import (ClubMember, EdhSeat, EdhTable, EdhTableStatus, Tournament,
+from ..models import (ClubMember, EdhSeat, League, EdhTable, EdhTableStatus, Tournament,
                       TournamentFormat, TournamentPlayer, TournamentStatus, User)
 from .tournaments import _recompute_club_stats
 
@@ -64,10 +64,7 @@ async def settle_table(session: AsyncSession, table_id: int, outcome: str, winne
         raise HTTPException(409, "Стол уже закрыт")
     t = await session.get(Tournament, table.tournament_id)
     seats = (await session.execute(select(EdhSeat).where(EdhSeat.table_id == table.id))).scalars().all()
-    members = {m.user_id: m for m in (await session.execute(
-        select(ClubMember).where(ClubMember.club_id == t.club_id,
-                                 ClubMember.user_id.in_([s.user_id for s in seats]))
-        .with_for_update())).scalars()}
+    members = await leagues.bank_holders(session, t, [s.user_id for s in seats], lock=True)  # банк сезона или клуба
     banks = {s.user_id: members[s.user_id].edh_bank for s in seats}
     if outcome == "win" and winner_id not in banks:
         raise HTTPException(400, "Победитель не сидит за этим столом")
@@ -144,20 +141,21 @@ async def new_round(tid: int, user: User = Depends(current_user), session: Async
     if t.rounds_total and t.current_round >= t.rounds_total:
         raise HTTPException(400, "Все туры сыграны, завершите ивент")
 
+    if t.league_id:
+        league = await session.get(League, t.league_id)
+        if league and leagues.status(league, _now().date()) == "finished":
+            raise HTTPException(400, "Сезон лиги завершён: новые туры в нём не проводятся")
     tps = (await session.execute(select(TournamentPlayer).where(
-        TournamentPlayer.tournament_id == tid, TournamentPlayer.checked_in.is_(True)))).scalars().all()
+        TournamentPlayer.tournament_id == tid, TournamentPlayer.checked_in.is_(True),
+        TournamentPlayer.dropped.is_(False)))).scalars().all()
     if len(tps) < 3:
         raise HTTPException(400, "Нужно минимум 3 пришедших игрока")
 
-    members = {m.user_id: m for m in (await session.execute(select(ClubMember).where(
-        ClubMember.club_id == t.club_id, ClubMember.user_id.in_([p.user_id for p in tps])))).scalars()}
+    members = await leagues.bank_holders(session, t, [p.user_id for p in tps])
     iso = _now().isocalendar()
     week = f"{iso.year}-W{iso.week:02d}"
     for tp in tps:
-        m = members.get(tp.user_id)
-        if m is None:
-            m = members[tp.user_id] = ClubMember(club_id=t.club_id, user_id=tp.user_id)
-            session.add(m)
+        m = members[tp.user_id]
         if m.last_bonus_week != week:                      # надбавка только пришедшим и зарегистрированным
             m.edh_bank = round((m.edh_bank or edh.START_BANK) + edh.WEEKLY_BONUS, 2)
             m.last_bonus_week = week
@@ -236,9 +234,9 @@ async def results(tid: int, session: AsyncSession = Depends(get_session)):
         .join(EdhTable, EdhTable.id == EdhSeat.table_id)
         .where(EdhTable.tournament_id == tid, EdhTable.status == EdhTableStatus.finished)
         .group_by(EdhSeat.user_id))).all()
-    names = {u.id: u.nickname for u in (await session.execute(select(User))).scalars()}
-    banks = {m.user_id: m.edh_bank for m in (await session.execute(
-        select(ClubMember).where(ClubMember.club_id == t.club_id))).scalars()}
+    uids = [r[0] for r in rows]
+    names = dict((await session.execute(select(User.id, User.nickname).where(User.id.in_(uids)))).all()) if uids else {}
+    banks = {uid: m.edh_bank for uid, m in (await leagues.bank_holders(session, t, uids)).items()} if uids else {}
     out = [{"user_id": uid, "nickname": names.get(uid), "net": round(net or 0, 2), "games": g,
             "bank": banks.get(uid)} for uid, net, g in rows]
     return sorted(out, key=lambda r: -r["net"])
@@ -257,7 +255,10 @@ async def finish(tid: int, user: User = Depends(current_user), session: AsyncSes
         TournamentPlayer.tournament_id == tid, TournamentPlayer.checked_in.is_(True)))).scalars().all()
     for m in (await session.execute(select(ClubMember).where(
             ClubMember.club_id == t.club_id, ClubMember.user_id.in_(attended)))).scalars():
-        m.events_played += 1
+        m.events_played += 1                                   # активность в клубе
+    if t.league_id and attended:
+        for m in (await leagues.bank_holders(session, t, list(attended))).values():
+            m.events_played += 1                               # ивенты в сезоне
     t.status = TournamentStatus.finished
     await session.flush()
     await _recompute_club_stats(session, t.club_id)

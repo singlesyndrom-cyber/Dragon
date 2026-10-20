@@ -85,6 +85,18 @@ async def on_tournament_finished(session, t: Tournament, swiss_table=None) -> No
         stats = [f"Сыграно матчей: {played}", f"Ничьих: {draws}"]
         participants, league_title = len(table), "Лига клуба"
 
+    if t.league_id:   # турнир сезона: в отчёт - таблица сезона, а не общая лига клуба
+        from . import leagues as L
+        from .models import League, LeagueKind
+        season = await session.get(League, t.league_id)
+        if season:
+            if season.kind == LeagueKind.edh:
+                srows = await L.edh_table(session, season)
+                league = [(i, r["nickname"], f"{r['bank']:.0f}") for i, r in enumerate(srows[:10], 1)]
+            else:
+                srows = await L.berserk_table(session, season)
+                league = [(i, r["nickname"], f"{r['points']} оч.") for i, r in enumerate(srows[:10], 1)]
+            league_title = f"Сезон «{season.name}»"
     data = ReportData(title=t.name, club=club.name, game=t.game, fmt=t.format.value, date=t.starts_at,
                       participants=participants, rounds=t.current_round or None,
                       podium=[(p, n) for p, n, _ in standings[:3]], standings=standings, league_title=league_title,
