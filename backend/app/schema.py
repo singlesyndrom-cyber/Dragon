@@ -13,6 +13,16 @@ from .db import Base
 log = logging.getLogger("schema")
 
 
+def _default_sql(col, dialect) -> str:
+    """SQL значения по умолчанию: text("false") -> false, func.now() -> now(), строка -> 'строка'."""
+    arg = col.server_default.arg
+    if isinstance(arg, str):
+        return "'" + arg.replace("'", "''") + "'"
+    if hasattr(arg, "text"):
+        return arg.text
+    return str(arg.compile(dialect=dialect))
+
+
 def sync_schema(conn) -> list[str]:
     """Вызывать через conn.run_sync(sync_schema). Возвращает список выполненных изменений."""
     import app.models  # noqa: F401  регистрирует все таблицы
@@ -34,8 +44,7 @@ def sync_schema(conn) -> list[str]:
                    f"{col.type.compile(dialect=conn.dialect)}")
             if col.server_default is not None:
                 # значение по умолчанию: PostgreSQL сразу проставит его в уже существующих строках
-                arg = col.server_default.arg
-                ddl += f" DEFAULT {arg.text if hasattr(arg, 'text') else repr(str(arg))}"
+                ddl += f" DEFAULT {_default_sql(col, conn.dialect)}"
                 if not col.nullable:
                     ddl += " NOT NULL"
             conn.exec_driver_sql(ddl)
@@ -46,8 +55,7 @@ def sync_schema(conn) -> list[str]:
             info = cols.get(col.name)
             if info is None or col.server_default is None or col.name in [c.name for c in table.primary_key]:
                 continue
-            arg = col.server_default.arg
-            default = arg.text if hasattr(arg, "text") else repr(str(arg))
+            default = _default_sql(col, conn.dialect)
             if info.get("default") is None:
                 conn.exec_driver_sql(f"ALTER TABLE {q(table.name)} ALTER COLUMN {q(col.name)} SET DEFAULT {default}")
                 changes.append(f"{table.name}.{col.name}: DEFAULT {default}")

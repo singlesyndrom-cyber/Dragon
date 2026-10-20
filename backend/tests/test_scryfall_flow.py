@@ -42,6 +42,16 @@ RU_PAGE2 = {"has_more": False, "data": [
     {"lang": "ru", "oracle_id": "o-unknown", "printed_name": "Нет в базе"}]}
 
 
+def test_default_sql_forms():
+    from sqlalchemy import Boolean, Column, DateTime, String, func, text
+    from sqlalchemy.dialects import postgresql
+    from app.schema import _default_sql
+    d = postgresql.dialect()
+    assert _default_sql(Column("a", DateTime, server_default=func.now()), d) == "now()"
+    assert _default_sql(Column("b", Boolean, server_default=text("false")), d) == "false"
+    assert _default_sql(Column("c", String, server_default="it's"), d) == "'it''s'"
+
+
 def fake_scryfall(seen: list):
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
