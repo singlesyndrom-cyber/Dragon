@@ -5,8 +5,8 @@
 """
 import logging
 
-from sqlalchemy import inspect
-from sqlalchemy.schema import CreateIndex
+from sqlalchemy import Sequence, inspect
+from sqlalchemy.schema import CreateIndex, CreateSequence
 
 from .db import Base
 
@@ -28,6 +28,13 @@ def sync_schema(conn) -> list[str]:
     import app.models  # noqa: F401  регистрирует все таблицы
 
     Base.metadata.create_all(conn)
+    # create_all создаёт последовательность колонки только вместе с новой таблицей;
+    # для уже существующей таблицы (новая колонка с номером) создаём её сами
+    if conn.dialect.name == "postgresql":
+        for table in Base.metadata.sorted_tables:
+            for col in table.columns:
+                if isinstance(col.default, Sequence):
+                    conn.execute(CreateSequence(col.default, if_not_exists=True))
     insp = inspect(conn)
     q = conn.dialect.identifier_preparer.quote
     changes = []

@@ -104,8 +104,9 @@ async def test_old_accounts_get_numbers_on_schema_sync(client):
     tid = r.json()["id"]
     await client.post(f"/tournaments/{tid}/players", json={"nickname": "Гость"}, headers=org)
     async with engine.begin() as conn:
+        # как в базе, созданной до появления номеров: нет ни колонки, ни последовательности
         await conn.execute(text("ALTER TABLE users DROP COLUMN player_no"))
-        await conn.execute(text("ALTER SEQUENCE player_no_seq RESTART WITH 1001"))
+        await conn.execute(text("DROP SEQUENCE player_no_seq"))
         changes = await conn.run_sync(sync_schema)
         assert any("выдано номеров 3" in c for c in changes)
         assert await conn.run_sync(sync_schema) == []
