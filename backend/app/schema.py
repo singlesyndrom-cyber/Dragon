@@ -40,6 +40,22 @@ def sync_schema(conn) -> list[str]:
                     ddl += " NOT NULL"
             conn.exec_driver_sql(ddl)
             changes.append(ddl)
+        # ремонт: колонка уже есть, но добавлена без значения по умолчанию (старая версия этого кода)
+        cols = {c["name"]: c for c in insp.get_columns(table.name)}
+        for col in table.columns:
+            info = cols.get(col.name)
+            if info is None or col.server_default is None or col.name in [c.name for c in table.primary_key]:
+                continue
+            arg = col.server_default.arg
+            default = arg.text if hasattr(arg, "text") else repr(str(arg))
+            if info.get("default") is None:
+                conn.exec_driver_sql(f"ALTER TABLE {q(table.name)} ALTER COLUMN {q(col.name)} SET DEFAULT {default}")
+                changes.append(f"{table.name}.{col.name}: DEFAULT {default}")
+            if not col.nullable and info.get("nullable"):
+                filled = conn.exec_driver_sql(
+                    f"UPDATE {q(table.name)} SET {q(col.name)} = {default} WHERE {q(col.name)} IS NULL").rowcount
+                conn.exec_driver_sql(f"ALTER TABLE {q(table.name)} ALTER COLUMN {q(col.name)} SET NOT NULL")
+                changes.append(f"{table.name}.{col.name}: заполнено {filled} пустых, NOT NULL")
         for idx in table.indexes:
             conn.execute(CreateIndex(idx, if_not_exists=True))
     for ch in changes:

@@ -193,3 +193,21 @@ async def test_schema_catch_up(client):
             "SELECT self_registration, deck_policy, description FROM tournaments WHERE name='Старый'")).one()
         guest = (await conn.exec_driver_sql("SELECT is_guest FROM users WHERE nickname='Старый'")).scalar()
     assert tuple(row) == (True, "optional", "") and guest is False
+
+    # ремонт базы, где колонки уже добавлены старой версией без значений по умолчанию (NULL в старых строках)
+    async with engine.begin() as conn:
+        await conn.exec_driver_sql("ALTER TABLE tournaments ALTER COLUMN self_registration DROP DEFAULT, "
+                                   "ALTER COLUMN self_registration DROP NOT NULL, "
+                                   "ALTER COLUMN deck_policy DROP DEFAULT, ALTER COLUMN deck_policy DROP NOT NULL")
+        await conn.exec_driver_sql("UPDATE tournaments SET self_registration = NULL, deck_policy = NULL")
+    async with engine.begin() as conn:
+        fixes = await conn.run_sync(sync_schema)
+    assert any("self_registration: заполнено 1" in c for c in fixes), fixes
+    async with engine.begin() as conn:
+        row = (await conn.exec_driver_sql("SELECT self_registration, deck_policy FROM tournaments WHERE name='Старый'")).one()
+        nullable = (await conn.exec_driver_sql(
+            "SELECT is_nullable FROM information_schema.columns WHERE table_name='tournaments' "
+            "AND column_name='self_registration'")).scalar()
+    assert tuple(row) == (True, "optional") and nullable == "NO"
+    async with engine.begin() as conn:
+        assert await conn.run_sync(sync_schema) == []      # после ремонта снова ничего не меняет
