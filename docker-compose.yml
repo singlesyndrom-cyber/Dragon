@@ -10,6 +10,7 @@ services:
   backend:
     build: ./backend
     env_file: .env
+    dns: [1.1.1.1, 8.8.8.8, 77.88.8.8]   # явные DNS: в Docker Desktop контейнеры иногда не находят внешние сайты
     depends_on: [db]
     ports: ["8000:8000"]
     volumes: ["./backend:/srv"]
@@ -17,6 +18,7 @@ services:
   bot:   # ровно один экземпляр: рассылает очередь outbox и отвечает на команды
     build: ./backend
     env_file: .env
+    dns: [1.1.1.1, 8.8.8.8, 77.88.8.8]
     depends_on: [db]
     volumes: ["./backend:/srv"]
     command: python -m app.bot.main

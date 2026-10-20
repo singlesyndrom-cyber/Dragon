@@ -128,7 +128,13 @@ async def test_admin_endpoints_and_lock(client):
         return httpx.Response(500)
     async with httpx.AsyncClient(transport=httpx.MockTransport(broken)) as http:
         run = await scryfall.sync(client=http)
-    assert run.cards == 0 and "500" in run.error
+    assert run.cards == 0 and "500" in run.error and "попробуйте позже" in run.error
+
+    async def no_dns(request):
+        raise httpx.ConnectError("[Errno -5] No address associated with hostname")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(no_dns)) as http:
+        run = await scryfall.sync(client=http)
+    assert "DNS" in run.error and "Errno -5" in run.error
     last = (await client.get("/admin/cards/sync/status", headers=h)).json()["last"]
     assert last["cards"] == 0 and last["error"] and last["trigger"] == "admin"
 

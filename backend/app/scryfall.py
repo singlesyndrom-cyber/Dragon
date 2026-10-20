@@ -34,6 +34,22 @@ class SyncBusy(Exception):
     pass
 
 
+def explain(e: Exception) -> str:
+    """Понятное админу описание сбоя загрузки (сырой текст ошибки - в конце, для логов)."""
+    raw = repr(e)[:500]
+    if isinstance(e, httpx.ConnectError) and ("address" in raw.lower() or "name" in raw.lower()):
+        return ("Сервер не может найти адрес api.scryfall.com: у контейнера не работает DNS или нет выхода "
+                "в интернет. При локальном запуске в Docker Desktop помогает перезапуск Docker Desktop, "
+                "отключение VPN или явные DNS в docker-compose.yml. " + raw)
+    if isinstance(e, (httpx.ConnectError, httpx.ConnectTimeout)):
+        return "Нет соединения с api.scryfall.com: проверьте выход сервера в интернет и фаервол. " + raw
+    if isinstance(e, httpx.TimeoutException):
+        return "Scryfall слишком долго отвечает, попробуйте позже. " + raw
+    if isinstance(e, httpx.HTTPStatusError):
+        return f"Scryfall ответил ошибкой {e.response.status_code}, попробуйте позже. " + raw
+    return raw
+
+
 def _parse_bulk(path: str) -> list[dict]:
     import ijson
     out = []
@@ -126,10 +142,10 @@ async def sync(trigger: str = "admin", client: httpx.AsyncClient | None = None, 
                         try:
                             run.russian = await _apply_russian(s, await _fetch_russian(http))
                         except httpx.HTTPError as e:     # без русских названий база всё равно полезна
-                            run.error = f"Русские названия не загружены: {e!r}"[:2000]
+                            run.error = f"Русские названия не загружены. {explain(e)}"[:2000]
                 except Exception as e:  # noqa: BLE001
                     await s.rollback()
-                    run.error = repr(e)[:2000]
+                    run.error = explain(e)[:2000]
                     log.exception("scryfall sync failed")
                 finally:
                     if own:
