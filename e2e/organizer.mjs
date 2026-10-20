@@ -62,8 +62,8 @@ try {
   await page.getByRole("link", { name: "Создать турнир" }).first().click();
   await page.waitForURL(/\/tournaments\/new/);
   await page.getByText("Magic: швейцарская система").click();
-  await page.getByLabel("Название").fill("Е2Е швейцарка");
-  await page.getByLabel("Туров").fill("2");
+  await page.getByLabel("Название", { exact: true }).fill("Е2Е швейцарка");
+  await page.getByLabel("Туров", { exact: true }).fill("2");
   await page.getByLabel("Описание для игроков").fill("Приходите к **18:00**");
   await shot("wizard");
   await page.getByRole("button", { name: "Создать турнир" }).click();
@@ -143,7 +143,7 @@ try {
   await page.getByText("EDH: банк с таймером").click();
   await visible(page.getByRole("radio", { name: /Осень E2E/ }), "в мастере есть сезон");
   check(await page.getByRole("radio", { name: /Осень E2E/ }).isChecked(), "единственный активный сезон выбран сам");
-  await page.getByLabel("Название").fill("Е2Е EDH-среда");
+  await page.getByLabel("Название", { exact: true }).fill("Е2Е EDH-среда");
   await page.getByRole("button", { name: "Создать турнир" }).click();
   await page.waitForURL(/\/manage\/tournaments\/\d+/);
   for (const name of ["Аня", "Боря", "Вася"]) {
