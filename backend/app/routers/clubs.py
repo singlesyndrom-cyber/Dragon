@@ -133,3 +133,20 @@ async def telegram_test(club_id: int, user: User = Depends(current_user),
                          f"✅ Бот подключён к клубу «{notify.esc(club.name)}». Анонсы и итоги будут приходить сюда.")
     await session.commit()
     return {"queued": True}
+
+
+@router.get("/{club_id}/membership")
+async def membership(club_id: int, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    """Роль текущего пользователя в клубе; организатору - ещё и настройки клуба для формы."""
+    club = await session.get(Club, club_id)
+    if not club:
+        raise HTTPException(404, "Клуб не найден")
+    m = (await session.execute(select(ClubMember).where(ClubMember.club_id == club_id,
+                                                        ClubMember.user_id == user.id))).scalar_one_or_none()
+    can_manage = await is_club_organizer(session, club_id, user)
+    out = {"member": m is not None, "role": m.role if m else None, "can_manage": can_manage,
+           "edh_bank": round(m.edh_bank, 1) if m else None, "league_points": m.league_points if m else None}
+    if can_manage:
+        out["settings"] = {"description": club.description, "city": club.city,
+                           "telegram_chat_id": club.telegram_chat_id}
+    return out

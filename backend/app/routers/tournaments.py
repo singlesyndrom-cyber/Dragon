@@ -88,14 +88,38 @@ async def create_tournament(data: TournamentIn, user: User = Depends(current_use
     return {"id": t.id}
 
 
+def _t_out(t: Tournament, club: Club | None, players: int | None = None) -> dict:
+    return {"id": t.id, "club_id": t.club_id, "club": club.name if club else None, "club_slug": club.slug if club else None,
+            "name": t.name, "game": t.game, "format": t.format, "status": t.status, "round": t.current_round,
+            "rounds_total": t.rounds_total, "starts_at": t.starts_at, "players": players}
+
+
 @router.get("")
-async def list_tournaments(club_id: int | None = None, session: AsyncSession = Depends(get_session)):
-    q = select(Tournament).order_by(Tournament.starts_at.desc()).limit(100)
+async def list_tournaments(club_id: int | None = None, status: TournamentStatus | None = None,
+                           limit: int = Query(100, ge=1, le=200), session: AsyncSession = Depends(get_session)):
+    counts = (select(TournamentPlayer.tournament_id, func.count().label("n"))
+              .group_by(TournamentPlayer.tournament_id).subquery())
+    q = (select(Tournament, Club, counts.c.n).join(Club, Club.id == Tournament.club_id)
+         .outerjoin(counts, counts.c.tournament_id == Tournament.id))
     if club_id:
         q = q.where(Tournament.club_id == club_id)
-    return [{"id": t.id, "club_id": t.club_id, "name": t.name, "format": t.format,
-             "status": t.status, "round": t.current_round, "rounds_total": t.rounds_total}
-            for t in (await session.execute(q)).scalars()]
+    if status:
+        q = q.where(Tournament.status == status)
+    order = Tournament.starts_at.asc() if status == TournamentStatus.registration else Tournament.starts_at.desc()
+    rows = (await session.execute(q.order_by(order).limit(limit))).all()
+    return [_t_out(t, c, n or 0) for t, c, n in rows]
+
+
+@router.get("/{tid}")
+async def get_tournament(tid: int, session: AsyncSession = Depends(get_session)):
+    """Карточка турнира: клуб и участники (с брекетом и отметкой о приходе для EDH)."""
+    t = await _get(session, tid)
+    club = await session.get(Club, t.club_id)
+    rows = (await session.execute(select(TournamentPlayer, User.nickname).join(User, User.id == TournamentPlayer.user_id)
+                                  .where(TournamentPlayer.tournament_id == tid).order_by(User.nickname))).all()
+    return {**_t_out(t, club, len(rows)),
+            "participants": [{"user_id": tp.user_id, "nickname": nick, "bracket": tp.bracket,
+                              "checked_in": tp.checked_in, "has_deck": tp.deck_id is not None} for tp, nick in rows]}
 
 
 @router.post("/{tid}/register", status_code=204)
@@ -151,10 +175,12 @@ async def start(tid: int, user: User = Depends(current_user), session: AsyncSess
 async def get_round(tid: int, round_no: int, session: AsyncSession = Depends(get_session)):
     res = await session.execute(
         select(Match).where(Match.tournament_id == tid, Match.round_no == round_no).order_by(Match.table_no))
-    names = {u.id: u.nickname for u in (await session.execute(select(User))).scalars()}
-    return [{"match_id": m.id, "table": m.table_no, "p1": names.get(m.p1_user_id),
-             "p2": names.get(m.p2_user_id) if m.p2_user_id else None, "result": m.result}
-            for m in res.scalars()]
+    ms = res.scalars().all()
+    ids = {m.p1_user_id for m in ms} | {m.p2_user_id for m in ms if m.p2_user_id}
+    names = dict((await session.execute(select(User.id, User.nickname).where(User.id.in_(ids)))).all())
+    return [{"match_id": m.id, "table": m.table_no, "p1_id": m.p1_user_id, "p1": names.get(m.p1_user_id),
+             "p2_id": m.p2_user_id, "p2": names.get(m.p2_user_id) if m.p2_user_id else None, "result": m.result}
+            for m in ms]
 
 
 @router.post("/matches/{match_id}/result", status_code=204)
@@ -193,7 +219,7 @@ async def next_round(tid: int, user: User = Depends(current_user), session: Asyn
 async def standings(tid: int, session: AsyncSession = Depends(get_session)):
     t = await _get(session, tid)
     players, _, recs = await _state(session, t)
-    names = {u.id: u.nickname for u in (await session.execute(select(User))).scalars()}
+    names = dict((await session.execute(select(User.id, User.nickname).where(User.id.in_(list(players))))).all())
     return [{"rank": r.rank, "player": names.get(r.player_id), "user_id": r.player_id, "points": r.points,
              "owp": round(r.owp, 3), "buchholz": r.buchholz} for r in compute_standings(players, recs)]
 

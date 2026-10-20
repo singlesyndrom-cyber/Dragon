@@ -75,6 +75,14 @@ async def test_swiss_flow(client):
 
     for h, _ in users:
         assert (await client.post(f"/tournaments/{tid}/register", headers=h)).status_code == 204
+    card = (await client.get(f"/tournaments/{tid}")).json()
+    assert card["club_slug"] == club["slug"] and card["players"] == 5 and len(card["participants"]) == 5
+    listed = (await client.get("/tournaments?status=registration")).json()
+    assert listed[0]["id"] == tid and listed[0]["club"] == "Дракон" and listed[0]["players"] == 5
+    mem = (await client.get(f"/clubs/{club['id']}/membership", headers=org)).json()
+    assert mem["can_manage"] and mem["settings"]["telegram_chat_id"] == "-100123"
+    mem2 = (await client.get(f"/clubs/{club['id']}/membership", headers=users[1][0])).json()
+    assert mem2["member"] and not mem2["can_manage"] and "settings" not in mem2 and mem2["edh_bank"] == 1000
     assert (await client.post(f"/tournaments/{tid}/register", headers=users[1][0])).status_code == 409
     assert (await client.post(f"/tournaments/{tid}/start", headers=users[1][0])).status_code == 403
 
@@ -85,6 +93,7 @@ async def test_swiss_flow(client):
     for rnd in (1, 2):
         ms = (await client.get(f"/tournaments/{tid}/round/{rnd}")).json()
         assert len(ms) == 3 and sum(1 for m in ms if m["p2"] is None) == 1
+        assert all(m["p1_id"] for m in ms) and sum(1 for m in ms if m["p2_id"] is None) == 1
         played = [m for m in ms if m["p2"]]
         early = await client.post(f"/tournaments/{tid}/next-round", headers=org)
         assert early.status_code == 400  # не все результаты
