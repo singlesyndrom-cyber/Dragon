@@ -198,12 +198,12 @@ function EdhPanel({ t, reload }: { t: any; reload: () => Promise<void> }) {
                 onClick={() => {
                   const body = { winner_id: +winners[tb.table_id], force: tb.seconds_left <= 0 };
                   if (body.force && !confirm("Время стола вышло. Победа была зафиксирована до истечения таймера?")) return;
-                  run(() => api(`/edh/tables/${tb.table_id}/win`, { body }), "Победа записана").then((ok) => ok && loadTables());
+                  run(() => api(`/edh/tables/${tb.table_id}/win`, { body }), "Победа записана").then((ok) => { if (ok) loadTables(); });
                 }}>Записать победу</button>
               <button disabled={busy} onClick={() => confirm("Ничья: каждый игрок за столом потеряет 7% банка. Продолжить?") &&
-                run(() => api(`/edh/tables/${tb.table_id}/draw`, { method: "POST" }), "Ничья записана").then((ok) => ok && loadTables())}>Ничья</button>
+                run(() => api(`/edh/tables/${tb.table_id}/draw`, { method: "POST" }), "Ничья записана").then((ok) => { if (ok) loadTables(); })}>Ничья</button>
               {tb.seconds_left <= 0 ? (
-                <button disabled={busy} onClick={() => run(() => api(`/edh/tables/${tb.table_id}/timeout`, { method: "POST" }), "Стол закрыт по таймеру").then((ok) => ok && loadTables())}>Закрыть по таймеру</button>
+                <button disabled={busy} onClick={() => run(() => api(`/edh/tables/${tb.table_id}/timeout`, { method: "POST" }), "Стол закрыт по таймеру").then((ok) => { if (ok) loadTables(); })}>Закрыть по таймеру</button>
               ) : null}
             </div>
           ) : null}

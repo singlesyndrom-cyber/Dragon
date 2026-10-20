@@ -23,7 +23,7 @@ function Cabinet() {
   useEffect(() => { if (me) api(`/auctions/users/${me.id}/rating`).then(setRating).catch(() => {}); }, [me]);
   const link = useAction();
   const onTelegram = useCallback((data: Record<string, unknown>) => {
-    link.run(() => api("/auth/telegram/link", { body: data }), "Telegram привязан").then((ok) => ok && reload());
+    link.run(() => api("/auth/telegram/link", { body: data }), "Telegram привязан").then((ok) => { if (ok) reload(); });
   }, [link, reload]);
   if (!me) return null;
   return (

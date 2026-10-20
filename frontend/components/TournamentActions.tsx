@@ -52,7 +52,7 @@ export default function TournamentActions({ t }: { t: any }) {
           ) : null}
           <button className="primary" disabled={busy} onClick={() =>
             run(() => api(`/tournaments/${t.id}/register?bracket=${bracket}`, { method: "POST" }), "Вы записаны")
-              .then((ok) => ok && router.refresh())}>
+              .then((ok) => { if (ok) router.refresh(); })}>
             Записаться
           </button>
         </>
@@ -70,13 +70,13 @@ export default function TournamentActions({ t }: { t: any }) {
           <div className="row">
             <button disabled={!deckId || busy} onClick={() =>
               run(() => api(`/decks/${deckId}/attach/${t.id}`, { method: "PUT" }), "Деклист подан")
-                .then((ok) => ok && router.refresh())}>
+                .then((ok) => { if (ok) router.refresh(); })}>
               Подать деклист
             </button>
             <Link href="/me#decks" className="small">Добавить колоду</Link>
           </div>
           <button className="danger" disabled={busy} onClick={() =>
-            run(() => api(`/tournaments/${t.id}/register`, { method: "DELETE" })).then((ok) => ok && router.refresh())}>
+            run(() => api(`/tournaments/${t.id}/register`, { method: "DELETE" })).then((ok) => { if (ok) router.refresh(); })}>
             Отменить запись
           </button>
         </>
