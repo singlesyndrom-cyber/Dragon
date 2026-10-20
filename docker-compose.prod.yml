@@ -1,0 +1,61 @@
+# Production: наружу открыт только Caddy (80/443, HTTPS-сертификат получает сам).
+# Запуск: docker compose -f docker-compose.prod.yml up -d --build
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: kki
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
+      POSTGRES_DB: kki
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kki"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://kki:${POSTGRES_PASSWORD}@db:5432/kki
+    depends_on:
+      db: { condition: service_healthy }
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips="*"
+    restart: unless-stopped
+
+  bot:   # ровно один экземпляр
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://kki:${POSTGRES_PASSWORD}@db:5432/kki
+    depends_on:
+      db: { condition: service_healthy }
+    command: python -m app.bot.main
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        API_URL: http://backend:8000
+        NEXT_PUBLIC_TG_BOT_NAME: ${NEXT_PUBLIC_TG_BOT_NAME:-}
+    depends_on: [backend]
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports: ["80:80", "443:443"]
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [frontend]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

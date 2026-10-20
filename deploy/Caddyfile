@@ -1,0 +1,6 @@
+# SITE_ADDRESS: домен (например dragon-club.ru) - Caddy сам получит HTTPS-сертификат;
+# ":80" - работа по IP без HTTPS, пока домена нет.
+{$SITE_ADDRESS} {
+	encode zstd gzip
+	reverse_proxy frontend:3000
+}

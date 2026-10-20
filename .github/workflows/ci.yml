@@ -67,5 +67,10 @@ jobs:
         run: |
           set -o pipefail
           docker compose build 2>&1 | tee build.log
+      - name: Check production compose
+        run: |
+          set -o pipefail
+          docker compose -f docker-compose.prod.yml config -q 2>&1 | tee build.log
+          docker run --rm -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" -e SITE_ADDRESS=:80 caddy:2 caddy validate --config /etc/caddy/Caddyfile 2>&1 | tee build.log
       - if: failure()
         run: python3 .github/scripts/log_annotation.py build.log
