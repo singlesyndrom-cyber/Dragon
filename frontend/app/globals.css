@@ -131,6 +131,8 @@ tr.place-1 td:first-child { color: var(--gilt); font-weight: 700; }
 /* ---------- блоки ---------- */
 .panel { background: var(--vellum); border-radius: var(--radius-m); padding: 20px; }
 .panel + .panel { margin-top: 16px; }
+.narrow { max-width: 460px; }
+.label-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; }

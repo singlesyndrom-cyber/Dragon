@@ -47,6 +47,7 @@ function Cabinet() {
               </>
             ) : null}
           </div>
+          {me.providers.includes("email") ? <ChangePassword /> : null}
           {rating ? (
             <div className="panel">
               <h3>Репутация на аукционе</h3>
@@ -60,6 +61,44 @@ function Cabinet() {
         </aside>
       </div>
     </>
+  );
+}
+
+function ChangePassword() {
+  const { signIn } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [f, setF] = useState({ old_password: "", new_password: "", repeat: "" });
+  const { busy, error, done, run, setError } = useAction();
+  if (!open) {
+    return (
+      <div className="panel">
+        <h3>Пароль</h3>
+        <button type="button" onClick={() => setOpen(true)}>Сменить пароль</button>
+        <Status done={done} />
+      </div>
+    );
+  }
+  return (
+    <form className="panel" onSubmit={(e) => {
+      e.preventDefault();
+      if (f.new_password !== f.repeat) { setError("Новые пароли не совпадают"); return; }
+      run(async () => {
+        const r = await api("/auth/password/change", { body: { old_password: f.old_password, new_password: f.new_password } });
+        await signIn(r.access_token);
+        setF({ old_password: "", new_password: "", repeat: "" });
+        setOpen(false);
+      }, "Пароль изменён. На других устройствах нужно войти заново.");
+    }}>
+      <h3>Смена пароля</h3>
+      <label><span>Текущий пароль</span><input type="password" required autoComplete="current-password" value={f.old_password} onChange={(e) => setF({ ...f, old_password: e.target.value })} /></label>
+      <label><span>Новый, не короче 8 символов</span><input type="password" required minLength={8} autoComplete="new-password" value={f.new_password} onChange={(e) => setF({ ...f, new_password: e.target.value })} /></label>
+      <label><span>Повторите новый</span><input type="password" required minLength={8} autoComplete="new-password" value={f.repeat} onChange={(e) => setF({ ...f, repeat: e.target.value })} /></label>
+      <div className="row">
+        <button className="primary" disabled={busy}>Сохранить</button>
+        <button type="button" className="link-btn" onClick={() => { setOpen(false); setError(""); }}>Отмена</button>
+      </div>
+      <Status error={error} />
+    </form>
   );
 }
 

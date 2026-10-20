@@ -5,18 +5,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .db import get_session
 from .models import ClubMember, ClubRole, GlobalRole, User
-from .security import decode_token
+from .security import decode_claims
 
 bearer = HTTPBearer(auto_error=False)
+
+
+async def _user_from(creds: HTTPAuthorizationCredentials | None, session: AsyncSession) -> User | None:
+    claims = decode_claims(creds.credentials) if creds else None
+    if not claims:
+        return None
+    user = await session.get(User, claims[0])
+    if not user or user.is_banned or claims[1] != (user.token_version or 0):
+        return None
+    return user
 
 
 async def current_user(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer),
     session: AsyncSession = Depends(get_session),
 ) -> User:
-    user_id = decode_token(creds.credentials) if creds else None
-    user = await session.get(User, user_id) if user_id else None
-    if not user or user.is_banned:
+    user = await _user_from(creds, session)
+    if not user:
         raise HTTPException(401, "Не авторизован")
     return user
 
@@ -25,9 +34,7 @@ async def optional_user(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer),
     session: AsyncSession = Depends(get_session),
 ) -> User | None:
-    user_id = decode_token(creds.credentials) if creds else None
-    user = await session.get(User, user_id) if user_id else None
-    return user if user and not user.is_banned else None
+    return await _user_from(creds, session)
 
 
 async def require_admin(user: User = Depends(current_user)) -> User:

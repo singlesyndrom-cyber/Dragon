@@ -1,16 +1,21 @@
 import hashlib
 import hmac
+import secrets
 import time
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import mailer
+from .. import ratelimit as rl
 from ..config import settings
 from ..db import get_session
 from ..deps import current_user
-from ..models import AuthAccount, Provider, User
+from ..models import AuthAccount, PasswordReset, Provider, User
+from ..notify import enqueue
 from ..security import create_token, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -39,7 +44,9 @@ async def _find_account(session: AsyncSession, provider: Provider, external_id: 
 
 
 @router.post("/register", response_model=TokenOut)
-async def register(data: RegisterIn, session: AsyncSession = Depends(get_session)):
+async def register(data: RegisterIn, request: Request, session: AsyncSession = Depends(get_session)):
+    ip = rl.client_ip(request)
+    await rl.check(session, rl.REGISTER_IP, ip)
     email = data.email.lower()
     if await _find_account(session, Provider.email, email):
         raise HTTPException(409, "Email уже зарегистрирован")
@@ -47,16 +54,138 @@ async def register(data: RegisterIn, session: AsyncSession = Depends(get_session
     user.accounts.append(AuthAccount(provider=Provider.email, external_id=email,
                                      password_hash=hash_password(data.password)))
     session.add(user)
+    await rl.hit(session, rl.REGISTER_IP, ip)
     await session.commit()
-    return TokenOut(access_token=create_token(user.id))
+    return TokenOut(access_token=create_token(user.id, user.token_version or 0))
 
 
 @router.post("/login", response_model=TokenOut)
-async def login(data: LoginIn, session: AsyncSession = Depends(get_session)):
-    acc = await _find_account(session, Provider.email, data.email.lower())
+async def login(data: LoginIn, request: Request, session: AsyncSession = Depends(get_session)):
+    email, ip = data.email.lower(), rl.client_ip(request)
+    # лимит считается по неудачам: и на email (подбор пароля к одному аккаунту), и на адрес (перебор аккаунтов)
+    await rl.check(session, rl.LOGIN_EMAIL, email)
+    await rl.check(session, rl.LOGIN_IP, ip)
+    acc = await _find_account(session, Provider.email, email)
     if not acc or not acc.password_hash or not verify_password(data.password, acc.password_hash):
+        await rl.hit(session, rl.LOGIN_EMAIL, email)
+        await rl.hit(session, rl.LOGIN_IP, ip)
+        await session.commit()
         raise HTTPException(401, "Неверный email или пароль")
-    return TokenOut(access_token=create_token(acc.user_id))
+    await rl.clear(session, rl.LOGIN_EMAIL, email)
+    await session.commit()
+    user = await session.get(User, acc.user_id)
+    return TokenOut(access_token=create_token(user.id, user.token_version or 0))
+
+
+# ---------- Восстановление и смена пароля ----------
+class ForgotIn(BaseModel):
+    email: EmailStr
+
+
+class ResetIn(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    password: str = Field(min_length=8)
+
+
+class ChangeIn(BaseModel):
+    old_password: str
+    new_password: str = Field(min_length=8)
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _reset_link(token: str) -> str:
+    base = (settings.public_base_url or "http://localhost:3000").rstrip("/")
+    return f"{base}/reset?token={token}"
+
+
+async def _set_password(session: AsyncSession, acc: AuthAccount, password: str) -> User:
+    """Новый пароль: старые токены входа и неиспользованные ссылки сброса перестают действовать."""
+    now = datetime.now(timezone.utc)
+    acc.password_hash = hash_password(password)
+    user = await session.get(User, acc.user_id)
+    user.token_version = (user.token_version or 0) + 1
+    await session.execute(update(PasswordReset).where(PasswordReset.user_id == acc.user_id,
+                                                      PasswordReset.used_at.is_(None)).values(used_at=now))
+    await rl.clear(session, rl.LOGIN_EMAIL, acc.external_id)
+    return user
+
+
+@router.post("/password/forgot", status_code=204)
+async def forgot_password(data: ForgotIn, request: Request, background: BackgroundTasks,
+                          session: AsyncSession = Depends(get_session)):
+    """Ответ всегда одинаковый, есть такой email или нет: по нему нельзя узнать, кто зарегистрирован."""
+    email, ip = data.email.lower(), rl.client_ip(request)
+    await rl.check(session, rl.FORGOT_EMAIL, email)
+    await rl.check(session, rl.FORGOT_IP, ip)
+    await rl.hit(session, rl.FORGOT_EMAIL, email)
+    await rl.hit(session, rl.FORGOT_IP, ip)
+    acc = await _find_account(session, Provider.email, email)
+    user = await session.get(User, acc.user_id) if acc else None
+    if not user or user.is_banned:
+        await session.commit()
+        return
+    token = secrets.token_urlsafe(32)
+    minutes = settings.password_reset_minutes
+    session.add(PasswordReset(user_id=user.id, token_hash=_token_hash(token),
+                              expires_at=datetime.now(timezone.utc) + timedelta(minutes=minutes)))
+    link = _reset_link(token)
+    # если к аккаунту привязан Telegram - ссылка придёт и от бота: почта в России доходит не всегда
+    tg = (await session.execute(select(AuthAccount.external_id).where(
+        AuthAccount.user_id == user.id, AuthAccount.provider == Provider.telegram))).scalar_one_or_none()
+    if tg:
+        await enqueue(session, "password_reset", tg,
+                      f"Сброс пароля на сайте. Ссылка действует {minutes} мин. "
+                      "Если вы не запрашивали сброс, просто проигнорируйте сообщение.",
+                      buttons=[[{"text": "Задать новый пароль", "url": link}]])
+    await session.commit()
+    body = (f"Здравствуйте, {user.nickname}!\n\n"
+            f"Кто-то (надеемся, вы) запросил сброс пароля на сайте. Чтобы задать новый пароль, откройте ссылку:\n\n"
+            f"{link}\n\n"
+            f"Ссылка действует {minutes} мин. и сработает один раз. "
+            f"Если вы не запрашивали сброс, просто проигнорируйте письмо: пароль останется прежним.")
+    background.add_task(mailer.send_mail, email, "Восстановление пароля", body)
+
+
+@router.post("/password/reset", response_model=TokenOut)
+async def reset_password(data: ResetIn, request: Request, session: AsyncSession = Depends(get_session)):
+    ip = rl.client_ip(request)
+    await rl.check(session, rl.RESET_IP, ip)
+    pr = (await session.execute(select(PasswordReset).where(
+        PasswordReset.token_hash == _token_hash(data.token)).with_for_update())).scalar_one_or_none()
+    if not pr or pr.used_at or pr.expires_at < datetime.now(timezone.utc):
+        await rl.hit(session, rl.RESET_IP, ip)
+        await session.commit()
+        raise HTTPException(400, "Ссылка устарела или уже использована. Запросите новую.")
+    acc = (await session.execute(select(AuthAccount).where(
+        AuthAccount.user_id == pr.user_id, AuthAccount.provider == Provider.email))).scalar_one_or_none()
+    if not acc:
+        raise HTTPException(400, "У аккаунта нет входа по email")
+    if (await session.get(User, pr.user_id)).is_banned:
+        raise HTTPException(403, "Аккаунт заблокирован")
+    user = await _set_password(session, acc, data.password)
+    await session.commit()
+    return TokenOut(access_token=create_token(user.id, user.token_version or 0))
+
+
+@router.post("/password/change", response_model=TokenOut)
+async def change_password(data: ChangeIn, user: User = Depends(current_user),
+                          session: AsyncSession = Depends(get_session)):
+    """Смена пароля из профиля. Другие устройства выйдут из аккаунта, это устройство получит новый токен."""
+    acc = (await session.execute(select(AuthAccount).where(
+        AuthAccount.user_id == user.id, AuthAccount.provider == Provider.email))).scalar_one_or_none()
+    if not acc or not acc.password_hash:
+        raise HTTPException(400, "У аккаунта нет пароля: вы входите через Telegram")
+    await rl.check(session, rl.LOGIN_EMAIL, acc.external_id)
+    if not verify_password(data.old_password, acc.password_hash):
+        await rl.hit(session, rl.LOGIN_EMAIL, acc.external_id)
+        await session.commit()
+        raise HTTPException(400, "Текущий пароль указан неверно")
+    await _set_password(session, acc, data.new_password)
+    await session.commit()
+    return TokenOut(access_token=create_token(user.id, user.token_version or 0))
 
 
 # ---------- Telegram Login Widget ----------
@@ -97,7 +226,7 @@ async def telegram_login(data: TelegramIn, session: AsyncSession = Depends(get_s
         raise HTTPException(401, "Неверная подпись Telegram")
     nick = data.username or data.first_name or f"tg{data.id}"
     user = await _login_or_create(session, Provider.telegram, str(data.id), nick)
-    return TokenOut(access_token=create_token(user.id))
+    return TokenOut(access_token=create_token(user.id, user.token_version or 0))
 
 
 @router.post("/telegram/link", status_code=204)

@@ -1,7 +1,7 @@
 import enum
 from datetime import date, datetime
 
-from sqlalchemy import (Date, DateTime, Enum, Float, ForeignKey, Integer, String, text,
+from sqlalchemy import (Date, DateTime, Enum, Float, ForeignKey, Index, Integer, String, text,
                         Text, UniqueConstraint, func)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -35,6 +35,8 @@ class User(Base):
     # гость: игрок, которого организатор добавил по имени, без аккаунта; позже сливается с настоящим
     is_guest: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
     guest_club_id: Mapped[int | None] = mapped_column(Integer)   # клуб, где гость был добавлен
+    # растёт при смене пароля: токены входа со старой версией перестают действовать
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     accounts: Mapped[list["AuthAccount"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -52,6 +54,30 @@ class AuthAccount(Base):
     password_hash: Mapped[str | None] = mapped_column(String(255))  # только для email
 
     user: Mapped[User] = relationship(back_populates="accounts")
+
+
+class PasswordReset(Base):
+    """Одноразовая ссылка на смену пароля. В базе только хеш токена: утечка таблицы не даёт войти."""
+    __tablename__ = "password_resets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AuthAttempt(Base):
+    """Журнал попыток для ограничения частоты: неудачные входы, регистрации, запросы сброса.
+    key - хеш email или IP, сами адреса не хранятся."""
+    __tablename__ = "auth_attempts"
+    __table_args__ = (Index("ix_auth_attempts_lookup", "kind", "key", "created_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    key: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
 class Club(Base):

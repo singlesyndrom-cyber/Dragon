@@ -36,7 +36,11 @@ export default function Login() {
           });
         }}>
           <label><span>Email</span><input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
-          <label><span>Пароль</span><input type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
+          <label>
+            <span className="label-row">Пароль <Link href="/forgot" className="small"
+              onClick={() => { try { window.sessionStorage.setItem("forgot_email", email); } catch {} }}>Забыли пароль?</Link></span>
+            <input type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </label>
           <button className="primary" disabled={busy}>Войти</button>
           <Status error={error} />
           <p className="section">Нет аккаунта? <Link href="/register">Зарегистрируйтесь</Link></p>
