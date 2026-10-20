@@ -83,7 +83,7 @@ main.wrap { padding-top: 28px; padding-bottom: 72px; min-height: 70vh; }
 
 /* ---------- раскладки ---------- */
 .split { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 40px; }
-@media (max-width: 860px) { .split { grid-template-columns: 1fr; gap: 8px; } }
+@media (max-width: 860px) { .split { grid-template-columns: minmax(0, 1fr); gap: 8px; } }  /* minmax(0,…): широкая таблица прокручивается внутри, а не распирает страницу */
 .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .stack > * + * { margin-top: 12px; }
 .section { margin-top: 40px; }

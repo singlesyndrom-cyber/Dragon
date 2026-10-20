@@ -135,8 +135,14 @@ try {
   await page.goto(`${BASE}/tournaments/${tid}`);
   const headerH = await page.locator("header.top").evaluate((el) => el.getBoundingClientRect().height);
   check(headerH < 130, `шапка на телефоне компактная (${Math.round(headerH)} px)`);
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-  check(overflow <= 1, "нет горизонтальной прокрутки страницы");
+  const overflow = await page.evaluate(() => {
+    const extra = document.documentElement.scrollWidth - window.innerWidth;
+    const wide = [...document.querySelectorAll("main *")].filter((el) => el.getBoundingClientRect().right > window.innerWidth + 1)
+      .filter((el) => !el.closest(".table-wrap") || el.classList.contains("table-wrap")).slice(0, 3)
+      .map((el) => `${el.tagName.toLowerCase()}.${el.className}`);
+    return { extra, wide };
+  });
+  check(overflow.extra <= 1, "нет горизонтальной прокрутки страницы" + (overflow.extra > 1 ? ` (лишние ${overflow.extra}px: ${overflow.wide.join(", ")})` : ""));
   await shot("mobile");
 
   check(errors.length === 0, "в браузере нет ошибок JavaScript" + (errors.length ? ": " + errors.join("; ") : ""));
