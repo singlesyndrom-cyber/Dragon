@@ -15,6 +15,9 @@ export default function Participants({ t, reload }: { t: any; reload: () => Prom
   const [mergeFor, setMergeFor] = useState<number | null>(null);
   const [email, setEmail] = useState("");
   const input = useRef<HTMLInputElement>(null);
+  // отметка «пришёл» переключается сразу, не дожидаясь сервера; при ошибке возвращается назад
+  const [arrived, setArrived] = useState<Record<number, boolean>>({});
+  useEffect(() => { setArrived({}); }, [t.participants]);
   const { busy, error, done, run } = useAction();
 
   const canAdd = t.status === "registration" || (edh && t.status === "running");
@@ -100,8 +103,13 @@ export default function Participants({ t, reload }: { t: any; reload: () => Prom
                   </td>
                   {edh ? (
                     <>
-                      <td><input type="checkbox" checked={p.checked_in} disabled={busy || t.status === "finished"} aria-label={`${p.nickname} пришёл`}
-                        onChange={(e) => run(() => api(`/edh/${t.id}/players/${p.user_id}`, { method: "PUT", body: { checked_in: e.target.checked } })).then(reload)} /></td>
+                      <td><input type="checkbox" checked={arrived[p.user_id] ?? p.checked_in} disabled={t.status === "finished"} aria-label={`${p.nickname} пришёл`}
+                        onChange={(e) => {
+                          const v = e.target.checked;
+                          setArrived((a) => ({ ...a, [p.user_id]: v }));
+                          run(() => api(`/edh/${t.id}/players/${p.user_id}`, { method: "PUT", body: { checked_in: v } }))
+                            .then((ok) => { if (ok) reload(); else setArrived((a) => { const n = { ...a }; delete n[p.user_id]; return n; }); });
+                        }} /></td>
                       <td>
                         <select value={p.bracket} disabled={busy || t.status === "finished"} aria-label={`Брекет ${p.nickname}`}
                           onChange={(e) => run(() => api(`/edh/${t.id}/players/${p.user_id}`, { method: "PUT", body: { bracket: +e.target.value } })).then(reload)}>
