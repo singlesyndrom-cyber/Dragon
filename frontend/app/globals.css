@@ -57,8 +57,8 @@ main.wrap { padding-top: 28px; padding-bottom: 72px; min-height: 70vh; }
 .nav a { text-decoration: none; color: var(--muted); padding: 4px 0; border-bottom: 2px solid transparent; }
 .nav a:hover, .nav a[aria-current="page"] { color: var(--ivory); border-bottom-color: var(--gilt); }
 .who { display: flex; gap: 12px; align-items: center; color: var(--muted); font-size: 0.95rem; }
-/* Телефон: логотип и вход в первой строке, разделы — прокручиваемой строкой под ними */
-@media (max-width: 760px) {
+/* Узкий экран: логотип и вход в первой строке, разделы — прокручиваемой строкой под ними */
+@media (max-width: 980px) {
   .top .wrap { gap: 0 16px; padding-top: 8px; }
   .brand { flex: 1; }
   .nav {
@@ -201,9 +201,9 @@ tr.winner td:first-child { box-shadow: inset 3px 0 0 var(--gilt); color: var(--g
 fieldset { border: none; border-top: 1px solid var(--line); margin: 0 0 8px; padding: 18px 0 8px; }
 legend { font-family: var(--font-display); font-size: 1.35rem; font-weight: 600; padding: 0 10px 0 0; }
 .kinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
-.kind { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 14px 16px; cursor: pointer;
+.kind { position: relative; display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 14px 16px; cursor: pointer;
   background: var(--vellum); border: 1px solid var(--line); border-radius: var(--radius-m); }
-.kind input { position: absolute; opacity: 0; pointer-events: none; }
+.kind input { position: absolute; top: 0; left: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .kind b { font-weight: 600; }
 .kind:hover { border-color: var(--muted); }
 .kind.on { border-color: var(--gilt); box-shadow: inset 0 0 0 1px var(--gilt); }

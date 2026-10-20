@@ -65,6 +65,8 @@ try {
   await page.getByLabel("Название", { exact: true }).fill("Е2Е швейцарка");
   await page.getByLabel("Туров", { exact: true }).fill("2");
   await page.getByLabel("Описание для игроков").fill("Приходите к **18:00**");
+  const wizOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  check(wizOverflow <= 1, `мастер без горизонтальной прокрутки (${wizOverflow}px)`);
   await shot("wizard");
   await page.getByRole("button", { name: "Создать турнир" }).click();
   await page.waitForURL(/\/manage\/tournaments\/\d+/);
@@ -184,6 +186,10 @@ try {
   await page.goto(`${BASE}/tournaments/${tid}`);
   const headerH = await page.locator("header.top").evaluate((el) => el.getBoundingClientRect().height);
   check(headerH < 130, `шапка на телефоне компактная (${Math.round(headerH)} px)`);
+  await page.setViewportSize({ width: 820, height: 900 });
+  const navLines = await page.locator("nav.nav a").evaluateAll((els) => new Set(els.map((e) => Math.round(e.getBoundingClientRect().top))).size);
+  check(navLines === 1, `меню на ширине 820px в одну строку (строк: ${navLines})`);
+  await page.setViewportSize({ width: 375, height: 812 });
   const overflow = await page.evaluate(() => {
     const extra = document.documentElement.scrollWidth - window.innerWidth;
     const wide = [...document.querySelectorAll("main *")].filter((el) => el.getBoundingClientRect().right > window.innerWidth + 1)
