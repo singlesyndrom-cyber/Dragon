@@ -71,6 +71,24 @@ jobs:
         run: |
           set -o pipefail
           sh .github/scripts/stack_smoke.sh 2>&1 | tee build.log
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Browser e2e — organizer walkthrough
+        working-directory: e2e
+        run: |
+          set -o pipefail
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          docker compose -f ../docker-compose.yml exec -T db psql -U kki -c \
+            "INSERT INTO clubs (name, slug, description, city) VALUES ('Старый клуб', 'старый-клуб', '', '')"
+          CYR_SLUG=старый-клуб node organizer.mjs 2>&1 | tee ../build.log
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: e2e/shots
+          if-no-files-found: ignore
       - name: Check production compose
         run: |
           set -o pipefail
