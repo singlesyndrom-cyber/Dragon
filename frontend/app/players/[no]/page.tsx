@@ -71,6 +71,16 @@ export default async function PlayerPage({ params }: { params: Promise<{ no: str
               </ul>
             ) : null}
           </div>
+          {p.judging.total || p.clubs.some((c: any) => c.judge.length) ? (
+            <div className="panel">
+              <h3>Судейство</h3>
+              <p style={{ margin: 0 }}>Главный судья турниров: {p.judging.total}
+                {p.judging.total ? <span className="muted"> ({Object.entries(p.judging.by_game).map(([g, n]) => `${g} ${n}`).join(", ")})</span> : null}</p>
+              {p.clubs.filter((c: any) => c.judge.length).map((c: any) => (
+                <p key={c.slug} className="small" style={{ margin: "6px 0 0" }}>Судья клуба <Link href={`/clubs/${c.slug}`}>{c.name}</Link>: {c.judge.join(", ")}</p>
+              ))}
+            </div>
+          ) : null}
           <div className="panel"><PlayerLookup label="Другой игрок" /></div>
         </aside>
       </div>

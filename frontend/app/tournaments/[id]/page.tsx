@@ -116,6 +116,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
             <dt>Начало</dt><dd>{dateTime(t.starts_at)}</dd>
             <dt>Статус</dt><dd>{T_STATUS[t.status]}{t.round ? `, тур ${t.round}${t.rounds_total ? ` из ${t.rounds_total}` : ""}` : ""}</dd>
             <dt>Участники</dt><dd>{t.players}{t.max_players ? ` из ${t.max_players}` : ""}</dd>
+            {t.judge ? (<><dt>Судья</dt><dd>{t.judge.player_no ? <Link href={`/players/${t.judge.player_no}`}>{t.judge.nickname}</Link> : t.judge.nickname}</dd></>) : null}
             {t.league ? (<><dt>Сезон лиги</dt><dd><Link href={`/leagues/${t.league.id}`}>{t.league.name}</Link></dd></>) : null}
           </dl>
           {t.description ? <div className="section"><Markdown text={t.description} /></div> : null}

@@ -11,6 +11,7 @@ import Standings from "@/components/Standings";
 import TournamentFields, { EMPTY, type Fields, toBody } from "@/components/TournamentFields";
 import { api } from "@/lib/api";
 import { dateTime, signed, T_STATUS } from "@/lib/format";
+import { canRun, judgeDirection } from "@/lib/judges";
 import { kindOf } from "@/lib/tournamentKinds";
 
 type Tab = "players" | "rounds" | "standings" | "settings";
@@ -23,19 +24,21 @@ export default function ManageTournamentPage({ params }: { params: Promise<{ id:
 function Hub({ id }: { id: number }) {
   const [t, setT] = useState<any>(null);
   const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [isOrg, setIsOrg] = useState(false);
   const [tab, setTab] = useState<Tab | null>(null);
   const load = useCallback(async () => {
     const tt = await api(`/tournaments/${id}`);
     setT(tt);
     const m = await api(`/clubs/${tt.club_id}/membership`).catch(() => null);
-    setAllowed(!!m?.can_manage);
+    setAllowed(canRun(m, tt));
+    setIsOrg(!!m?.can_manage);
     // вкладка по умолчанию - по стадии турнира
     setTab((cur) => cur ?? (tt.status === "registration" ? "players" : tt.status === "running" ? "rounds" : "standings"));
   }, [id]);
   useEffect(() => { load().catch(() => setAllowed(false)); }, [load]);
 
   if (allowed === null) return <p className="muted">Загружаем…</p>;
-  if (!allowed || !t) return <p>Управлять турниром могут только организаторы клуба.</p>;
+  if (!allowed || !t) return <p>Вести турнир могут организаторы клуба и судьи клуба по этой игре.</p>;
 
   const edh = t.format === "edh";
   const kind = kindOf(t.game, t.format);
@@ -43,7 +46,7 @@ function Hub({ id }: { id: number }) {
     ["players", `Участники (${t.participants.length})`],
     ["rounds", edh ? "Столы" : "Туры"],
     ["standings", "Таблица"],
-    ...(t.status === "registration" ? [["settings", "Настройки"] as [Tab, string]] : []),
+    ...(t.status === "registration" && isOrg ? [["settings", "Настройки"] as [Tab, string]] : []),
   ];
 
   return (
@@ -56,6 +59,7 @@ function Hub({ id }: { id: number }) {
           {" "}{dateTime(t.starts_at)}.
           {t.league ? <> Сезон: <Link href={`/leagues/${t.league.id}`}>{t.league.name}</Link>.</> : null}
         </p>
+        <HeadJudge t={t} isOrg={isOrg} reload={load} />
         <p className="small" style={{ margin: "6px 0 0" }}>
           <Link href={`/tournaments/${t.id}`}>Публичная страница</Link>
           {t.self_registration && t.status === "registration" ? <span className="muted"> — ссылка для записи игроков</span> : null}
@@ -76,6 +80,55 @@ function Hub({ id }: { id: number }) {
         {tab === "settings" ? <SettingsTab t={t} reload={load} /> : null}
       </div>
     </>
+  );
+}
+
+/** Главный судья: виден всем ведущим турнир, назначает организатор (судьи клуба этого направления и организаторы). */
+function HeadJudge({ t, isOrg, reload }: { t: any; isOrg: boolean; reload: () => Promise<void> }) {
+  const [staff, setStaff] = useState<any[] | null>(null);
+  const { busy, error, run } = useAction();
+  const dir = judgeDirection(t.game, t.format);
+  useEffect(() => {
+    if (isOrg) api<any[]>(`/clubs/${t.club_id}/judges`).then((all) => setStaff(all.filter((s) => s.games.includes(dir)))).catch(() => setStaff([]));
+  }, [isOrg, t.club_id, dir]);
+  const label = t.judge ? `${t.judge.nickname}${t.judge.player_no ? ` (№${t.judge.player_no})` : ""}` : "не назначен";
+  if (!isOrg || !staff) return <p className="small" style={{ margin: "6px 0 0" }}>Главный судья: {label}</p>;
+  return (
+    <div className="row inline" style={{ marginTop: 8 }}>
+      <label style={{ margin: 0 }}>
+        <span>Главный судья — попадёт в отчёт турнира</span>
+        <select value={t.judge?.user_id ?? ""} disabled={busy}
+          onChange={(e) => run(async () => {
+            await api(`/tournaments/${t.id}/judge`, { method: "PUT", body: { user_id: e.target.value ? +e.target.value : null } });
+            await reload();
+          })}>
+          <option value="">Не назначен</option>
+          {staff.map((s) => <option key={s.user_id} value={s.user_id}>{s.nickname}{s.organizer ? " (организатор)" : ""}</option>)}
+        </select>
+      </label>
+      <Status error={error} />
+    </div>
+  );
+}
+
+/** Журнал исправлений результатов (швейцарка): кто и когда поменял уже введённый результат. */
+function EditLog({ t }: { t: any }) {
+  const [rows, setRows] = useState<any[]>([]);
+  useEffect(() => { api<any[]>(`/tournaments/${t.id}/edits`).then(setRows).catch(() => {}); }, [t.id, t.round, t.status]);
+  if (!rows.length) return null;
+  const word = (r: string, a: any) => (r === "draw" ? "ничья" : `победа ${r === "p1" ? a.p1 : a.p2}`);
+  return (
+    <section>
+      <h3>Исправления результатов</h3>
+      <ul className="news-list small">
+        {rows.map((r, i) => (
+          <li key={i} style={{ padding: "6px 0" }}>
+            {dateTime(r.at)} · тур {r.round} · {r.p1} — {r.p2}: {word(r.before, r)} → <b>{word(r.after, r)}</b>
+            <span className="muted"> · исправил {r.by || "—"}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -106,6 +159,7 @@ function StandingsTab({ t }: { t: any }) {
           cells: [r.points, r.wins, (r.owp * 100).toFixed(1) + "%", r.buchholz],
         }))} />
       <p className="hint">При равных очках выше тот, у кого выше OWP (процент побед соперников), затем Buchholz, затем очки лиги клуба.</p>
+      <EditLog t={t} />
     </>
   );
 }

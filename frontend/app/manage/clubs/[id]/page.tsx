@@ -4,6 +4,7 @@ import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import { Status, useAction } from "@/components/Form";
 import ArticleForm from "@/components/ArticleForm";
+import ClubJudges from "@/components/ClubJudges";
 import ConfirmButton from "@/components/ConfirmButton";
 import Guard from "@/components/Guard";
 import { api } from "@/lib/api";
@@ -34,7 +35,7 @@ function ManageClub({ clubId }: { clubId: number }) {
           <Seasons clubId={clubId} />
           <ArticleForm clubId={clubId} />
         </div>
-        <aside><Settings clubId={clubId} initial={m.settings} /></aside>
+        <aside className="stack"><Settings clubId={clubId} initial={m.settings} /><ClubJudges clubId={clubId} /></aside>
       </div>
     </>
   );

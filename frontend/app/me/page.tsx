@@ -8,6 +8,7 @@ import TelegramLogin from "@/components/TelegramLogin";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { rub } from "@/lib/format";
+import { JUDGE_GAMES } from "@/lib/judges";
 
 const DEAL: Record<string, string> = {
   pending: "Ждёт подтверждения", completed: "Состоялась", failed: "Не состоялась", disputed: "Спорная",
@@ -214,7 +215,11 @@ function Deals() {
 
 function MyClubs() {
   const [clubs, setClubs] = useState<any[] | null>(null);
-  useEffect(() => { api<any[]>("/clubs/managed").then(setClubs).catch(() => setClubs([])); }, []);
+  const [judging, setJudging] = useState<any[]>([]);
+  useEffect(() => {
+    api<any[]>("/clubs/managed").then(setClubs).catch(() => setClubs([]));
+    api<any[]>("/clubs/judging").then(setJudging).catch(() => {});
+  }, []);
   if (clubs === null) return null;
   return (
     <div className="panel">
@@ -229,6 +234,20 @@ function MyClubs() {
           ))}
         </ul>
       ) : <p className="small muted">Создайте клуб, чтобы проводить турниры и вести лигу.</p>}
+      {judging.length ? (
+        <>
+          <h3 style={{ marginTop: 16 }}>Судейство</h3>
+          <ul className="news-list">
+            {judging.map((c) => (
+              <li key={c.id} className="row" style={{ justifyContent: "space-between", padding: "8px 0" }}>
+                <Link href={`/clubs/${c.slug}`}>{c.name}</Link>
+                <span className="muted small">{c.games.map((g: string) => JUDGE_GAMES[g]).join(", ")}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="small muted" style={{ margin: 0 }}>Турнир ведётся кнопкой «Управлять турниром» на его странице.</p>
+        </>
+      ) : null}
       <Link href="/clubs/new" className="btn" style={{ marginTop: 12 }}>Создать клуб</Link>
     </div>
   );

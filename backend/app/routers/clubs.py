@@ -57,6 +57,15 @@ async def managed_clubs(user: User = Depends(current_user), session: AsyncSessio
     return [{"id": c.id, "name": c.name, "slug": c.slug} for c in (await session.execute(q.limit(200))).scalars()]
 
 
+@router.get("/judging")
+async def judging_clubs(user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    """Клубы, где пользователь - судья (не организатор), с его направлениями."""
+    rows = (await session.execute(select(Club, ClubMember.judge_games).join(ClubMember, ClubMember.club_id == Club.id)
+                                  .where(ClubMember.user_id == user.id, ClubMember.judge_games != "",
+                                         ClubMember.role != ClubRole.organizer).order_by(Club.name))).all()
+    return [{"id": c.id, "name": c.name, "slug": c.slug, "games": parse_judge_games(g)} for c, g in rows]
+
+
 @router.get("/{slug}")
 async def get_club(slug: str, session: AsyncSession = Depends(get_session)):
     res = await session.execute(select(Club).where(Club.slug == slug).options(selectinload(Club.stats)))

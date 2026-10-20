@@ -6,17 +6,20 @@ import EventList from "@/components/EventList";
 import Standings from "@/components/Standings";
 import { sget } from "@/lib/api";
 import { dateOnly, WEEKDAYS } from "@/lib/format";
+import { JUDGE_GAMES } from "@/lib/judges";
 
 export default async function ClubPage({ params }: { params: Promise<{ slug: string }> }) {
   const slug = decodeURIComponent((await params).slug);   // адрес может прийти уже закодированным
   const club = await sget<any>(`/clubs/${encodeURIComponent(slug)}`);
   if (!club) notFound();
-  const [board, tournaments, news, seasons] = await Promise.all([
+  const [board, tournaments, news, seasons, staff] = await Promise.all([
     sget<any[]>(`/clubs/${club.id}/leaderboard`),
     sget<any[]>(`/tournaments?club_id=${club.id}&limit=20`),
     sget<any[]>(`/news?club_id=${club.id}&limit=5`),
     sget<any[]>(`/leagues?club_id=${club.id}`),
+    sget<any[]>(`/clubs/${club.id}/judges`),
   ]);
+  const judges = (staff || []).filter((s) => !s.organizer);
   const liveSeasons = (seasons || []).filter((s) => s.status !== "finished");
   const rows = board || [];
   const byBank = [...rows].sort((a, b) => b.edh_bank - a.edh_bank).filter((r) => r.events_played > 0);
@@ -35,6 +38,10 @@ export default async function ClubPage({ params }: { params: Promise<{ slug: str
             <dt>Средняя явка</dt><dd>{Math.round(club.avg_participants * 10) / 10}</dd>
             {club.busiest_weekday !== null ? (<><dt>Чаще всего играют</dt><dd>{WEEKDAYS[club.busiest_weekday]}</dd></>) : null}
             <dt>Рейтинг клуба</dt><dd className="gold">{Math.round(club.rating)}</dd>
+            {judges.length ? (<><dt>Судьи клуба</dt><dd>{judges.map((j, i) => (
+              <span key={j.user_id}>{i ? ", " : ""}{j.player_no ? <Link href={`/players/${j.player_no}`}>{j.nickname}</Link> : j.nickname}
+                <span className="muted small"> ({j.games.map((g: string) => JUDGE_GAMES[g]).join(", ")})</span></span>
+            ))}</dd></>) : null}
           </dl>
 
           <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>

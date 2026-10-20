@@ -51,6 +51,9 @@ async def test_judge_role_flow(client):
     staff = (await client.get(f"/clubs/{cid}/judges")).json()
     assert [(s["nickname"], s["organizer"], s["games"]) for s in staff] == [
         ("Игрок0", True, ["mtg", "edh", "berserk"]), ("Игрок1", False, ["mtg"])]
+    assert (await client.get("/clubs/judging", headers=jh)).json() == [
+        {"id": cid, "name": "Судейский клуб", "slug": club["slug"], "games": ["mtg"]}]
+    assert (await client.get("/clubs/judging", headers=org)).json() == []
     mem = (await client.get(f"/clubs/{cid}/membership", headers=jh)).json()
     assert mem["judge_games"] == ["mtg"] and not mem["can_manage"]
 

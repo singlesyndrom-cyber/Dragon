@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Status, useAction } from "@/components/Form";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { canRun } from "@/lib/judges";
 
 export default function TournamentActions({ t }: { t: any }) {
   const { me, ready } = useAuth();
@@ -21,9 +22,9 @@ export default function TournamentActions({ t }: { t: any }) {
 
   useEffect(() => {
     if (!me) return;
-    api(`/clubs/${t.club_id}/membership`).then((m) => setCanManage(!!m.can_manage)).catch(() => {});
+    api(`/clubs/${t.club_id}/membership`).then((m) => setCanManage(canRun(m, t))).catch(() => {});
     api<any[]>("/decks/mine").then((d) => setDecks(d.filter((x) => x.game === t.game))).catch(() => {});
-  }, [me, t.club_id, t.game]);
+  }, [me, t.club_id, t.game, t.format]);
 
   if (!ready) return null;
   if (!me) {

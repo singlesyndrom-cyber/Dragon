@@ -192,6 +192,42 @@ try {
     check(resp.status() === 200 && !(await page.getByText("Страница не найдена").count()), `страница /clubs/${cyr} открывается`);
   } else console.log("  (пропущено: CYR_SLUG не задан)");
 
+  step("Судья клуба: назначение по номеру и ведение турнира");
+  {
+    const orgToken = await page.evaluate(() => localStorage.getItem("dragon_token"));
+    const club = (await apiCall("/clubs/managed", { token: orgToken })).find((c) => c.name === `Клуб Е2Е ${run}`);
+    const jr = await apiCall("/auth/register", { body: { email: `judge-${run}@example.com`, password: "e2e-password-1", nickname: `Судья-${run}` } });
+    const judgeMe = await apiCall("/auth/me", { token: jr.access_token });
+    await page.goto(`${BASE}/manage/clubs/${club.id}`);
+    await page.getByLabel("Номер игрока").fill(String(judgeMe.player_no));
+    await page.getByRole("button", { name: "Назначить судьёй" }).click();
+    await visible(page.getByText("Судья назначен"), "организатор назначил судью по номеру");
+    await visible(page.getByRole("link", { name: `Судья-${run}` }), "судья виден в списке судей клуба");
+    await shot("judges");
+    const t2 = await apiCall("/tournaments", { token: orgToken, body: { club_id: club.id, name: "Е2Е с судьёй", format: "swiss", rounds: 1 } });
+    const jp = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+    jp.on("pageerror", (e) => errors.push(e.message));
+    await jp.goto(BASE + "/");
+    await jp.evaluate((tok) => localStorage.setItem("dragon_token", tok), jr.access_token);
+    await jp.goto(`${BASE}/tournaments/${t2.id}`);
+    await jp.getByRole("link", { name: "Управлять турниром" }).click();
+    await jp.waitForURL(/\/manage\/tournaments\/\d+/);
+    await visible(jp.getByRole("tab", { name: /Участники/ }), "судья открыл хаб турнира");
+    check(await jp.getByRole("tab", { name: "Настройки" }).count() === 0, "вкладки «Настройки» у судьи нет");
+    await jp.getByLabel("Добавить игрока").fill("Гость судьи");
+    await jp.getByRole("button", { name: "Добавить гостя" }).click();
+    await visible(jp.getByRole("cell", { name: /Гость судьи/ }), "судья записал игрока");
+    await jp.close();
+    await page.goto(`${BASE}/manage/tournaments/${t2.id}`);
+    await page.getByLabel(/Главный судья/).selectOption({ label: `Судья-${run}` });
+    let card = null;
+    for (let i = 0; i < 20 && card?.judge?.nickname !== `Судья-${run}`; i++) {
+      await page.waitForTimeout(250);
+      card = await apiCall(`/tournaments/${t2.id}`);
+    }
+    check(card.judge?.nickname === `Судья-${run}`, "организатор назначил главного судью");
+  }
+
   step("Пароль: смена в кабинете, вход и «Забыли пароль?»");
   await page.goto(BASE + "/me");
   await page.getByRole("button", { name: "Сменить пароль" }).click();

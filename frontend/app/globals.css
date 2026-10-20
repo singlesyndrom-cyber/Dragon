@@ -152,6 +152,9 @@ input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--gilt); c
 input:focus, select:focus, textarea:focus { border-color: var(--gilt); outline: none; }
 .inline input, .inline select { width: auto; }
 .lookup { align-items: flex-end; margin: 16px 0 0; }
+label.check { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
+label.check input { width: auto; margin: 0; }
+.judges .news-list li .row + .row { margin-top: 6px; }
 .lookup input { width: 140px; }
 
 button, .btn {
