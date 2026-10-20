@@ -1,13 +1,10 @@
 import type { Metadata } from "next";
-import { Cormorant_Garamond, Golos_Text } from "next/font/google";
 import Nav from "@/components/Nav";
 import { AuthProvider } from "@/lib/auth";
 import "./globals.css";
 
-const display = Cormorant_Garamond({
-  subsets: ["latin", "cyrillic"], weight: ["600", "700"], variable: "--font-display", display: "swap",
-});
-const body = Golos_Text({ subsets: ["latin", "cyrillic"], weight: ["400", "500", "600", "700"], variable: "--font-body", display: "swap" });
+// Шрифты грузит браузер при открытии страницы: сборка не зависит от доступа к Google Fonts.
+const FONTS = "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Golos+Text:wght@400;500;600;700&display=swap";
 
 export const metadata: Metadata = {
   title: { default: "Dragon — турниры клубов ККИ", template: "%s — Dragon" },
@@ -16,7 +13,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ru" className={`${display.variable} ${body.variable}`}>
+    <html lang="ru">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link rel="stylesheet" href={FONTS} />
+      </head>
       <body>
         <AuthProvider>
           <Nav />

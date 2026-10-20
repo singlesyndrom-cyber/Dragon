@@ -12,6 +12,8 @@
   --radius-s: 4px;
   --radius-m: 10px;
   --wrap: 1120px;
+  --font-display: "Cormorant Garamond";
+  --font-body: "Golos Text";
   color-scheme: dark;
 }
 
