@@ -259,4 +259,5 @@ async def vk_login(data: VkIn, session: AsyncSession = Depends(get_session)):
 @router.get("/me")
 async def me(user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
     providers = (await session.execute(select(AuthAccount.provider).where(AuthAccount.user_id == user.id))).scalars()
-    return {"id": user.id, "nickname": user.nickname, "role": user.role, "providers": list(providers)}
+    return {"id": user.id, "player_no": user.player_no, "nickname": user.nickname, "role": user.role,
+            "providers": list(providers)}

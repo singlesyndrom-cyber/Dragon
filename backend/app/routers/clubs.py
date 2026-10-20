@@ -170,19 +170,34 @@ async def membership(club_id: int, user: User = Depends(current_user), session: 
 @router.get("/{club_id}/players")
 async def club_players(club_id: int, q: str = "", user: User = Depends(current_user),
                        session: AsyncSession = Depends(get_session)):
-    """Подсказки для «Добавить игрока»: участники клуба (и гости клуба) по началу ника."""
+    """Подсказки для «Добавить игрока»: участники клуба (и гости клуба) по нику или номеру игрока.
+    По точному номеру находится любой игрок платформы, даже если он ещё не играл в этом клубе."""
     if not await is_club_organizer(session, club_id, user):
         raise HTTPException(403, "Нужны права организатора клуба")
-    stmt = (select(User.id, User.nickname, User.is_guest).join(ClubMember, ClubMember.user_id == User.id)
-            .where(ClubMember.club_id == club_id))
-    if q.strip():
-        stmt = stmt.where(User.nickname.ilike(f"%{q.strip()}%"))
+    term = q.strip().lstrip("№#").strip()
+    cols = (User.id, User.nickname, User.is_guest, User.player_no)
+    out, seen = [], set()
+    if term.isdigit():
+        found = (await session.execute(select(*cols).where(User.player_no == int(term)))).first()
+        if found:
+            member = (await session.execute(select(ClubMember.id).where(
+                ClubMember.club_id == club_id, ClubMember.user_id == found[0]))).first() is not None
+            out.append({"user_id": found[0], "nickname": found[1], "guest": found[2], "player_no": found[3],
+                        "member": member})
+            seen.add(found[0])
+    stmt = select(*cols).join(ClubMember, ClubMember.user_id == User.id).where(ClubMember.club_id == club_id)
+    if term:
+        stmt = stmt.where(User.nickname.ilike(f"%{term}%"))
     rows = (await session.execute(stmt.order_by(User.is_guest, User.nickname).limit(20))).all()
-    return [{"user_id": uid, "nickname": nick, "guest": guest} for uid, nick, guest in rows]
+    out += [{"user_id": uid, "nickname": nick, "guest": guest, "player_no": no, "member": True}
+            for uid, nick, guest, no in rows if uid not in seen]
+    return out[:20]
 
 
 class MergeIn(BaseModel):
-    email: str = Field(min_length=3, max_length=255)
+    """Аккаунт, к которому привязать гостя: по email или по номеру игрока."""
+    email: str | None = Field(default=None, min_length=3, max_length=255)
+    player_no: int | None = Field(default=None, ge=1)
 
 
 @router.post("/{club_id}/guests/{guest_id}/merge")
@@ -197,11 +212,20 @@ async def merge_guest(club_id: int, guest_id: int, data: MergeIn, user: User = D
     guest = await session.get(User, guest_id)
     if not guest or not guest.is_guest or guest.guest_club_id != club_id:
         raise HTTPException(404, "Гость этого клуба не найден")
-    acc = (await session.execute(select(AuthAccount).where(
-        AuthAccount.provider == Provider.email, AuthAccount.external_id == data.email.strip().lower()))).scalar_one_or_none()
-    if not acc:
-        raise HTTPException(404, "Аккаунт с таким email не найден: игрок должен сначала зарегистрироваться")
-    target = acc.user_id
+    if data.player_no:
+        target = (await session.execute(select(User.id).where(
+            User.player_no == data.player_no, User.is_guest.is_(False)))).scalar_one_or_none()
+        if not target:
+            raise HTTPException(404, f"Игрока с номером {data.player_no} нет: проверьте номер в его кабинете")
+    elif data.email:
+        acc = (await session.execute(select(AuthAccount).where(
+            AuthAccount.provider == Provider.email,
+            AuthAccount.external_id == data.email.strip().lower()))).scalar_one_or_none()
+        if not acc:
+            raise HTTPException(404, "Аккаунт с таким email не найден: игрок должен сначала зарегистрироваться")
+        target = acc.user_id
+    else:
+        raise HTTPException(422, "Укажите email или номер игрока")
     both = (await session.execute(select(TournamentPlayer.tournament_id).where(TournamentPlayer.user_id == target)
                                   .intersect(select(TournamentPlayer.tournament_id).where(
                                       TournamentPlayer.user_id == guest_id)))).all()

@@ -41,7 +41,10 @@ export default function Participants({ t, reload }: { t: any; reload: () => Prom
     input.current?.focus();
   }, `${label}: добавлен`);
 
-  const exact = hints.find((h) => h.nickname.toLowerCase() === q.trim().toLowerCase());
+  // номер игрока: «1001», «№1001» или «#1001» - ищем по точному номеру, гостя с таким именем не создаём
+  const term = q.trim().replace(/^[№#]\s*/, "");
+  const isNumber = /^\d+$/.test(term);
+  const exact = hints.find((h) => isNumber ? h.player_no === +term : h.nickname.toLowerCase() === q.trim().toLowerCase());
   const checked = t.participants.filter((p: any) => p.checked_in && !p.dropped).length;
 
   return (
@@ -50,11 +53,13 @@ export default function Participants({ t, reload }: { t: any; reload: () => Prom
         <form className="add-player" onSubmit={(e) => {
           e.preventDefault();
           if (!q.trim()) return;
-          if (exact) add({ user_id: exact.user_id }, exact.nickname); else add({ nickname: q.trim() }, q.trim());
+          if (exact) add({ user_id: exact.user_id }, exact.nickname);
+          else if (isNumber) add({ player_no: +term }, `№${term}`);
+          else add({ nickname: q.trim() }, q.trim());
         }}>
           <label style={{ flex: 1, margin: 0 }}>
-            <span>Добавить игрока: имя из клуба или новое — тогда это гость без аккаунта</span>
-            <input ref={input} value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" placeholder="Например, Алексей" />
+            <span>Добавить игрока: номер игрока, имя из клуба или новое имя — тогда это гость без аккаунта</span>
+            <input ref={input} value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" placeholder="Например, 1001 или Алексей" />
           </label>
           {edh ? (
             <label style={{ margin: 0 }}><span>Брекет</span>
@@ -63,13 +68,16 @@ export default function Participants({ t, reload }: { t: any; reload: () => Prom
               </select>
             </label>
           ) : null}
-          <button className="primary" disabled={busy || !q.trim()}>{exact ? "Добавить" : "Добавить гостя"}</button>
+          <button className="primary" disabled={busy || !q.trim()}>{exact || isNumber ? "Добавить" : "Добавить гостя"}</button>
           {hints.length ? (
             <div className="hints" role="listbox" aria-label="Игроки клуба">
               {hints.map((h) => (
                 <button type="button" key={h.user_id} role="option" aria-selected={false}
                   onClick={() => add({ user_id: h.user_id }, h.nickname)}>
-                  {h.nickname}{h.guest ? <span className="badge" style={{ marginLeft: 8 }}>гость</span> : null}
+                  {h.nickname}
+                  {h.player_no ? <span className="muted small" style={{ marginLeft: 8 }}>№{h.player_no}</span> : null}
+                  {h.guest ? <span className="badge" style={{ marginLeft: 8 }}>гость</span> : null}
+                  {h.member === false ? <span className="muted small" style={{ marginLeft: 8 }}>не из клуба</span> : null}
                 </button>
               ))}
             </div>
@@ -99,6 +107,7 @@ export default function Participants({ t, reload }: { t: any; reload: () => Prom
                 <tr key={p.user_id} className={p.dropped ? "dropped" : undefined}>
                   <td>
                     {p.nickname}
+                    {p.player_no ? <span className="muted small" style={{ marginLeft: 8 }}>№{p.player_no}</span> : null}
                     {p.guest ? <span className="badge" style={{ marginLeft: 8 }}>гость</span> : null}
                     {p.dropped ? <span className="badge" style={{ marginLeft: 8 }}>выбыл</span> : null}
                   </td>
@@ -129,11 +138,12 @@ export default function Participants({ t, reload }: { t: any; reload: () => Prom
                           <form className="row inline" onSubmit={(e) => {
                             e.preventDefault();
                             run(async () => {
-                              await api(`/clubs/${t.club_id}/guests/${p.user_id}/merge`, { body: { email } });
+                              const v = email.trim().replace(/^[№#]\s*/, "");
+                              await api(`/clubs/${t.club_id}/guests/${p.user_id}/merge`, { body: /^\d+$/.test(v) ? { player_no: +v } : { email: v } });
                               setMergeFor(null); setEmail(""); await reload();
                             }, "История гостя перенесена на аккаунт");
                           }}>
-                            <input type="email" required placeholder="email аккаунта" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Email аккаунта игрока" />
+                            <input required placeholder="номер игрока или email" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Номер игрока или email аккаунта" />
                             <button className="primary" disabled={busy}>Привязать</button>
                             <button type="button" onClick={() => setMergeFor(null)}>Отмена</button>
                           </form>

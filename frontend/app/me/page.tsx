@@ -29,6 +29,12 @@ function Cabinet() {
   return (
     <>
       <h1>{me.nickname}</h1>
+      {me.player_no ? (
+        <p className="lead" style={{ marginTop: 0 }}>
+          Ваш номер игрока <b className="num">{me.player_no}</b>. Назовите его организатору, чтобы он записал вас на турнир;
+          по нему же другие игроки видят вашу <Link href={`/players/${me.player_no}`}>репутацию на аукционе</Link>.
+        </p>
+      ) : null}
       <div className="split">
         <div>
           <Decks />
@@ -173,12 +179,13 @@ function Deals() {
       <h2>Сделки на аукционе</h2>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Лот</th><th>Роль</th><th className="r">Цена</th><th>Статус</th><th></th></tr></thead>
+          <thead><tr><th>Лот</th><th>Роль</th><th>С кем</th><th className="r">Цена</th><th>Статус</th><th></th></tr></thead>
           <tbody>
             {deals.map((d) => (
               <tr key={d.id}>
                 <td><Link href={`/auctions/${d.lot_id}`}>{d.title}</Link></td>
                 <td>{d.role === "seller" ? "продавец" : "покупатель"}</td>
+                <td>{d.counterparty_no ? <Link href={`/players/${d.counterparty_no}`}>{d.counterparty} <span className="muted small">№{d.counterparty_no}</span></Link> : d.counterparty}</td>
                 <td className="r">{rub(d.price)}</td>
                 <td>{DEAL[d.status]}</td>
                 <td>

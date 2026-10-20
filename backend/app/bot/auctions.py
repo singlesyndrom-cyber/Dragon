@@ -12,11 +12,11 @@ from sqlalchemy import select
 
 from .. import auction_service as svc
 from ..auction import CONDITIONS, DURATIONS_H, MIN_START, AuctionError, money, parse_price
-from ..auction_texts import lot_caption, post_url
+from ..auction_texts import lot_caption, post_url, rating_card
 from ..botutil import parse_chat_id
 from ..config import settings
 from ..db import SessionLocal
-from ..models import Lot, LotStatus
+from ..models import Lot, LotStatus, User
 
 log = logging.getLogger("auctions")
 router = Router()
@@ -63,7 +63,7 @@ def caption(view: dict) -> str:
                        seller_avg=view["seller_avg"], seller_count=view["seller_count"],
                        start_price=view["start_price"], current_price=view["current_price"], leader=view["leader"],
                        bids=view["bids"], ends_at=view["ends_at"], status=view["status"], next_bid=view["next_bid"],
-                       tz=settings.app_timezone)
+                       tz=settings.app_timezone, seller_no=view.get("seller_no"))
 
 
 async def refresh_post(bot: Bot, lot_id: int) -> None:
@@ -222,6 +222,35 @@ async def my_lots(message: Message):
     lines = [f"#{x.id} {x.title} — " + (money(x.current_price) if x.current_price else f"старт {money(x.start_price)}")
              + (f" · {post_url(x.chat_id, x.message_id)}" if post_url(x.chat_id, x.message_id) else "") for x in lots]
     await message.answer("Ваши активные лоты:\n" + "\n".join(lines), disable_web_page_preview=True)
+
+
+@router.message(Command("id"))
+async def my_number(message: Message):
+    """Свой номер игрока: его называют организатору при записи на турнир."""
+    async with SessionLocal() as s:
+        user = await tg_user(s, message.from_user)
+        r = await svc.user_rating(s, user.id)
+    await message.answer(rating_card(user.nickname, user.player_no, r) +
+                         "\n\nНазовите номер организатору, чтобы он записал вас на турнир. "
+                         "Проверить другого игрока: /rating и номер, например /rating 1001", parse_mode="HTML")
+
+
+@router.message(Command("rating"))
+async def rating_by_number(message: Message, command: CommandObject):
+    arg = (command.args or "").strip().lstrip("№#")
+    if not arg.isdigit():
+        await message.answer("Укажите номер игрока: /rating 1001")
+        return
+    async with SessionLocal() as s:
+        user = (await s.execute(select(User).where(User.player_no == int(arg)))).scalar_one_or_none()
+        if not user:
+            await message.answer(f"Игрока с номером {arg} нет.")
+            return
+        r = await svc.user_rating(s, user.id)
+    text = rating_card(user.nickname, user.player_no, r)
+    if settings.public_base_url:
+        text += f"\n{settings.public_base_url.rstrip('/')}/players/{user.player_no}"
+    await message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
 
 
 # ---------- ставки ----------

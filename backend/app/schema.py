@@ -66,6 +66,19 @@ def sync_schema(conn) -> list[str]:
                 changes.append(f"{table.name}.{col.name}: заполнено {filled} пустых, NOT NULL")
         for idx in table.indexes:
             conn.execute(CreateIndex(idx, if_not_exists=True))
+    changes += _fill_player_numbers(conn)
     for ch in changes:
         log.info("schema: %s", ch)
     return changes
+
+
+def _fill_player_numbers(conn) -> list[str]:
+    """Аккаунтам, созданным до появления номеров, выдаём номера по порядку регистрации. Гостям номер не нужен."""
+    if conn.dialect.name != "postgresql":
+        return []
+    filled = conn.exec_driver_sql(
+        "UPDATE users u SET player_no = s.n FROM ("
+        "  SELECT id, nextval('player_no_seq') AS n FROM ("
+        "    SELECT id FROM users WHERE player_no IS NULL AND NOT is_guest ORDER BY id) q) s "
+        "WHERE u.id = s.id").rowcount
+    return [f"users.player_no: выдано номеров {filled}"] if filled else []

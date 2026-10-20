@@ -43,6 +43,7 @@ try {
   await page.getByRole("button", { name: "Создать аккаунт" }).click();
   await page.waitForURL("**/me");
   await visible(page.getByRole("heading", { name: "Мои клубы" }), "в кабинете есть блок «Мои клубы»");
+  await visible(page.getByText("Ваш номер игрока"), "в кабинете виден номер игрока");
   await shot("cabinet");
 
   step("Создание клуба с русским названием");
@@ -81,9 +82,19 @@ try {
     await page.getByRole("button", { name: "Добавить гостя" }).click();
     await visible(page.getByRole("cell", { name: new RegExp(name) }), `гость «${name}» в списке`);
   }
-  for (let i = 1; i <= 2; i++) {
-    const r = await apiCall("/auth/register", { body: { email: `p${i}-${run}@example.com`, password: "e2e-password-1", nickname: `Игрок${i}-${run}` } });
+  {
+    const r = await apiCall("/auth/register", { body: { email: `p1-${run}@example.com`, password: "e2e-password-1", nickname: `Игрок1-${run}` } });
     await apiCall(`/tournaments/${tid}/register`, { token: r.access_token, method: "POST" });
+  }
+  {
+    // второго игрока организатор записывает по номеру игрока, как у стойки клуба
+    const r = await apiCall("/auth/register", { body: { email: `p2-${run}@example.com`, password: "e2e-password-1", nickname: `Игрок2-${run}` } });
+    const me = await apiCall("/auth/me", { token: r.access_token });
+    check(me.player_no >= 1001, `игроку выдан номер ${me.player_no}`);
+    await addInput.fill(`№${me.player_no}`);
+    await visible(page.getByRole("option", { name: new RegExp(`Игрок2-${run}.*№${me.player_no}.*не из клуба`) }), "по номеру находится игрок не из клуба");
+    await page.getByRole("button", { name: "Добавить", exact: true }).click();
+    await visible(page.getByRole("cell", { name: new RegExp(`Игрок2-${run}.*№${me.player_no}`) }), "игрок записан по номеру, номер виден в списке");
   }
   await page.reload();
   await visible(page.getByRole("tab", { name: "Участники (4)" }), "в турнире 4 участника");

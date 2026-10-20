@@ -211,13 +211,17 @@ async def lot_view(session: AsyncSession, lot_id: int) -> dict | None:
     lot = await session.get(Lot, lot_id)
     if not lot:
         return None
-    names = dict((await session.execute(select(User.id, User.nickname).where(
-        User.id.in_({lot.seller_id, lot.leader_id} - {None})))).all())
+    found = (await session.execute(select(User.id, User.nickname, User.player_no).where(
+        User.id.in_({lot.seller_id, lot.leader_id} - {None})))).all()
+    names = {uid: nick for uid, nick, _ in found}
+    numbers = {uid: no for uid, _, no in found}
     rating = await user_rating(session, lot.seller_id)
     return {"id": lot.id, "title": lot.title, "condition": lot.condition, "seller_id": lot.seller_id,
-            "seller": names.get(lot.seller_id), "seller_avg": rating["seller_avg"],
+            "seller": names.get(lot.seller_id), "seller_no": numbers.get(lot.seller_id),
+            "seller_avg": rating["seller_avg"],
             "seller_count": rating["seller_count"], "start_price": lot.start_price,
             "current_price": lot.current_price, "leader_id": lot.leader_id, "leader": names.get(lot.leader_id),
+            "leader_no": numbers.get(lot.leader_id),
             "bids": lot.bids_count, "ends_at": lot.ends_at, "status": lot.status.value,
             "next_bid": min_next_bid(lot.start_price, lot.current_price), "chat_id": lot.chat_id,
             "message_id": lot.message_id, "has_photo": bool(lot.photo_file_id),

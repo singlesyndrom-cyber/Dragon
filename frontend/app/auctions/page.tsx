@@ -1,4 +1,5 @@
 import Link from "next/link";
+import PlayerLookup from "@/components/PlayerLookup";
 import { sget } from "@/lib/api";
 import { dateTime, rub } from "@/lib/format";
 
@@ -17,7 +18,8 @@ export default async function Auctions({ searchParams }: { searchParams: Promise
         под постом. Ставка в последние 5 минут продлевает торги ещё на 5 минут.
         {BOT ? <> Выставить карту: <a href={`https://t.me/${BOT}`}>@{BOT}</a>, команда /sell.</> : null}
       </p>
-      <div className="row">
+      <PlayerLookup label="Проверить продавца или покупателя по номеру игрока" />
+      <div className="row section">
         <Link href="/auctions" className={status !== "sold" ? "btn primary" : "btn"}>Идут торги</Link>
         <Link href="/auctions?status=sold" className={status === "sold" ? "btn primary" : "btn"}>Проданные</Link>
       </div>

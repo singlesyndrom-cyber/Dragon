@@ -31,10 +31,12 @@ def rating_line(avg: float | None, count: int) -> str:
 
 def lot_caption(*, lot_id: int, title: str, condition: str, seller: str, seller_avg: float | None,
                 seller_count: int, start_price: int, current_price: int | None, leader: str | None,
-                bids: int, ends_at: datetime, status: str, next_bid: int, tz: str) -> str:
+                bids: int, ends_at: datetime, status: str, next_bid: int, tz: str,
+                seller_no: int | None = None) -> str:
+    who = esc(seller) + (f" (№{seller_no})" if seller_no else "")
     lines = [f"🃏 <b>{esc(title[:100])}</b>  #лот{lot_id}",
              f"Состояние: {condition} — {CONDITIONS.get(condition, '')}",
-             f"Продавец: {esc(seller)} · {rating_line(seller_avg, seller_count)}", ""]
+             f"Продавец: {who} · {rating_line(seller_avg, seller_count)}", ""]
     if status == "active":
         if current_price is None:
             lines.append(f"💰 Старт: <b>{money(start_price)}</b>, ставок пока нет")
@@ -95,3 +97,14 @@ def deal_buttons(deal_id: int) -> list[list[dict]]:
 
 def rate_buttons(deal_id: int) -> list[list[dict]]:
     return [[{"text": "⭐" * n if n <= 3 else f"{n}⭐", "callback_data": f"rate:{deal_id}:{n}"} for n in range(1, 6)]]
+
+
+def rating_card(nickname: str, player_no: int | None, r: dict) -> str:
+    """Ответ бота на /rating и /id: репутация игрока на аукционе."""
+    def part(avg, n):
+        return f"⭐ {avg:.1f} из 5, оценок: {n}" if n else "оценок пока нет"
+    head = f"<b>{esc(nickname)}</b>" + (f", номер игрока <b>{player_no}</b>" if player_no else "")
+    return "\n".join([head,
+                      f"Как продавец: {part(r['seller_avg'], r['seller_count'])}",
+                      f"Как покупатель: {part(r['buyer_avg'], r['buyer_count'])}",
+                      f"Состоявшихся сделок: {r['deals_completed']}"])

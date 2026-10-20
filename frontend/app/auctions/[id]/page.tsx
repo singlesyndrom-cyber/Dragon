@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sget } from "@/lib/api";
 import { CONDITIONS, dateTime, rub } from "@/lib/format";
@@ -19,7 +20,7 @@ export default async function Lot({ params }: { params: Promise<{ id: string }> 
             <dt>Состояние</dt><dd>{l.condition}, {CONDITIONS[l.condition]}</dd>
             <dt>Продавец</dt>
             <dd>
-              {l.seller}{" "}
+              {l.seller_no ? <Link href={`/players/${l.seller_no}`}>{l.seller} <span className="muted small">№{l.seller_no}</span></Link> : l.seller}{" "}
               <span className="muted">
                 {l.seller_count ? `рейтинг ${l.seller_avg.toFixed(1).replace(".", ",")} из 5 по ${l.seller_count} оценкам` : "новый продавец"}
               </span>

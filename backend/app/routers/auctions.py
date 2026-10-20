@@ -116,10 +116,17 @@ async def my_deals(user: User = Depends(current_user), session: AsyncSession = D
     rows = (await session.execute(select(Deal, Lot.title).join(Lot, Lot.id == Deal.lot_id)
                                   .where((Deal.seller_id == user.id) | (Deal.buyer_id == user.id))
                                   .order_by(Deal.id.desc()).limit(100))).all()
-    return [{"id": d.id, "lot_id": d.lot_id, "title": t, "price": d.price, "status": d.status,
-             "role": "seller" if d.seller_id == user.id else "buyer",
-             "counterparty_id": d.buyer_id if d.seller_id == user.id else d.seller_id,
-             "my_answer": d.seller_ok if d.seller_id == user.id else d.buyer_ok} for d, t in rows]
+    others = {d.buyer_id if d.seller_id == user.id else d.seller_id for d, _ in rows}
+    who = {uid: (nick, no) for uid, nick, no in (await session.execute(
+        select(User.id, User.nickname, User.player_no).where(User.id.in_(others)))).all()} if others else {}
+    out = []
+    for d, t in rows:
+        other = d.buyer_id if d.seller_id == user.id else d.seller_id
+        out.append({"id": d.id, "lot_id": d.lot_id, "title": t, "price": d.price, "status": d.status,
+                    "role": "seller" if d.seller_id == user.id else "buyer", "counterparty_id": other,
+                    "counterparty": who.get(other, (None, None))[0], "counterparty_no": who.get(other, (None, None))[1],
+                    "my_answer": d.seller_ok if d.seller_id == user.id else d.buyer_ok})
+    return out
 
 
 @router.post("/auctions/deals/{deal_id}/confirm")

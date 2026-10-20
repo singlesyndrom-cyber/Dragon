@@ -1,7 +1,7 @@
 import enum
 from datetime import date, datetime
 
-from sqlalchemy import (Date, DateTime, Enum, Float, ForeignKey, Index, Integer, String, text,
+from sqlalchemy import (Date, DateTime, Enum, Float, ForeignKey, Index, Integer, Sequence, String, text,
                         Text, UniqueConstraint, func)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,10 +24,16 @@ class Provider(str, enum.Enum):
     vk = "vk"
 
 
+# номер игрока: один на всю платформу, по порядку с 1001; у гостей (без аккаунта) номера нет
+PLAYER_NO_SEQ = Sequence("player_no_seq", start=1001)
+
+
 class User(Base):
     __tablename__ = "users"
+    __mapper_args__ = {"eager_defaults": True}   # номер из последовательности сразу виден после flush (RETURNING)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    player_no: Mapped[int | None] = mapped_column(Integer, PLAYER_NO_SEQ, unique=True, index=True)
     nickname: Mapped[str] = mapped_column(String(64))
     role: Mapped[GlobalRole] = mapped_column(Enum(GlobalRole), default=GlobalRole.player)
     is_banned: Mapped[bool] = mapped_column(default=False)

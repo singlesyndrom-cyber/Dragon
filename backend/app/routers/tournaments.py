@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, null, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -51,8 +51,9 @@ class TournamentPatch(BaseModel):
 
 
 class PlayerAdd(BaseModel):
-    """Организатор добавляет игрока: существующего (user_id) или гостя по имени (nickname)."""
+    """Организатор добавляет игрока: по номеру игрока (player_no), существующего (user_id) или гостя по имени."""
     user_id: int | None = None
+    player_no: int | None = Field(default=None, ge=1)
     nickname: str | None = Field(default=None, min_length=2, max_length=64)
     bracket: int = Field(default=2, ge=1, le=5)
 
@@ -172,15 +173,15 @@ async def get_tournament(tid: int, session: AsyncSession = Depends(get_session))
     """Карточка турнира: клуб и участники (с брекетом и отметкой о приходе для EDH)."""
     t = await _get(session, tid)
     club = await session.get(Club, t.club_id)
-    rows = (await session.execute(select(TournamentPlayer, User.nickname, User.is_guest)
+    rows = (await session.execute(select(TournamentPlayer, User.nickname, User.is_guest, User.player_no)
                                   .join(User, User.id == TournamentPlayer.user_id)
                                   .where(TournamentPlayer.tournament_id == tid).order_by(User.nickname))).all()
     league = await session.get(League, t.league_id) if t.league_id else None
     return {**_t_out(t, club, len(rows)), "description": t.description,
             "league": {"id": league.id, "name": league.name, "kind": league.kind.value} if league else None,
-            "participants": [{"user_id": tp.user_id, "nickname": nick, "guest": guest, "bracket": tp.bracket,
-                              "checked_in": tp.checked_in, "dropped": tp.dropped,
-                              "has_deck": tp.deck_id is not None} for tp, nick, guest in rows]}
+            "participants": [{"user_id": tp.user_id, "nickname": nick, "guest": guest, "player_no": no,
+                              "bracket": tp.bracket, "checked_in": tp.checked_in, "dropped": tp.dropped,
+                              "has_deck": tp.deck_id is not None} for tp, nick, guest, no in rows]}
 
 
 @router.patch("/{tid}", status_code=204)
@@ -227,7 +228,11 @@ async def add_player(tid: int, data: PlayerAdd, user: User = Depends(current_use
         raise HTTPException(400, "Игроков можно добавлять только до старта")
     if t.max_players and await _count_players(session, tid) >= t.max_players:
         raise HTTPException(400, f"Достигнут лимит участников: {t.max_players}")
-    if data.user_id:
+    if data.player_no:
+        player = (await session.execute(select(User).where(User.player_no == data.player_no))).scalar_one_or_none()
+        if not player:
+            raise HTTPException(404, f"Игрока с номером {data.player_no} нет: проверьте номер в его кабинете")
+    elif data.user_id:
         player = await session.get(User, data.user_id)
         if not player:
             raise HTTPException(404, "Игрок не найден")
@@ -237,7 +242,8 @@ async def add_player(tid: int, data: PlayerAdd, user: User = Depends(current_use
             User.is_guest.is_(True), User.guest_club_id == t.club_id,
             func.lower(User.nickname) == nick.lower()))).scalars().first()
         if not player:
-            player = User(nickname=nick, is_guest=True, guest_club_id=t.club_id)
+            # null(), а не None: на None ORM подставил бы номер из последовательности
+            player = User(nickname=nick, is_guest=True, guest_club_id=t.club_id, player_no=null())
             session.add(player)
             await session.flush()
     else:
@@ -249,7 +255,8 @@ async def add_player(tid: int, data: PlayerAdd, user: User = Depends(current_use
     session.add(TournamentPlayer(tournament_id=tid, user_id=player.id, seed=random.randint(0, 10**9),
                                  bracket=data.bracket, checked_in=late_edh))
     await session.commit()
-    return {"user_id": player.id, "nickname": player.nickname, "guest": player.is_guest}
+    return {"user_id": player.id, "nickname": player.nickname, "guest": player.is_guest,
+            "player_no": None if player.is_guest else player.player_no}
 
 
 @router.delete("/{tid}/players/{uid}", status_code=204)

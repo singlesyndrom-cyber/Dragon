@@ -151,6 +151,8 @@ textarea { min-height: 140px; max-width: 760px; }
 input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--gilt); cursor: pointer; }
 input:focus, select:focus, textarea:focus { border-color: var(--gilt); outline: none; }
 .inline input, .inline select { width: auto; }
+.lookup { align-items: flex-end; margin: 16px 0 0; }
+.lookup input { width: 140px; }
 
 button, .btn {
   font: inherit; cursor: pointer; padding: 9px 18px; border-radius: var(--radius-s);
