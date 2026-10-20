@@ -54,36 +54,43 @@ try {
   await visible(page.getByRole("heading", { name: `Клуб Е2Е ${run}` }), "страница клуба открылась по латинскому адресу");
   await shot("club");
 
-  step("Кнопка «Создать турнир» на странице турниров");
+  const clubUrl = page.url();
+
+  step("Мастер создания турнира: формат, настройки");
   await page.goto(BASE + "/tournaments");
   await visible(page.getByRole("link", { name: "Создать турнир" }), "на странице турниров есть «Создать турнир»");
   await page.getByRole("link", { name: "Создать турнир" }).first().click();
-  await page.waitForURL(/\/manage\/clubs\/\d+/);
-  await page.getByLabel("Название").first().fill("Е2Е швейцарка");
+  await page.waitForURL(/\/tournaments\/new/);
+  await page.getByText("Magic: швейцарская система").click();
+  await page.getByLabel("Название").fill("Е2Е швейцарка");
   await page.getByLabel("Туров").fill("2");
+  await page.getByLabel("Описание для игроков").fill("Приходите к **18:00**");
+  await shot("wizard");
   await page.getByRole("button", { name: "Создать турнир" }).click();
   await page.waitForURL(/\/manage\/tournaments\/\d+/);
   const tid = page.url().split("/").pop();
-  check(Boolean(tid), `турнир создан, открылось управление (№${tid})`);
+  check(Boolean(tid), `турнир создан, открылся хаб турнира (№${tid})`);
+  await visible(page.getByRole("tab", { name: /Участники/ }), "в хабе есть вкладка «Участники»");
 
-  step("Пятеро игроков записываются");
-  const token = await page.evaluate(() => localStorage.getItem("dragon_token"));
-  for (let i = 1; i <= 4; i++) {
+  step("Участники: два гостя по имени и два игрока с аккаунтами");
+  const addInput = page.getByLabel("Добавить игрока");
+  for (const name of ["Гость Один", "Гость Два"]) {
+    await addInput.fill(name);
+    await page.getByRole("button", { name: "Добавить гостя" }).click();
+    await visible(page.getByRole("cell", { name: new RegExp(name) }), `гость «${name}» в списке`);
+  }
+  for (let i = 1; i <= 2; i++) {
     const r = await apiCall("/auth/register", { body: { email: `p${i}-${run}@example.com`, password: "e2e-password-1", nickname: `Игрок${i}-${run}` } });
     await apiCall(`/tournaments/${tid}/register`, { token: r.access_token, method: "POST" });
   }
-  await page.goto(`${BASE}/tournaments/${tid}`);
-  await visible(page.getByRole("button", { name: "Записаться" }), "есть кнопка «Записаться»");
-  await page.getByRole("button", { name: "Записаться" }).click();
-  await page.getByText("Вы записаны").waitFor();
-  check((await page.getByText("Вы записаны").count()) === 1, "сообщение «Вы записаны» показано один раз");
-  await shot("registered");
+  await page.reload();
+  await visible(page.getByRole("tab", { name: "Участники (4)" }), "в турнире 4 участника");
+  await shot("participants");
 
-  step("Старт и первый тур");
-  await visible(page.getByRole("link", { name: "Управлять турниром" }), "организатор видит «Управлять турниром»");
-  await page.getByRole("link", { name: "Управлять турниром" }).click();
+  step("Туры: старт, ввод результатов");
+  await page.getByRole("tab", { name: "Туры" }).click();
   await page.getByRole("button", { name: "Начать турнир" }).click();
-  await page.getByRole("heading", { name: "Тур 1: результаты" }).waitFor();
+  await visible(page.getByRole("button", { name: "Тур 1" }), "появился тур 1");
   const fill = async () => {
     const selects = page.locator("select[aria-label^='Результат стола']");
     await selects.first().waitFor();
@@ -92,36 +99,78 @@ try {
       await selects.nth(i).selectOption(i === 0 ? "p1" : "draw");
       await page.waitForTimeout(300);
     }
-    return cnt;
   };
-  const r1 = await fill();
+  await fill();
   const pairs1 = await page.locator("table").first().innerText();
   await shot("round1");
 
-  step("Следующий тур показывает новые пары, а не прошлые");
+  step("Следующий тур показывает новые пары; прошлый тур доступен");
   await page.getByRole("button", { name: "Следующий тур" }).click();
-  await page.getByRole("heading", { name: "Тур 2: результаты" }).waitFor();
+  await visible(page.getByRole("button", { name: "Тур 2" }), "появился тур 2");
   await page.waitForTimeout(800);
-  const selects2 = page.locator("select[aria-label^='Результат стола']");
-  const values = await selects2.evaluateAll((els) => els.map((e) => e.value));
-  check(values.every((v) => v === ""), "результаты второго тура пустые (на экране пары второго тура)");
-  const pairs2 = await page.locator("table").first().innerText();
-  check(pairs1 !== pairs2, "пары второго тура отличаются от первого");
+  const values = await page.locator("select[aria-label^='Результат стола']").evaluateAll((els) => els.map((e) => e.value));
+  check(values.length > 0 && values.every((v) => v === ""), "результаты второго тура пустые (на экране пары второго тура)");
+  check(pairs1 !== (await page.locator("table").first().innerText()), "пары второго тура отличаются от первого");
   await fill();
+  await page.getByRole("button", { name: "Тур 1" }).click();
+  await visible(page.getByText("Это прошлый тур"), "прошлый тур открывается для исправлений");
+  await page.getByRole("button", { name: "Тур 2" }).click();
   await shot("round2");
 
   step("Завершение через подтверждение на странице");
   await page.getByRole("button", { name: "Завершить турнир" }).click();
   await page.getByRole("button", { name: "Завершить", exact: true }).click();
-  await page.getByText("Турнир завершён").first().waitFor();
+  await visible(page.getByText("Турнир завершён"), "турнир завершён");
   await page.goto(`${BASE}/tournaments/${tid}`);
-  const firstH2 = await page.locator("main h2").first().innerText();
-  check(firstH2 === "Таблица", "у завершённого турнира первой идёт таблица");
-  const highlighted = await page.locator("tr.place-1, tr.place-2, tr.place-3").count();
-  check(highlighted === 3, "три призовых места подсвечены");
+  check((await page.locator("main h2").first().innerText()) === "Таблица", "у завершённого турнира первой идёт таблица");
+  check((await page.locator("tr.place-1, tr.place-2, tr.place-3").count()) === 3, "три призовых места подсвечены");
   const bg = await page.locator("tr.place-2 td").first().evaluate((el) => getComputedStyle(el).backgroundColor);
-  check(bg !== "rgba(255, 255, 255, 0.016)" && bg !== "rgba(0, 0, 0, 0)", `второе место подсвечено (${bg})`);
+  check(bg.startsWith("rgba(201, 164, 76"), `второе место подсвечено (${bg})`);
+  await visible(page.locator("main strong", { hasText: "18:00" }), "описание турнира показано с разметкой");
+  check((await page.getByText("гость", { exact: true }).count()) === 2, "гости помечены на публичной странице");
   await shot("finished");
+
+  step("Сезон EDH на 2 месяца");
+  const clubId = await page.evaluate(async (slug) => (await (await fetch(`/api/clubs/${slug}`)).json()).id, decodeURIComponent(clubUrl.split("/clubs/")[1]));
+  await page.goto(`${BASE}/manage/clubs/${clubId}`);
+  await page.getByPlaceholder("Например, Осень 2026").fill("Осень E2E");
+  await page.locator("form").filter({ hasText: "Новый сезон" }).getByLabel("Длительность").selectOption("2");
+  await page.getByRole("button", { name: "Создать сезон" }).click();
+  await visible(page.getByRole("link", { name: "Осень E2E" }), "сезон создан и виден в клубе");
+
+  step("EDH-ивент в сезоне: мастер сам выбирает активный сезон");
+  await page.goto(`${BASE}/tournaments/new?club=${clubId}`);
+  await page.getByText("EDH: банк с таймером").click();
+  await visible(page.getByRole("radio", { name: /Осень E2E/ }), "в мастере есть сезон");
+  check(await page.getByRole("radio", { name: /Осень E2E/ }).isChecked(), "единственный активный сезон выбран сам");
+  await page.getByLabel("Название").fill("Е2Е EDH-среда");
+  await page.getByRole("button", { name: "Создать турнир" }).click();
+  await page.waitForURL(/\/manage\/tournaments\/\d+/);
+  for (const name of ["Аня", "Боря", "Вася"]) {
+    await page.getByLabel("Добавить игрока").fill(`${name} ${run}`);
+    await page.getByRole("button", { name: "Добавить гостя" }).click();
+    await visible(page.getByRole("checkbox", { name: `${name} ${run} пришёл` }), `${name} добавлен`);
+    await page.getByRole("checkbox", { name: `${name} ${run} пришёл` }).check();
+    await page.waitForTimeout(400);
+  }
+  await page.getByRole("tab", { name: "Столы" }).click();
+  await page.getByRole("button", { name: "Рассадить и начать" }).click();
+  await visible(page.getByText("осталось 70 мин"), "стол с таймером 70 минут");
+  await page.locator("select[aria-label^='Победитель стола']").first().selectOption({ label: `Аня ${run}` });
+  await page.getByRole("button", { name: "Записать победу" }).click();
+  await visible(page.getByText("Аня " + run + ", победитель"), "победитель отмечен за столом");
+  await page.getByRole("button", { name: "Завершить ивент" }).click();
+  await page.getByRole("button", { name: "Завершить", exact: true }).click();
+  await visible(page.getByText("Ивент завершён"), "ивент завершён");
+  await shot("edh");
+
+  step("Таблица сезона: банк сезона с 1000");
+  await page.getByRole("link", { name: "Осень E2E" }).click();
+  await page.waitForURL(/\/leagues\/\d+/);
+  const seasonRows = await page.locator("table tbody tr").allInnerTexts();
+  check(seasonRows.length === 3, "в таблице сезона трое");
+  check(seasonRows[0].includes(`Аня ${run}`) && /1\s?311/.test(seasonRows[0]), `лидер сезона Аня с банком 1311 (${seasonRows[0].replace(/\s+/g, " ")})`);
+  await shot("season");
 
   step("Старый клуб с кириллическим адресом открывается");
   const cyr = process.env.CYR_SLUG;
