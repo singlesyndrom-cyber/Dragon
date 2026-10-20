@@ -92,11 +92,12 @@ def test_normalize_ru():
     single = {"lang": "ru", "oracle_id": "o1", "printed_name": "Кольцо Сола", "printed_type_line": "Артефакт",
               "printed_text": "{T}: добавьте {C}{C}."}
     r = normalize_ru(single)
-    assert r == {"oracle_id": "o1", "name_ru": "Кольцо Сола", "name_ru_lower": "кольцо сола",
+    assert r == {"oracle_id": "o1", "name_ru": "Кольцо Сола", "name_ru_lower": "кольцо сола", "name_ru_front": "кольцо сола",
                  "type_ru": "Артефакт", "text_ru": "{T}: добавьте {C}{C}."}
     dfc = {"lang": "ru", "oracle_id": "o2", "card_faces": [
         {"printed_name": "Хранитель Тайн", "printed_type_line": "Существо", "printed_text": "А"},
         {"printed_name": "Насекомое-Мутант", "printed_type_line": "Существо", "printed_text": "Б"}]}
     r2 = normalize_ru(dfc)
     assert r2["name_ru"] == "Хранитель Тайн // Насекомое-Мутант" and r2["text_ru"] == "А\n//\nБ"
+    assert r2["name_ru_front"] == "хранитель тайн"
     assert normalize_ru({**single, "lang": "en"}) is None and normalize_ru({"lang": "ru", "oracle_id": "x"}) is None

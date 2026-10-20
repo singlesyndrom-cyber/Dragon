@@ -232,6 +232,7 @@ class Card(Base):
     scryfall_uri: Mapped[str | None] = mapped_column(String(512))
     name_ru: Mapped[str | None] = mapped_column(String(255))
     name_ru_lower: Mapped[str | None] = mapped_column(String(255), index=True)
+    name_ru_front: Mapped[str | None] = mapped_column(String(255), index=True)   # лицевая сторона двусторонних
     type_ru: Mapped[str | None] = mapped_column(String(255))
     text_ru: Mapped[str | None] = mapped_column(Text)
 

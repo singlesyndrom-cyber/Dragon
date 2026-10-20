@@ -136,11 +136,12 @@ async def test_admin_endpoints_and_lock(client):
 async def test_schema_catch_up(client):
     async with engine.begin() as conn:                     # база «старой версии»: колонок ещё нет
         await conn.exec_driver_sql("DROP INDEX IF EXISTS ix_cards_name_ru_lower")
-        await conn.exec_driver_sql("ALTER TABLE cards DROP COLUMN name_ru_lower, DROP COLUMN text_ru")
+        await conn.exec_driver_sql("DROP INDEX IF EXISTS ix_cards_name_ru_front")
+        await conn.exec_driver_sql("ALTER TABLE cards DROP COLUMN name_ru_lower, DROP COLUMN text_ru, DROP COLUMN name_ru_front")
         await conn.exec_driver_sql("DROP TABLE sync_runs")
     async with engine.begin() as conn:
         changes = await conn.run_sync(sync_schema)
-    assert len(changes) == 2 and any("text_ru" in c for c in changes)
+    assert len(changes) == 3 and any("text_ru" in c for c in changes)
     async with engine.begin() as conn:
         cols = {r[0] for r in (await conn.exec_driver_sql(
             "SELECT column_name FROM information_schema.columns WHERE table_name='cards'")).all()}

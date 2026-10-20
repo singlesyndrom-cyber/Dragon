@@ -148,4 +148,5 @@ def normalize_ru(obj: dict) -> dict | None:
     type_ru = obj.get("printed_type_line") or " // ".join(f.get("printed_type_line") or "" for f in faces).strip(" /")
     text_ru = obj.get("printed_text") or "\n//\n".join(f.get("printed_text") or "" for f in faces).strip("\n/")
     return {"oracle_id": obj["oracle_id"], "name_ru": name[:255], "name_ru_lower": norm_name(name)[:255],
+            "name_ru_front": norm_name(front_face(name))[:255],
             "type_ru": (type_ru or None) and type_ru[:255], "text_ru": text_ru or None}
