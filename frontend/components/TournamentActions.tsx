@@ -35,7 +35,7 @@ export default function TournamentActions({ t }: { t: any }) {
   }
 
   return (
-    <div className="panel stack">
+    <div className="panel actions">
       {canManage ? <Link href={`/manage/tournaments/${t.id}`} className="btn primary">Управлять турниром</Link> : null}
       {mine ? (
         <p style={{ margin: 0 }}>Вы записаны{t.format === "edh" ? `, брекет ${mine.bracket}` : ""}.
@@ -51,12 +51,12 @@ export default function TournamentActions({ t }: { t: any }) {
             </label>
           ) : null}
           <button className="primary" disabled={busy} onClick={() =>
-            run(() => api(`/tournaments/${t.id}/register?bracket=${bracket}`, { method: "POST" }), "Вы записаны")
+            run(() => api(`/tournaments/${t.id}/register?bracket=${bracket}`, { method: "POST" }))
               .then((ok) => { if (ok) router.refresh(); })}>
             Записаться
           </button>
         </>
-      ) : <p className="muted" style={{ margin: 0 }}>Регистрация закрыта.</p>}
+      ) : <p className="muted" style={{ margin: 0 }}>{t.status === "finished" ? "Турнир завершён." : "Регистрация закрыта: турнир уже идёт."}</p>}
 
       {mine && open ? (
         <>

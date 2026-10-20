@@ -79,6 +79,13 @@ async def test_swiss_flow(client):
     assert card["club_slug"] == club["slug"] and card["players"] == 5 and len(card["participants"]) == 5
     listed = (await client.get("/tournaments?status=registration")).json()
     assert listed[0]["id"] == tid and listed[0]["club"] == "Дракон" and listed[0]["players"] == 5
+    assert club["slug"] == "drakon"                        # латинский адрес для русского названия
+    assert (await client.get("/clubs/drakon")).status_code == 200
+    assert [c["id"] for c in (await client.get("/clubs/managed", headers=org)).json()] == [club["id"]]
+    assert (await client.get("/clubs/managed", headers=users[1][0])).json() == []
+    assert (await client.post("/clubs", json={"name": "дракон"}, headers=users[1][0])).status_code == 409
+    other = (await client.post("/clubs", json={"name": "Дракон!"}, headers=users[1][0])).json()
+    assert other["slug"] == "drakon-2"
     mem = (await client.get(f"/clubs/{club['id']}/membership", headers=org)).json()
     assert mem["can_manage"] and mem["settings"]["telegram_chat_id"] == "-100123"
     mem2 = (await client.get(f"/clubs/{club['id']}/membership", headers=users[1][0])).json()

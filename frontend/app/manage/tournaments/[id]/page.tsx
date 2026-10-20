@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState } from "react";
+import ConfirmButton from "@/components/ConfirmButton";
 import { Status, useAction } from "@/components/Form";
 import Guard from "@/components/Guard";
 import { Delta } from "@/components/Standings";
@@ -34,24 +35,33 @@ function Manage({ id }: { id: number }) {
         <Link href={`/tournaments/${t.id}`}>Публичная страница</Link>
       </p>
       {t.format === "edh" ? <EdhPanel t={t} reload={load} /> : <SwissPanel t={t} reload={load} />}
-      <DeckReview id={id} />
+      <DeckReview id={id} edh={t.format === "edh"} />
     </>
   );
 }
 
 /* ---------------- швейцарка ---------------- */
 function SwissPanel({ t, reload }: { t: any; reload: () => Promise<void> }) {
-  const [pairs, setPairs] = useState<any[]>([]);
+  // Пары хранятся вместе с номером тура: ответ по прошлому туру, пришедший позже, не попадёт на экран
+  const [loaded, setLoaded] = useState<{ round: number; items: any[] }>({ round: 0, items: [] });
+  const roundRef = useRef(t.round);
+  roundRef.current = t.round;
   const { busy, error, done, run } = useAction();
   const loadPairs = useCallback(() => {
-    if (t.round) api<any[]>(`/tournaments/${t.id}/round/${t.round}`).then(setPairs).catch(() => {});
+    const r = t.round;
+    if (!r) return;
+    api<any[]>(`/tournaments/${t.id}/round/${r}`)
+      .then((items) => { if (r === roundRef.current) setLoaded({ round: r, items }); })
+      .catch(() => {});
   }, [t.id, t.round]);
   useEffect(loadPairs, [loadPairs]);
 
+  const pairs = loaded.round === t.round ? loaded.items : [];
   const pending = pairs.filter((p) => p.p2 && !p.result).length;
   const last = t.rounds_total && t.round >= t.rounds_total;
+  // после смены тура пары подгрузит эффект выше, по новому номеру тура
   const act = (path: string, msg: string) => run(() => api(path, { method: "POST" }), msg).then(async (ok) => {
-    if (ok) { await reload(); loadPairs(); }
+    if (ok) await reload();
   });
 
   return (
@@ -93,11 +103,12 @@ function SwissPanel({ t, reload }: { t: any; reload: () => Promise<void> }) {
           </div>
           <p className="hint">{pending ? `Не введено результатов: ${pending}. Следующий тур откроется, когда будут введены все.` : "Все результаты тура введены."}</p>
           <div className="row">
-            {!last ? <button className="primary" disabled={busy || pending > 0} onClick={() => act(`/tournaments/${t.id}/next-round`, "Пары следующего тура готовы")}>Следующий тур</button> : null}
-            <button className={last ? "primary" : ""} disabled={busy || pending > 0}
-              onClick={() => confirm("Завершить турнир? Очки уйдут в лигу клуба, отчёт — в Telegram.") && act(`/tournaments/${t.id}/finish`, "Турнир завершён")}>
-              Завершить турнир
-            </button>
+            {!last ? <button className="primary" disabled={busy || pending > 0 || !pairs.length} onClick={() => act(`/tournaments/${t.id}/next-round`, "Пары следующего тура готовы")}>Следующий тур</button> : null}
+            <ConfirmButton className={last ? "primary" : "link-btn"} disabled={busy || pending > 0 || !pairs.length}
+              question={last ? "Завершить турнир? Очки уйдут в лигу клуба, отчёт — в Telegram." : `Сыграно ${t.round} из ${t.rounds_total} туров. Завершить досрочно?`}
+              confirmLabel="Завершить" onConfirm={() => act(`/tournaments/${t.id}/finish`, "Турнир завершён")}>
+              {last ? "Завершить турнир" : "Завершить досрочно"}
+            </ConfirmButton>
           </div>
         </>
       ) : null}
@@ -158,10 +169,10 @@ function EdhPanel({ t, reload }: { t: any; reload: () => Promise<void> }) {
               {t.round ? "Новый тур: рассадить заново" : "Рассадить и начать"}
             </button>
             {t.status === "running" ? (
-              <button disabled={busy || open > 0}
-                onClick={() => confirm("Завершить ивент? Итоги уйдут в Telegram-чат клуба.") && run(() => api(`/edh/${t.id}/finish`, { method: "POST" }), "Ивент завершён").then(after)}>
+              <ConfirmButton disabled={busy || open > 0} question="Завершить ивент? Итоги уйдут в Telegram-чат клуба."
+                confirmLabel="Завершить" onConfirm={() => run(() => api(`/edh/${t.id}/finish`, { method: "POST" }), "Ивент завершён").then(after)}>
                 Завершить ивент
-              </button>
+              </ConfirmButton>
             ) : null}
           </div>
           {open > 0 ? <p className="hint">Новый тур и завершение станут доступны, когда все столы текущего тура будут закрыты.</p>
@@ -198,14 +209,19 @@ function EdhPanel({ t, reload }: { t: any; reload: () => Promise<void> }) {
                 <option value="">Победитель…</option>
                 {tb.seats.map((s: any) => <option key={s.user_id} value={s.user_id}>{s.nickname}</option>)}
               </select>
-              <button className="primary" disabled={busy || !winners[tb.table_id]}
-                onClick={() => {
-                  const body = { winner_id: +winners[tb.table_id], force: tb.seconds_left <= 0 };
-                  if (body.force && !confirm("Время стола вышло. Победа была зафиксирована до истечения таймера?")) return;
-                  run(() => api(`/edh/tables/${tb.table_id}/win`, { body }), "Победа записана").then((ok) => { if (ok) loadTables(); });
-                }}>Записать победу</button>
-              <button disabled={busy} onClick={() => confirm("Ничья: каждый игрок за столом потеряет 7% банка. Продолжить?") &&
-                run(() => api(`/edh/tables/${tb.table_id}/draw`, { method: "POST" }), "Ничья записана").then((ok) => { if (ok) loadTables(); })}>Ничья</button>
+              {tb.seconds_left > 0 ? (
+                <button className="primary" disabled={busy || !winners[tb.table_id]}
+                  onClick={() => run(() => api(`/edh/tables/${tb.table_id}/win`, { body: { winner_id: +winners[tb.table_id] } }), "Победа записана")
+                    .then((ok) => { if (ok) loadTables(); })}>Записать победу</button>
+              ) : (
+                <ConfirmButton className="primary" disabled={busy || !winners[tb.table_id]}
+                  question="Время стола вышло. Победа была зафиксирована до истечения таймера?" confirmLabel="Да, записать"
+                  onConfirm={() => run(() => api(`/edh/tables/${tb.table_id}/win`, { body: { winner_id: +winners[tb.table_id], force: true } }), "Победа записана")
+                    .then((ok) => { if (ok) loadTables(); })}>Записать победу</ConfirmButton>
+              )}
+              <ConfirmButton disabled={busy} question="Ничья: каждый за столом потеряет 7% банка." confirmLabel="Записать ничью"
+                onConfirm={() => run(() => api(`/edh/tables/${tb.table_id}/draw`, { method: "POST" }), "Ничья записана")
+                  .then((ok) => { if (ok) loadTables(); })}>Ничья</ConfirmButton>
               {tb.seconds_left <= 0 ? (
                 <button disabled={busy} onClick={() => run(() => api(`/edh/tables/${tb.table_id}/timeout`, { method: "POST" }), "Стол закрыт по таймеру").then((ok) => { if (ok) loadTables(); })}>Закрыть по таймеру</button>
               ) : null}
@@ -219,7 +235,7 @@ function EdhPanel({ t, reload }: { t: any; reload: () => Promise<void> }) {
 }
 
 /* ---------------- деклисты ---------------- */
-function DeckReview({ id }: { id: number }) {
+function DeckReview({ id, edh }: { id: number; edh: boolean }) {
   const [rows, setRows] = useState<any[]>([]);
   useEffect(() => { api<any[]>(`/decks/tournament/${id}`).then(setRows).catch(() => {}); }, [id]);
   if (!rows.length) return null;
@@ -228,13 +244,12 @@ function DeckReview({ id }: { id: number }) {
       <h2>Проверка деклистов</h2>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Игрок</th><th>Командир</th><th>Брекет</th><th>Замечания</th></tr></thead>
+          <thead><tr><th>Игрок</th>{edh ? <><th>Командир</th><th>Брекет</th></> : null}<th>Замечания</th></tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.user_id}>
                 <td>{r.deck_id ? <Link href={`/decks/${r.deck_id}`}>{r.nickname}</Link> : r.nickname}</td>
-                <td>{r.commanders?.join(" / ") || <span className="muted">—</span>}</td>
-                <td>{r.bracket}</td>
+                {edh ? <><td>{r.commanders?.join(" / ") || <span className="muted">—</span>}</td><td>{r.bracket}</td></> : null}
                 <td className="small">
                   {[...(r.warnings || []), r.bracket_hint].filter(Boolean).join("; ") || <span className="muted">нет</span>}
                   {r.game_changers?.length ? <div className="muted">Game Changers: {r.game_changers.join(", ")}</div> : null}

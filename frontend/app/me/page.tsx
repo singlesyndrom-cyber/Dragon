@@ -35,6 +35,7 @@ function Cabinet() {
           <Deals />
         </div>
         <aside className="stack">
+          <MyClubs />
           <div className="panel">
             <h3>Аккаунт</h3>
             <p className="muted small">Способы входа: {me.providers.map((p) => ({ email: "email", telegram: "Telegram", vk: "VK" } as any)[p] || p).join(", ")}</p>
@@ -56,7 +57,6 @@ function Cabinet() {
               </dl>
             </div>
           ) : null}
-          <Link href="/clubs/new" className="btn">Создать клуб</Link>
         </aside>
       </div>
     </>
@@ -163,5 +163,27 @@ function Deals() {
       </div>
       <Status error={error} done={done} />
     </section>
+  );
+}
+
+function MyClubs() {
+  const [clubs, setClubs] = useState<any[] | null>(null);
+  useEffect(() => { api<any[]>("/clubs/managed").then(setClubs).catch(() => setClubs([])); }, []);
+  if (clubs === null) return null;
+  return (
+    <div className="panel">
+      <h3>Мои клубы</h3>
+      {clubs.length ? (
+        <ul className="news-list">
+          {clubs.map((c) => (
+            <li key={c.id} className="row" style={{ justifyContent: "space-between", padding: "8px 0" }}>
+              <Link href={`/clubs/${c.slug}`}>{c.name}</Link>
+              <Link href={`/manage/clubs/${c.id}#new-tournament`} className="small">Создать турнир</Link>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="small muted">Создайте клуб, чтобы проводить турниры и вести лигу.</p>}
+      <Link href="/clubs/new" className="btn" style={{ marginTop: 12 }}>Создать клуб</Link>
+    </div>
   );
 }

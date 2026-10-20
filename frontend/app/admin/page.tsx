@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import ArticleForm from "@/components/ArticleForm";
+import ConfirmButton from "@/components/ConfirmButton";
 import { Status, useAction } from "@/components/Form";
 import Guard from "@/components/Guard";
 import { api } from "@/lib/api";
@@ -123,15 +124,16 @@ function Complaints() {
           {items.map((c) => (
             <li key={c.id}>
               <div className="small muted">
-                {dateTime(c.created_at)}: пользователь {c.from_user_id} на пользователя {c.against_user_id}
+                {dateTime(c.created_at)}: {c.from_nick} (№{c.from_user_id}) на {c.against_nick} (№{c.against_user_id})
                 {c.deal_id ? `, сделка ${c.deal_id}` : ""}
               </div>
               <p style={{ margin: "6px 0", whiteSpace: "pre-wrap" }}>{c.text}</p>
               <div className="row">
                 <button disabled={busy} onClick={() => run(() => api(`/admin/complaints/${c.id}/resolve`, { method: "POST" })).then(load)}>Закрыть жалобу</button>
-                <button className="danger" disabled={busy}
-                  onClick={() => confirm(`Заблокировать пользователя ${c.against_user_id}?`) &&
-                    run(() => api(`/admin/users/${c.against_user_id}/ban`, { body: { banned: true } }))}>Заблокировать нарушителя</button>
+                <ConfirmButton className="danger" disabled={busy} question={`Заблокировать ${c.against_nick}?`} confirmLabel="Заблокировать"
+                  onConfirm={() => run(() => api(`/admin/users/${c.against_user_id}/ban`, { body: { banned: true } }))}>
+                  Заблокировать нарушителя
+                </ConfirmButton>
               </div>
             </li>
           ))}
@@ -156,8 +158,8 @@ function Disputed() {
             {items.map((d) => (
               <tr key={d.id}>
                 <td><a href={`/auctions/${d.lot_id}`}>№{d.id}</a></td>
-                <td>{d.seller_id}: {d.seller_ok ? "состоялась" : "не состоялась"}</td>
-                <td>{d.buyer_id}: {d.buyer_ok ? "состоялась" : "не состоялась"}</td>
+                <td>{d.seller_nick} (№{d.seller_id}): {d.seller_ok ? "состоялась" : "не состоялась"}</td>
+                <td>{d.buyer_nick} (№{d.buyer_id}): {d.buyer_ok ? "состоялась" : "не состоялась"}</td>
                 <td className="r">{rub(d.price)}</td>
               </tr>
             ))}

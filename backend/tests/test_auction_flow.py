@@ -150,7 +150,8 @@ async def test_disputed_complaint_ban(env):
     deal_id = (await c.get("/auctions/deals/mine", headers=auth(buyer))).json()[0]["id"]
     await svc.confirm_deal(s, deal_id, seller, True)
     assert (await svc.confirm_deal(s, deal_id, buyer, False)).status == "disputed"
-    assert [d["id"] for d in (await c.get("/admin/deals/disputed", headers=auth(admin))).json()] == [deal_id]
+    disp = (await c.get("/admin/deals/disputed", headers=auth(admin))).json()
+    assert [d["id"] for d in disp] == [deal_id] and disp[0]["seller_nick"] == "Продавец"
     assert (await c.post(f"/auctions/deals/{deal_id}/rate", json={"score": 1}, headers=auth(buyer))).status_code == 400
 
     # жалоба: только между участниками сделки
@@ -162,6 +163,7 @@ async def test_disputed_complaint_ban(env):
     assert (await c.get("/admin/complaints", headers=auth(buyer))).status_code == 403
     comps = (await c.get("/admin/complaints", headers=auth(admin))).json()
     assert len(comps) == 1 and comps[0]["against_user_id"] == seller.id
+    assert comps[0]["against_nick"] == "Продавец" and comps[0]["from_nick"] == "Покупатель"
 
     # блокировка: продавец больше не может выставлять лоты и ставить
     assert (await c.post(f"/admin/users/{seller.id}/ban", json={"banned": True}, headers=auth(admin))).status_code == 204

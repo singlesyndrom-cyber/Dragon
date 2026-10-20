@@ -54,8 +54,10 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
         ) : null}
         <h2>Итог ивента</h2>
         <Standings head={["Партий", "Изменение банка", "Банк"]} empty="Результатов пока нет."
-          rows={(results || []).map((r, i) => ({
-            rank: i + 1, name: r.nickname,
+          rows={(results || []).map((r, i, all) => ({
+            // одинаковый итог — одно место: 1, 2, 2, 4…
+            rank: all.findIndex((x) => Math.round(x.net * 10) === Math.round(r.net * 10)) + 1, name: r.nickname,
+            prize: r.net > 0 && i < 3,   // в EDH призёры — только те, кто остался в плюсе
             cells: [r.games, signed(r.net), r.bank !== null ? Math.round(r.bank).toLocaleString("ru-RU") : "—"],
           }))} />
       </>
@@ -65,11 +67,11 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
       t.round ? sget<any[]>(`/tournaments/${id}/standings`) : Promise.resolve([]),
       t.round ? sget<any[]>(`/tournaments/${id}/round/${t.round}`) : Promise.resolve([]),
     ]);
-    body = (
+    const pairsBlock = (
       <>
         {pairings?.length ? (
           <>
-            <h2>Пары, тур {t.round}</h2>
+            <h2>{t.status === "finished" ? `Пары последнего тура (${t.round})` : `Пары, тур ${t.round}`}</h2>
             <div className="table-wrap">
               <table>
                 <thead><tr><th>Стол</th><th>Игрок 1</th><th>Игрок 2</th><th>Результат</th></tr></thead>
@@ -87,6 +89,10 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
             </div>
           </>
         ) : null}
+      </>
+    );
+    const tableBlock = (
+      <>
         <h2>Таблица</h2>
         <Standings head={["Очки", "OWP", "Buchholz"]} empty="Таблица появится после первого тура."
           rows={(standings || []).map((r) => ({
@@ -94,6 +100,8 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
           }))} />
       </>
     );
+    // идёт игра — сначала пары текущего тура; турнир завершён — сначала итоговая таблица
+    body = t.status === "finished" ? <>{tableBlock}{pairsBlock}</> : <>{pairsBlock}{tableBlock}</>;
   }
 
   return (

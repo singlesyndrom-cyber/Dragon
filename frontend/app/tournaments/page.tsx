@@ -1,3 +1,4 @@
+import CreateTournamentLink from "@/components/CreateTournamentLink";
 import EventList, { type TournamentRow } from "@/components/EventList";
 import { sget } from "@/lib/api";
 
@@ -11,7 +12,10 @@ export default async function Tournaments() {
   ]);
   return (
     <>
-      <h1>Турниры</h1>
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <h1>Турниры</h1>
+        <CreateTournamentLink />
+      </div>
       {running?.length ? (<><h2>Идут сейчас</h2><EventList items={running} empty="" /></>) : null}
       <h2>Открыта регистрация</h2>
       <EventList items={upcoming || []} empty="Сейчас нет турниров с открытой регистрацией." />

@@ -6,7 +6,7 @@ import { sget } from "@/lib/api";
 import { dateOnly } from "@/lib/format";
 
 export default async function Article({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params;
+  const slug = decodeURIComponent((await params).slug);
   const a = await sget<any>(`/news/${encodeURIComponent(slug)}`);
   if (!a) notFound();
   return (

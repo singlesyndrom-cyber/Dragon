@@ -111,9 +111,10 @@ th { text-align: left; color: var(--muted); font-weight: 500; font-size: 0.9rem;
 td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 td.r, th.r { text-align: right; }
 tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.015); }
+/* призовые места и победитель стола перекрывают «зебру» (тот же вес селектора + позже в файле) */
 
 /* Призовые места - как рамка редкой карты. Единственный «громкий» элемент сайта. */
-tr.place-1 td, tr.place-2 td, tr.place-3 td { background: var(--gilt-soft); }
+tbody tr.place-1 td, tbody tr.place-2 td, tbody tr.place-3 td { background: var(--gilt-soft); }
 tr.place-1 td:first-child, tr.place-2 td:first-child, tr.place-3 td:first-child { box-shadow: inset 3px 0 0 var(--gilt); }
 tr.place-1 td:first-child { color: var(--gilt); font-weight: 700; }
 .place { display: inline-block; min-width: 1.6em; }
@@ -161,7 +162,20 @@ button:disabled, button.primary:disabled {
   opacity: 1; cursor: not-allowed; background: transparent; border-color: var(--line); color: var(--muted); filter: none;
 }
 .hint { color: var(--muted); font-size: 0.875rem; margin: 6px 0 0; }
-tr.winner td { background: var(--gilt-soft); }
+tbody tr.winner td { background: var(--gilt-soft); }
+.actions { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.actions > * { margin: 0; }
+.actions label { margin: 0; width: 100%; }
+.confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 10px;
+  border: 1px solid var(--gilt); border-radius: var(--radius-s); background: var(--gilt-soft); }
+.confirm-q { font-size: 0.95rem; }
+.menu { position: relative; display: inline-block; }
+.menu summary { list-style: none; }
+.menu summary::-webkit-details-marker { display: none; }
+.menu-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 5; min-width: 220px; display: flex;
+  flex-direction: column; background: var(--vellum); border: 1px solid var(--line); border-radius: var(--radius-s); }
+.menu-list a { padding: 10px 14px; text-decoration: none; }
+.menu-list a:hover { background: var(--vellum-2); }
 tr.winner td:first-child { box-shadow: inset 3px 0 0 var(--gilt); color: var(--gilt); font-weight: 600; }
 .link-btn { background: none; border: none; padding: 0; color: var(--muted); text-decoration: underline; }
 

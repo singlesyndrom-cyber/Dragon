@@ -159,12 +159,20 @@ async def complain(data: ComplaintIn, user: User = Depends(current_user),
 
 
 # ---------- админ ----------
+async def _nicks(session: AsyncSession, ids: list[int]) -> dict[int, str]:
+    if not ids:
+        return {}
+    return dict((await session.execute(select(User.id, User.nickname).where(User.id.in_(set(ids))))).all())
+
+
 @router.get("/admin/complaints")
 async def complaints(status: str = Query("open", pattern="^(open|resolved)$"), admin: User = Depends(require_admin),
                      session: AsyncSession = Depends(get_session)):
     rows = (await session.execute(select(Complaint).where(Complaint.status == status)
-                                  .order_by(Complaint.id.desc()).limit(200))).scalars()
-    return [{"id": c.id, "from_user_id": c.from_user_id, "against_user_id": c.against_user_id,
+                                  .order_by(Complaint.id.desc()).limit(200))).scalars().all()
+    nick = await _nicks(session, [c.from_user_id for c in rows] + [c.against_user_id for c in rows])
+    return [{"id": c.id, "from_user_id": c.from_user_id, "from_nick": nick.get(c.from_user_id),
+             "against_user_id": c.against_user_id, "against_nick": nick.get(c.against_user_id),
              "deal_id": c.deal_id, "text": c.text, "created_at": c.created_at} for c in rows]
 
 
@@ -179,8 +187,10 @@ async def resolve(complaint_id: int, admin: User = Depends(require_admin), sessi
 
 @router.get("/admin/deals/disputed")
 async def disputed(admin: User = Depends(require_admin), session: AsyncSession = Depends(get_session)):
-    rows = (await session.execute(select(Deal).where(Deal.status == "disputed").order_by(Deal.id.desc()))).scalars()
-    return [{"id": d.id, "lot_id": d.lot_id, "seller_id": d.seller_id, "buyer_id": d.buyer_id, "price": d.price,
+    rows = (await session.execute(select(Deal).where(Deal.status == "disputed").order_by(Deal.id.desc()))).scalars().all()
+    nick = await _nicks(session, [d.seller_id for d in rows] + [d.buyer_id for d in rows])
+    return [{"id": d.id, "lot_id": d.lot_id, "seller_id": d.seller_id, "seller_nick": nick.get(d.seller_id),
+             "buyer_id": d.buyer_id, "buyer_nick": nick.get(d.buyer_id), "price": d.price,
              "seller_ok": d.seller_ok, "buyer_ok": d.buyer_ok} for d in rows]
 
 

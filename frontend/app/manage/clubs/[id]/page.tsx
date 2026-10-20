@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useEffect, useState } from "react";
 import { Status, useAction } from "@/components/Form";
 import ArticleForm from "@/components/ArticleForm";
@@ -65,43 +66,51 @@ function Settings({ clubId, initial }: { clubId: number; initial: any }) {
 }
 
 function NewTournament({ clubId }: { clubId: number }) {
+  const router = useRouter();
   const [f, setF] = useState({ name: "", game: "mtg", format: "swiss", rounds: "", starts_at: "" });
-  const { busy, error, done, run } = useAction();
-  const [created, setCreated] = useState<number | null>(null);
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => {
+    const v = e.target.value;
+    setF((cur) => ({ ...cur, [k]: v }));   // функциональное обновление: быстрые правки не затирают друг друга
+  };
+  const { busy, error, run } = useAction();
   return (
-    <form onSubmit={(e) => {
+    <form id="new-tournament" onSubmit={(e) => {
       e.preventDefault();
       run(async () => {
-        const body: any = { club_id: clubId, name: f.name, game: f.game, format: f.format };
-        if (f.rounds) body.rounds = +f.rounds;
+        const body: any = { club_id: clubId, name: f.name.trim(), game: f.game, format: f.format };
+        if (f.rounds && f.format !== "edh") body.rounds = +f.rounds;
         if (f.starts_at) body.starts_at = f.starts_at;   // без пояса: сервер считает его московским временем
         const r = await api("/tournaments", { body });
-        setCreated(r.id);
-      }, "Турнир создан, анонс уйдёт в чат клуба");
+        router.push(`/manage/tournaments/${r.id}`);     // сразу к управлению: повторный клик не создаст дубль
+      });
     }}>
       <h2 style={{ marginTop: 0 }}>Новый турнир</h2>
-      <label><span>Название</span><input required minLength={2} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
+      <label><span>Название</span><input required minLength={2} value={f.name} onChange={set("name")} /></label>
       <div className="row inline">
         <label><span>Игра</span>
-          <select value={f.game} onChange={(e) => setF({ ...f, game: e.target.value })}>
+          <select value={f.game} onChange={set("game")}>
             <option value="mtg">Magic: The Gathering</option><option value="berserk">Берсерк</option>
           </select>
         </label>
         <label><span>Формат</span>
-          <select value={f.format} onChange={(e) => setF({ ...f, format: e.target.value })}>
+          <select value={f.format} onChange={set("format")}>
             {Object.entries(FORMATS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </label>
         {f.format !== "edh" ? (
           <label><span>Туров</span>
-            <input type="number" min={1} max={15} placeholder={f.format === "fast_swiss" ? "1" : "авто"} value={f.rounds} onChange={(e) => setF({ ...f, rounds: e.target.value })} style={{ width: 90 }} />
+            <input type="number" min={1} max={15} placeholder={f.format === "fast_swiss" ? "1" : "авто"} value={f.rounds} onChange={set("rounds")} style={{ width: 90 }} />
           </label>
         ) : null}
-        <label><span>Начало</span><input type="datetime-local" value={f.starts_at} onChange={(e) => setF({ ...f, starts_at: e.target.value })} /></label>
+        <label><span>Начало</span><input type="datetime-local" value={f.starts_at} onChange={set("starts_at")} /></label>
       </div>
+      <p className="hint">
+        {f.format === "edh" ? "Столы по 3–5 игроков, 70 минут на партию, рассадка по брекетам."
+          : f.format === "fast_swiss" ? "Обычно один тур. Пустое поле — 1 тур."
+          : "Пустое поле «Туров» — число туров посчитается по числу игроков при старте."}
+      </p>
       <button className="primary" disabled={busy}>Создать турнир</button>
-      {created ? <> <Link href={`/manage/tournaments/${created}`}>Открыть управление</Link></> : null}
-      <Status error={error} done={done} />
+      <Status error={error} />
     </form>
   );
 }

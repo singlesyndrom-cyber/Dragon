@@ -2,14 +2,15 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from .. import notify
 from ..db import get_session
+from ..slug import slugify as translit_slug
 from ..deps import current_user, is_club_organizer, require_admin
-from ..models import Club, ClubMember, ClubRole, ClubStats, User
+from ..models import GlobalRole, Club, ClubMember, ClubRole, ClubStats, User
 
 router = APIRouter(prefix="/clubs", tags=["clubs"])
 
@@ -28,7 +29,8 @@ class ClubUpdate(BaseModel):
 
 
 def slugify(name: str) -> str:
-    return re.sub(r"[^a-z0-9а-яё]+", "-", name.lower()).strip("-")
+    """Латинский адрес клуба: «Дракон» -> drakon. Кириллица в адресах ломается при копировании и в мессенджерах."""
+    return translit_slug(name, 60, fallback="club")
 
 
 def club_out(c: Club) -> dict:
@@ -45,6 +47,16 @@ async def list_clubs(session: AsyncSession = Depends(get_session)):
     return [club_out(c) for c in res.scalars()]
 
 
+@router.get("/managed")
+async def managed_clubs(user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    """Клубы, где пользователь может создавать турниры: организатор (админ - любые)."""
+    q = select(Club).order_by(Club.name)
+    if user.role != GlobalRole.admin:
+        q = q.join(ClubMember, ClubMember.club_id == Club.id).where(
+            ClubMember.user_id == user.id, ClubMember.role == ClubRole.organizer)
+    return [{"id": c.id, "name": c.name, "slug": c.slug} for c in (await session.execute(q.limit(200))).scalars()]
+
+
 @router.get("/{slug}")
 async def get_club(slug: str, session: AsyncSession = Depends(get_session)):
     res = await session.execute(select(Club).where(Club.slug == slug).options(selectinload(Club.stats)))
@@ -58,10 +70,13 @@ async def get_club(slug: str, session: AsyncSession = Depends(get_session)):
 async def create_club(data: ClubIn, owner: User = Depends(current_user),
                       session: AsyncSession = Depends(get_session)):
     """Создатель становится организатором. Заявки на клубы можно модерировать админом позже."""
-    slug = slugify(data.name)
-    exists = await session.execute(select(Club).where((Club.name == data.name) | (Club.slug == slug)))
-    if exists.scalar_one_or_none():
+    if (await session.execute(select(Club).where(func.lower(Club.name) == data.name.strip().lower()))).scalar_one_or_none():
         raise HTTPException(409, "Клуб с таким названием уже есть")
+    base = slugify(data.name)
+    taken = set((await session.execute(select(Club.slug).where(Club.slug.like(f"{base}%")))).scalars())
+    slug, n = base, 2
+    while slug in taken:
+        slug, n = f"{base}-{n}", n + 1
     club = Club(**data.model_dump(), slug=slug, stats=ClubStats())
     club.members.append(ClubMember(user_id=owner.id, role=ClubRole.organizer))
     session.add(club)

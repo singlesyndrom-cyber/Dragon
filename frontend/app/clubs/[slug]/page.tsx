@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ClubActions from "@/components/ClubActions";
+import CreateTournamentLink from "@/components/CreateTournamentLink";
 import EventList from "@/components/EventList";
 import Standings from "@/components/Standings";
 import { sget } from "@/lib/api";
 import { dateOnly, WEEKDAYS } from "@/lib/format";
 
 export default async function ClubPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params;
+  const slug = decodeURIComponent((await params).slug);   // адрес может прийти уже закодированным
   const club = await sget<any>(`/clubs/${encodeURIComponent(slug)}`);
   if (!club) notFound();
   const [board, tournaments, news] = await Promise.all([
@@ -34,7 +35,10 @@ export default async function ClubPage({ params }: { params: Promise<{ slug: str
             <dt>Рейтинг клуба</dt><dd className="gold">{Math.round(club.rating)}</dd>
           </dl>
 
-          <h2>Ближайшие турниры</h2>
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+            <h2>Ближайшие турниры</h2>
+            <CreateTournamentLink clubId={club.id} />
+          </div>
           <EventList items={upcoming} empty="Анонсов пока нет." />
 
           <h2>Лига клуба</h2>

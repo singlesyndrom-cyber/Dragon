@@ -1,6 +1,6 @@
 import { signed } from "@/lib/format";
 
-export type Row = { rank: number; name: string; cells: (string | number)[] };
+export type Row = { rank: number; name: string; cells: (string | number)[]; prize?: boolean };
 
 /** Таблица с выделением призовых мест. */
 export default function Standings({ head, rows, empty = "Пока нет данных" }:
@@ -18,7 +18,7 @@ export default function Standings({ head, rows, empty = "Пока нет дан�
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.rank + r.name} className={r.rank <= 3 ? `place-${r.rank}` : undefined}>
+            <tr key={r.rank + r.name} className={(r.prize ?? r.rank <= 3) ? `place-${Math.min(r.rank, 3)}` : undefined}>
               <td><span className="place">{r.rank}</span></td>
               <td>{r.name}</td>
               {r.cells.map((c, i) => <td key={i} className="r">{c}</td>)}
