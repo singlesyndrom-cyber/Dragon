@@ -13,8 +13,8 @@ from sqlalchemy.orm import selectinload
 from .. import leagues, notify
 from ..config import settings
 from ..db import get_session
-from ..deps import current_user, is_club_organizer
-from ..models import (Club, ClubMember, ClubStats, League, Match, MatchResult, Tournament,
+from ..deps import can_judge, current_user, is_club_organizer
+from ..models import (Club, ClubMember, ClubStats, League, Match, MatchResult, ResultEdit, Tournament,
                       TournamentFormat, TournamentPlayer, TournamentStatus, User)
 from ..swiss import MatchRec, compute_standings, default_rounds, pair_round
 
@@ -93,6 +93,12 @@ async def _get(session: AsyncSession, tid: int) -> Tournament:
 async def _require_org(session: AsyncSession, t: Tournament, user: User):
     if not await is_club_organizer(session, t.club_id, user):
         raise HTTPException(403, "Нужны права организатора клуба")
+
+
+async def _require_judge(session: AsyncSession, t: Tournament, user: User):
+    """Ведение турнира (участники, туры, результаты, завершение): организатор или судья клуба по этой игре."""
+    if not await can_judge(session, t.club_id, t.game, t.format, user):
+        raise HTTPException(403, "Нужны права организатора клуба или судьи клуба по этой игре")
 
 
 async def _state(session: AsyncSession, t: Tournament):
@@ -177,7 +183,9 @@ async def get_tournament(tid: int, session: AsyncSession = Depends(get_session))
                                   .join(User, User.id == TournamentPlayer.user_id)
                                   .where(TournamentPlayer.tournament_id == tid).order_by(User.nickname))).all()
     league = await session.get(League, t.league_id) if t.league_id else None
+    judge = await session.get(User, t.judge_id) if t.judge_id else None
     return {**_t_out(t, club, len(rows)), "description": t.description,
+            "judge": {"user_id": judge.id, "nickname": judge.nickname, "player_no": judge.player_no} if judge else None,
             "league": {"id": league.id, "name": league.name, "kind": league.kind.value} if league else None,
             "participants": [{"user_id": tp.user_id, "nickname": nick, "guest": guest, "player_no": no,
                               "bracket": tp.bracket, "checked_in": tp.checked_in, "dropped": tp.dropped,
@@ -222,7 +230,7 @@ async def add_player(tid: int, data: PlayerAdd, user: User = Depends(current_use
                      session: AsyncSession = Depends(get_session)):
     """Организатор записывает игрока сам. Гость по имени переиспользуется в этом клубе (тот же ник - тот же гость)."""
     t = await _get(session, tid)
-    await _require_org(session, t, user)
+    await _require_judge(session, t, user)
     late_edh = t.format == TournamentFormat.edh and t.status == TournamentStatus.running   # опоздавший на EDH
     if t.status != TournamentStatus.registration and not late_edh:
         raise HTTPException(400, "Игроков можно добавлять только до старта")
@@ -263,7 +271,7 @@ async def add_player(tid: int, data: PlayerAdd, user: User = Depends(current_use
 async def remove_player(tid: int, uid: int, user: User = Depends(current_user),
                         session: AsyncSession = Depends(get_session)):
     t = await _get(session, tid)
-    await _require_org(session, t, user)
+    await _require_judge(session, t, user)
     if t.status != TournamentStatus.registration:
         raise HTTPException(400, "После старта игрока можно только снять с турнира (выбыл)")
     tp = (await session.execute(select(TournamentPlayer).where(
@@ -278,7 +286,7 @@ async def drop_player(tid: int, uid: int, data: DropIn, user: User = Depends(cur
                       session: AsyncSession = Depends(get_session)):
     """Игрок выбыл: остаётся в таблице, но в следующих турах пар не получает (EDH - не садится за столы)."""
     t = await _get(session, tid)
-    await _require_org(session, t, user)
+    await _require_judge(session, t, user)
     if t.status != TournamentStatus.running:
         raise HTTPException(400, "Снять игрока можно только во время турнира")
     tp = (await session.execute(select(TournamentPlayer).where(
@@ -328,7 +336,7 @@ async def unregister(tid: int, user: User = Depends(current_user), session: Asyn
 async def start(tid: int, force: bool = Query(False), user: User = Depends(current_user),
                 session: AsyncSession = Depends(get_session)):
     t = await _get(session, tid)
-    await _require_org(session, t, user)
+    await _require_judge(session, t, user)
     if t.format == TournamentFormat.edh:
         raise HTTPException(400, "Для EDH используйте POST /edh/{id}/round")
     if t.status != TournamentStatus.registration:
@@ -368,20 +376,57 @@ async def report_result(match_id: int, data: ResultIn, user: User = Depends(curr
     if not m:
         raise HTTPException(404, "Матч не найден")
     t = await _get(session, m.tournament_id)
-    await _require_org(session, t, user)
+    await _require_judge(session, t, user)
     if t.status != TournamentStatus.running:
         raise HTTPException(400, "Результаты вводятся, пока турнир идёт")
     # прошлый тур можно исправить (как в AetherHub): таблица пересчитается, уже сделанные пары не меняются
     if m.p2_user_id is None:
         raise HTTPException(400, "Это bye, результат не нужен")
+    before = getattr(m.result, "value", m.result)
+    after = getattr(data.result, "value", data.result)
+    if before is not None and before != after:   # исправление уже введённого результата - в журнал
+        session.add(ResultEdit(tournament_id=t.id, match_id=m.id, round_no=m.round_no, user_id=user.id,
+                               before=before, after=after))
     m.result = data.result
+    await session.commit()
+
+
+@router.get("/{tid}/edits")
+async def result_edits(tid: int, session: AsyncSession = Depends(get_session)):
+    """Журнал исправлений результатов: кто, когда, какой матч, было - стало."""
+    await _get(session, tid)
+    rows = (await session.execute(select(ResultEdit, Match).outerjoin(Match, Match.id == ResultEdit.match_id)
+                                  .where(ResultEdit.tournament_id == tid).order_by(ResultEdit.id.desc()))).all()
+    ids = {e.user_id for e, _ in rows} | {x for _, m in rows if m for x in (m.p1_user_id, m.p2_user_id)}
+    ids.discard(None)
+    names = dict((await session.execute(select(User.id, User.nickname).where(User.id.in_(ids)))).all()) if ids else {}
+    return [{"round": e.round_no, "at": e.created_at, "by": names.get(e.user_id), "before": e.before, "after": e.after,
+             "p1": names.get(m.p1_user_id) if m else None, "p2": names.get(m.p2_user_id) if m else None}
+            for e, m in rows]
+
+
+class JudgeIn(BaseModel):
+    user_id: int | None = None
+
+
+@router.put("/{tid}/judge", status_code=204)
+async def set_judge(tid: int, data: JudgeIn, user: User = Depends(current_user),
+                    session: AsyncSession = Depends(get_session)):
+    """Главного судью назначает организатор: судья клуба по этой игре или организатор. null - снять."""
+    t = await _get(session, tid)
+    await _require_org(session, t, user)
+    if data.user_id is not None:
+        judge = await session.get(User, data.user_id)
+        if not judge or judge.is_guest or not await can_judge(session, t.club_id, t.game, t.format, judge):
+            raise HTTPException(400, "Главным судьёй может быть организатор или судья клуба по этой игре")
+    t.judge_id = data.user_id
     await session.commit()
 
 
 @router.post("/{tid}/next-round")
 async def next_round(tid: int, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
     t = await _get(session, tid)
-    await _require_org(session, t, user)
+    await _require_judge(session, t, user)
     if t.status != TournamentStatus.running:
         raise HTTPException(400, "Турнир не идёт")
     players, ms, recs = await _state(session, t)
@@ -408,7 +453,7 @@ async def standings(tid: int, session: AsyncSession = Depends(get_session)):
 @router.post("/{tid}/finish")
 async def finish(tid: int, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
     t = await _get(session, tid)
-    await _require_org(session, t, user)
+    await _require_judge(session, t, user)
     if t.status != TournamentStatus.running:
         raise HTTPException(400, "Турнир не идёт")
     players, ms, recs = await _state(session, t)

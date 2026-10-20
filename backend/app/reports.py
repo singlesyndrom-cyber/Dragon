@@ -97,6 +97,7 @@ class ReportData:
     stats: list[str] = field(default_factory=list)
     url: str | None = None
     tz: str = "Europe/Moscow"
+    judge: str | None = None                      # «Алексей (№1007)» - главный судья
 
 
 def _table(rows: list[tuple[int, str, str]], limit: int) -> list[str]:
@@ -110,6 +111,8 @@ def format_report(d: ReportData, rng: random.Random | None = None) -> str:
                 f"{esc(d.club)} · {esc(FORMAT_LABELS.get(d.fmt, d.fmt))} · {esc(GAME_LABELS.get(d.game, d.game))}",
                 f"📅 {fmt_dt(d.date, d.tz)} · 👥 Участников: {d.participants}"
                 + (f" · Туров: {d.rounds}" if d.rounds else "")]
+        if d.judge:
+            head.append(f"⚖️ Судья: {esc(d.judge)}")
         parts = ["\n".join(head)]
         if congrats:
             parts.append("\n".join(congrats))

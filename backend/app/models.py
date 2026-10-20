@@ -114,6 +114,8 @@ class ClubMember(Base):
     edh_bank: Mapped[float] = mapped_column(Float, default=1000.0)   # банк EDH (блок 3)
     events_played: Mapped[int] = mapped_column(Integer, default=0)
     last_bonus_week: Mapped[str | None] = mapped_column(String(10))  # '2026-W43': надбавка +150 раз в неделю
+    # судья клуба: направления через запятую (mtg, edh, berserk); пусто - не судья. Назначает организатор.
+    judge_games: Mapped[str] = mapped_column(String(64), default="", server_default="")
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     club: Mapped[Club] = relationship(back_populates="members")
@@ -173,6 +175,7 @@ class Tournament(Base):
     self_registration: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
     max_players: Mapped[int | None] = mapped_column(Integer)
     league_id: Mapped[int | None] = mapped_column(ForeignKey("leagues.id", ondelete="SET NULL"), index=True)
+    judge_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))  # главный судья
 
     players: Mapped[list["TournamentPlayer"]] = relationship(cascade="all, delete-orphan")
     matches: Mapped[list["Match"]] = relationship(cascade="all, delete-orphan")
@@ -525,3 +528,17 @@ class LeagueMember(Base):
     edh_bank: Mapped[float] = mapped_column(Float, default=1000.0, server_default=text("1000"))
     last_bonus_week: Mapped[str | None] = mapped_column(String(10))
     events_played: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+
+
+class ResultEdit(Base):
+    """Журнал исправлений: кто и когда поменял уже введённый результат матча."""
+    __tablename__ = "result_edits"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tournament_id: Mapped[int] = mapped_column(ForeignKey("tournaments.id", ondelete="CASCADE"), index=True)
+    match_id: Mapped[int | None] = mapped_column(ForeignKey("matches.id", ondelete="SET NULL"))
+    round_no: Mapped[int] = mapped_column(Integer)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    before: Mapped[str] = mapped_column(String(16))
+    after: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

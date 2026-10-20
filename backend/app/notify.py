@@ -97,9 +97,12 @@ async def on_tournament_finished(session, t: Tournament, swiss_table=None) -> No
                 srows = await L.berserk_table(session, season)
                 league = [(i, r["nickname"], f"{r['points']} оч.") for i, r in enumerate(srows[:10], 1)]
             league_title = f"Сезон «{season.name}»"
+    judge = await session.get(User, t.judge_id) if t.judge_id else None
+    judge_label = (judge.nickname + (f" (№{judge.player_no})" if judge.player_no else "")) if judge else None
     data = ReportData(title=t.name, club=club.name, game=t.game, fmt=t.format.value, date=t.starts_at,
                       participants=participants, rounds=t.current_round or None,
                       podium=[(p, n) for p, n, _ in standings[:3]], standings=standings, league_title=league_title,
-                      league=league, stats=stats, url=site_url(f"/tournaments/{t.id}"), tz=settings.app_timezone)
+                      league=league, stats=stats, url=site_url(f"/tournaments/{t.id}"), tz=settings.app_timezone,
+                      judge=judge_label)
     await enqueue(session, "tournament_report", club.telegram_chat_id, format_report(data),
                   dedup_key=f"t-report:{t.id}:{club.telegram_chat_id}")

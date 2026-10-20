@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from .. import edh, leagues, notify
 from ..db import SessionLocal, get_session
-from ..deps import current_user, is_club_organizer
+from ..deps import can_judge, current_user, is_club_organizer
 from ..models import (ClubMember, EdhSeat, League, EdhTable, EdhTableStatus, Tournament,
                       TournamentFormat, TournamentPlayer, TournamentStatus, User)
 from .tournaments import _recompute_club_stats
@@ -42,6 +42,12 @@ async def _edh(session: AsyncSession, tid: int) -> Tournament:
 async def _require_org(session: AsyncSession, t: Tournament, user: User):
     if not await is_club_organizer(session, t.club_id, user):
         raise HTTPException(403, "Нужны права организатора клуба")
+
+
+async def _require_judge(session: AsyncSession, t: Tournament, user: User):
+    """Ведение турнира (участники, туры, результаты, завершение): организатор или судья клуба по этой игре."""
+    if not await can_judge(session, t.club_id, t.game, t.format, user):
+        raise HTTPException(403, "Нужны права организатора клуба или судьи клуба по этой игре")
 
 
 async def _tp(session: AsyncSession, tid: int, user_id: int) -> TournamentPlayer:
@@ -113,7 +119,7 @@ async def organizer_set_player(tid: int, user_id: int, data: PlayerPatch, user: 
                                session: AsyncSession = Depends(get_session)):
     """Организатор: отметить приход и/или исправить брекет колоды после проверки."""
     t = await _edh(session, tid)
-    await _require_org(session, t, user)
+    await _require_judge(session, t, user)
     if t.status == TournamentStatus.finished:
         raise HTTPException(400, "Ивент завершён")
     tp = await _tp(session, tid, user_id)
@@ -131,7 +137,7 @@ async def organizer_set_player(tid: int, user_id: int, data: PlayerPatch, user: 
 async def new_round(tid: int, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
     """Новый тур: случайная рассадка пришедших внутри брекетов + недельная надбавка (раз в неделю)."""
     t = await _edh(session, tid)
-    await _require_org(session, t, user)
+    await _require_judge(session, t, user)
     if t.status == TournamentStatus.finished:
         raise HTTPException(400, "Ивент завершён")
     open_tables = (await session.execute(select(func.count()).select_from(EdhTable).where(
@@ -192,7 +198,7 @@ async def _table_for_org(session: AsyncSession, table_id: int, user: User) -> Ed
     table = await session.get(EdhTable, table_id)
     if not table:
         raise HTTPException(404, "Стол не найден")
-    await _require_org(session, await session.get(Tournament, table.tournament_id), user)
+    await _require_judge(session, await session.get(Tournament, table.tournament_id), user)
     return table
 
 
@@ -245,7 +251,7 @@ async def results(tid: int, session: AsyncSession = Depends(get_session)):
 @router.post("/{tid}/finish")
 async def finish(tid: int, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
     t = await _edh(session, tid)
-    await _require_org(session, t, user)
+    await _require_judge(session, t, user)
     if t.status != TournamentStatus.running:
         raise HTTPException(400, "Ивент не идёт")
     if (await session.execute(select(func.count()).select_from(EdhTable).where(

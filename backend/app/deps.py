@@ -54,3 +54,28 @@ async def is_club_organizer(session: AsyncSession, club_id: int, user: User) -> 
         )
     )
     return res.scalar_one_or_none() is not None
+
+
+# ---------- судьи клуба ----------
+JUDGE_GAMES = {"mtg": "Magic", "edh": "EDH", "berserk": "Берсерк"}
+
+
+def judge_direction(game: str, fmt) -> str:
+    """Направление турнира для прав судьи: EDH, «Берсерк» или Magic (швейцарки MTG)."""
+    fmt = getattr(fmt, "value", fmt)
+    if fmt == "edh":
+        return "edh"
+    return "berserk" if game == "berserk" else "mtg"
+
+
+def parse_judge_games(value: str | None) -> list[str]:
+    return [g for g in (value or "").split(",") if g in JUDGE_GAMES]
+
+
+async def can_judge(session: AsyncSession, club_id: int, game: str, fmt, user: User) -> bool:
+    """Организатор судит всё; судья клуба - только свои направления."""
+    if await is_club_organizer(session, club_id, user):
+        return True
+    m = (await session.execute(select(ClubMember.judge_games).where(
+        ClubMember.club_id == club_id, ClubMember.user_id == user.id))).scalar_one_or_none()
+    return judge_direction(game, fmt) in parse_judge_games(m)

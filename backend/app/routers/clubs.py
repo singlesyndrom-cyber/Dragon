@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from .. import notify
 from ..db import get_session
 from ..slug import slugify as translit_slug
-from ..deps import current_user, is_club_organizer, require_admin
+from ..deps import JUDGE_GAMES, current_user, is_club_organizer, parse_judge_games, require_admin
 from ..models import GlobalRole, Club, ClubMember, ClubRole, ClubStats, User
 
 router = APIRouter(prefix="/clubs", tags=["clubs"])
@@ -160,11 +160,58 @@ async def membership(club_id: int, user: User = Depends(current_user), session: 
                                                         ClubMember.user_id == user.id))).scalar_one_or_none()
     can_manage = await is_club_organizer(session, club_id, user)
     out = {"member": m is not None, "role": m.role if m else None, "can_manage": can_manage,
+           "judge_games": list(JUDGE_GAMES) if can_manage else parse_judge_games(m.judge_games if m else ""),
            "edh_bank": round(m.edh_bank, 1) if m else None, "league_points": m.league_points if m else None}
     if can_manage:
         out["settings"] = {"description": club.description, "city": club.city,
                            "telegram_chat_id": club.telegram_chat_id}
     return out
+
+
+class JudgeSet(BaseModel):
+    player_no: int = Field(ge=1)
+    games: list[str] = Field(default_factory=list)   # mtg / edh / berserk; пустой список - снять судейство
+
+
+@router.get("/{club_id}/judges")
+async def club_judges(club_id: int, session: AsyncSession = Depends(get_session)):
+    """Судейский состав клуба: организаторы (судят все направления) и назначенные судьи с направлениями."""
+    rows = (await session.execute(select(ClubMember, User.nickname, User.player_no)
+                                  .join(User, User.id == ClubMember.user_id)
+                                  .where(ClubMember.club_id == club_id,
+                                         (ClubMember.role == ClubRole.organizer) | (ClubMember.judge_games != ""))
+                                  .order_by(ClubMember.role.desc(), User.nickname))).all()
+    return [{"user_id": m.user_id, "nickname": nick, "player_no": no,
+             "organizer": m.role == ClubRole.organizer,
+             "games": list(JUDGE_GAMES) if m.role == ClubRole.organizer else parse_judge_games(m.judge_games)}
+            for m, nick, no in rows]
+
+
+@router.put("/{club_id}/judges")
+async def set_club_judge(club_id: int, data: JudgeSet, user: User = Depends(current_user),
+                         session: AsyncSession = Depends(get_session)):
+    """Организатор назначает судью клуба по номеру игрока и выбирает направления."""
+    if not await is_club_organizer(session, club_id, user):
+        raise HTTPException(403, "Нужны права организатора клуба")
+    bad = [g for g in data.games if g not in JUDGE_GAMES]
+    if bad:
+        raise HTTPException(422, "Направления судейства: mtg, edh, berserk")
+    target = (await session.execute(select(User).where(User.player_no == data.player_no))).scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, f"Игрока с номером {data.player_no} нет: проверьте номер в его кабинете")
+    m = (await session.execute(select(ClubMember).where(ClubMember.club_id == club_id,
+                                                        ClubMember.user_id == target.id))).scalar_one_or_none()
+    if m and m.role == ClubRole.organizer:
+        raise HTTPException(400, f"{target.nickname} — организатор клуба и уже судит все направления")
+    if not m:
+        if not data.games:
+            raise HTTPException(404, f"{target.nickname} не судья этого клуба")
+        m = ClubMember(club_id=club_id, user_id=target.id)
+        session.add(m)
+    m.judge_games = ",".join(g for g in JUDGE_GAMES if g in data.games)
+    await session.commit()
+    return {"user_id": target.id, "nickname": target.nickname, "player_no": target.player_no,
+            "games": parse_judge_games(m.judge_games)}
 
 
 @router.get("/{club_id}/players")
