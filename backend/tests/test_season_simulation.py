@@ -1,7 +1,8 @@
-"""Симуляция сезона EDH «Зима 2026»: 20 игроков, ивент каждое воскресенье с 6 декабря 2026 по 28 февраля 2027.
+"""Симуляция сезона EDH «Зима 2026» клуба «Дракон»: 20 игроков, ивент каждое воскресенье
+с 25 октября 2026 по 17 января 2027 (сезон 21.10.2026 - 20.01.2027, как в клубе).
 
-Часы платформы подменяются, поэтому сезон проходит «по календарю»: создаётся в ноябре, играется
-13 воскресений, после 28 февраля закрывается. Каждый стол проверяется по правилам банка (7%, нулевая сумма
+Часы платформы подменяются, поэтому сезон проходит «по календарю»: создаётся 21 октября, играется
+13 воскресений, после 20 января закрывается. Каждый стол проверяется по правилам банка (7%, нулевая сумма
 при победе, сгорание при ничьей и таймере), надбавка +150 - раз в неделю только пришедшим.
 Итоговый отчёт пишется в season-report.md (CI сохраняет его как артефакт).
 RUN_INTEGRATION=1.
@@ -26,15 +27,17 @@ if os.getenv("RUN_INTEGRATION"):
     from tests.helpers import make_creator
 
 MSK = ZoneInfo("Europe/Moscow")
-CLOCK = {"now": datetime(2026, 11, 1, 12, 0, tzinfo=MSK)}
+START = {"now": datetime(2026, 10, 21, 10, 0, tzinfo=MSK)}
+CLOCK = dict(START)
 NAMES = ["Аня", "Борис", "Вера", "Глеб", "Даша", "Егор", "Жанна", "Захар", "Ира", "Кирилл",
          "Лена", "Миша", "Нина", "Олег", "Полина", "Роман", "Света", "Тимур", "Ульяна", "Фёдор"]
-SUNDAYS = [date(2026, 12, 6) + timedelta(weeks=k) for k in range(13)]
+SUNDAYS = [date(2026, 10, 25) + timedelta(weeks=k) for k in range(13)]
 RATE = 0.07
 
 
 @pytest.fixture
 async def client(monkeypatch):
+    CLOCK.update(START)
     monkeypatch.setattr(L, "now", lambda: CLOCK["now"])
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -65,8 +68,8 @@ async def test_winter_2026_edh_season(client):
 
     # ---------- сезон и расписание (ноябрь) ----------
     season = ok(await c.post("/leagues", json={"club_id": club["id"], "name": "Зима 2026", "kind": "edh", "months": 3,
-                                               "starts_on": "2026-12-01"}, headers=org), 201)
-    assert (season["starts_on"], season["ends_on"], season["status"]) == ("2026-12-01", "2027-02-28", "upcoming")
+                                               "starts_on": "2026-10-21"}, headers=org), 201)
+    assert (season["starts_on"], season["ends_on"], season["status"]) == ("2026-10-21", "2027-01-20", "active")
     lid = season["id"]
     events = []
     for d in SUNDAYS:
@@ -78,7 +81,7 @@ async def test_winter_2026_edh_season(client):
         events.append((d, t["id"]))
     # ивент за пределами сезона не привязать
     r = await c.post("/tournaments", json={"club_id": club["id"], "name": "Март", "format": "edh", "league_id": lid,
-                                           "starts_at": "2027-03-07T18:00:00+03:00"}, headers=org)
+                                           "starts_at": "2027-01-24T18:00:00+03:00"}, headers=org)
     assert r.status_code == 400 and "вне сезона" in r.json()["detail"]
     sched = ok(await c.get(f"/leagues/{lid}"))
     assert len(sched["tournaments"]) == 13
@@ -189,7 +192,7 @@ async def test_winter_2026_edh_season(client):
         weeks.append(week)
 
     # ---------- итоги сезона ----------
-    CLOCK["now"] = datetime(2027, 3, 1, 12, 0, tzinfo=MSK)
+    CLOCK["now"] = datetime(2027, 1, 21, 12, 0, tzinfo=MSK)
     final = ok(await c.get(f"/leagues/{lid}"))
     assert final["status"] == "finished"
     table = final["standings"]
