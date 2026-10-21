@@ -7,7 +7,6 @@
 """
 import os
 import random
-import sys
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -65,7 +64,7 @@ def r2(x: float) -> float:
     return round(x, 2)
 
 
-async def test_winter_2026_season(client, clock):
+async def test_winter_2026_season(client, clock, capsys):
     rng = random.Random(2026)
     org = {"Authorization": f"Bearer {(await client.post('/auth/register', json={'email': 'drakon@example.com', 'password': 'password1', 'nickname': 'Организатор'})).json()['access_token']}"}
     await make_creator(client, org)
@@ -195,4 +194,5 @@ async def test_winter_2026_season(client, clock):
              for i, r in enumerate(rows, 1)]
     lines.append(f"Ивентов 13, столов {stats['tables']}: побед {stats['win']}, ничьих {stats['draw']}, "
                  f"по таймеру {stats['timeout']}. Сверка банков с моделью: сходится после каждого из 13 ивентов.")
-    sys.__stdout__.write("::notice title=Сезон Зима 2026 (симуляция)::" + "%0A".join(lines) + "\n")
+    with capsys.disabled():   # мимо перехвата pytest: строка ::notice становится аннотацией в GitHub Actions
+        print("::notice title=Сезон Зима 2026 (симуляция)::" + "%0A".join(lines), flush=True)
