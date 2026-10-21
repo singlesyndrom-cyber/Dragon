@@ -29,7 +29,7 @@ class WinIn(BaseModel):
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return leagues.now()
 
 
 async def _edh(session: AsyncSession, tid: int) -> Tournament:
@@ -149,7 +149,7 @@ async def new_round(tid: int, user: User = Depends(current_user), session: Async
 
     if t.league_id:
         league = await session.get(League, t.league_id)
-        if league and leagues.status(league, _now().date()) == "finished":
+        if league and leagues.status(league, leagues.today()) == "finished":
             raise HTTPException(400, "Сезон лиги завершён: новые туры в нём не проводятся")
     tps = (await session.execute(select(TournamentPlayer).where(
         TournamentPlayer.tournament_id == tid, TournamentPlayer.checked_in.is_(True),
@@ -158,8 +158,8 @@ async def new_round(tid: int, user: User = Depends(current_user), session: Async
         raise HTTPException(400, "Нужно минимум 3 пришедших игрока")
 
     members = await leagues.bank_holders(session, t, [p.user_id for p in tps])
-    iso = _now().isocalendar()
-    week = f"{iso.year}-W{iso.week:02d}"
+    # неделя надбавки - по дате ивента (если внесли результаты позже или после полуночи, неделя та же)
+    week = leagues.week_key(t.starts_at or _now())
     for tp in tps:
         m = members[tp.user_id]
         if m.last_bonus_week != week:                      # надбавка только пришедшим и зарегистрированным

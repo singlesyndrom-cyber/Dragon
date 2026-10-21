@@ -5,16 +5,39 @@ EDH: у каждого участника сезона свой банк, на �
 Берсерк: таблица - сумма очков (3/1/0) всех завершённых турниров сезона.
 """
 import calendar
-from datetime import date
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .config import settings
 from .models import (ClubMember, League, LeagueKind, LeagueMember, Match, Tournament, TournamentPlayer,
                      TournamentStatus, User)
 from .swiss import MatchRec, compute_standings
 
 MONTH_CHOICES = (1, 2, 3)
+
+
+def now() -> datetime:
+    """Единые часы для сезонов и EDH (тесты подменяют их, чтобы прожить сезон за секунды)."""
+    return datetime.now(timezone.utc)
+
+
+def local(dt: datetime) -> datetime:
+    """Время в часовом поясе клуба (APP_TIMEZONE); время без пояса считается уже местным."""
+    tz = ZoneInfo(settings.app_timezone)
+    return dt.replace(tzinfo=tz) if dt.tzinfo is None else dt.astimezone(tz)
+
+
+def today() -> date:
+    return local(now()).date()
+
+
+def week_key(dt: datetime) -> str:
+    """Неделя для надбавки +150: ISO-неделя по местному времени клуба, а не по UTC."""
+    iso = local(dt).isocalendar()
+    return f"{iso.year}-W{iso.week:02d}"
 
 
 def add_months(d: date, months: int) -> date:

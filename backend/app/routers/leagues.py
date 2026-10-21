@@ -17,7 +17,7 @@ router = APIRouter(prefix="/leagues", tags=["leagues"])
 
 
 def today() -> date:
-    return datetime.now(ZoneInfo(settings.app_timezone)).date()
+    return L.today()
 
 
 class LeagueIn(BaseModel):

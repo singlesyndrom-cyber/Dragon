@@ -66,17 +66,23 @@ def _aware(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=ZoneInfo(settings.app_timezone))
 
 
-async def _check_league(session: AsyncSession, league_id: int | None, club_id: int, game: str, fmt) -> None:
+async def _check_league(session: AsyncSession, league_id: int | None, club_id: int, game: str, fmt,
+                        starts_at: datetime | None = None) -> None:
     if league_id is None:
         return
     league = await session.get(League, league_id)
     if not league or league.club_id != club_id:
         raise HTTPException(400, "Сезон лиги не найден в этом клубе")
-    if leagues.status(league, datetime.now(ZoneInfo(settings.app_timezone)).date()) == "finished":
+    if leagues.status(league, leagues.today()) == "finished":
         raise HTTPException(400, "Сезон лиги уже завершён")
     if not leagues.fits(league, game, fmt.value if hasattr(fmt, "value") else fmt):
         raise HTTPException(400, "Формат турнира не подходит этому сезону: EDH-сезон - только EDH, "
                                  "сезон «Берсерка» - швейцарки по «Берсерку»")
+    if starts_at is not None:
+        day = leagues.local(starts_at).date()
+        if not league.starts_on <= day <= league.ends_on:
+            raise HTTPException(400, f"Дата ивента {day:%d.%m.%Y} вне сезона «{league.name}» "
+                                     f"({league.starts_on:%d.%m.%Y}–{league.ends_on:%d.%m.%Y})")
 
 
 class ResultIn(BaseModel):
@@ -135,7 +141,8 @@ async def create_tournament(data: TournamentIn, user: User = Depends(current_use
                             session: AsyncSession = Depends(get_session)):
     if not await is_club_organizer(session, data.club_id, user):
         raise HTTPException(403, "Нужны права организатора клуба")
-    await _check_league(session, data.league_id, data.club_id, data.game, data.format)
+    await _check_league(session, data.league_id, data.club_id, data.game, data.format,
+                        _aware(data.starts_at) if data.starts_at else None)
     rounds = None if data.format == TournamentFormat.edh else (
         data.rounds or (1 if data.format == TournamentFormat.fast_swiss else None))
     extra = {"starts_at": _aware(data.starts_at)} if data.starts_at else {}
@@ -200,9 +207,11 @@ async def update_tournament(tid: int, data: TournamentPatch, user: User = Depend
     if t.status != TournamentStatus.registration:
         raise HTTPException(400, "Настройки меняются только до старта")
     f = data.model_dump(exclude_unset=True)
-    if "league_id" in f:
-        await _check_league(session, f["league_id"], t.club_id, t.game, t.format)
-        t.league_id = f["league_id"]
+    if "league_id" in f or f.get("starts_at"):
+        league_id = f["league_id"] if "league_id" in f else t.league_id
+        when = _aware(f["starts_at"]) if f.get("starts_at") else t.starts_at
+        await _check_league(session, league_id, t.club_id, t.game, t.format, when)
+        t.league_id = league_id
     for k in ("name", "description", "deck_policy", "self_registration", "max_players"):
         if k in f and (f[k] is not None or k == "max_players"):
             setattr(t, k, f[k].strip() if isinstance(f[k], str) and k in ("name", "description") else f[k])
