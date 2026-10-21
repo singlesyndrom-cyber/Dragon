@@ -176,6 +176,13 @@ async def test_winter_2026_edh_season(client):
             attended[p["id"]] = attended.get(p["id"], 0) + 1
         res = ok(await c.get(f"/edh/{tid}/results"))
         week["best"] = f"{res[0]['nickname']} {res[0]['net']:+.1f}"
+        async with SessionLocal() as sess:
+            report = (await sess.execute(select(OutboxMessage.text).where(OutboxMessage.kind == "tournament_report")
+                                         .order_by(OutboxMessage.id.desc()).limit(1))).scalar_one()
+        congrats = report.split("📊")[0]
+        for r in res:   # поздравляют только тех, кто вечер закончил в плюсе
+            if r["net"] <= 0:
+                assert f"<b>{r['nickname']}</b>" not in congrats.split("\n", 1)[1], (r, congrats)
         for k in ("win", "draw", "timeout"):
             stats[k] += week[k]
         stats["tables"] += week["tables"]

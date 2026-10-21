@@ -70,6 +70,8 @@ async def on_tournament_finished(session, t: Tournament, swiss_table=None) -> No
             ClubMember.club_id == t.club_id).order_by(ClubMember.edh_bank.desc()).limit(10))).all()
         names = await _nicknames(session, [r[0] for r in rows] + [r[0] for r in league_rows])
         standings = [(i, names.get(u, "?"), f"{(net or 0):+.0f}") for i, (u, net) in enumerate(rows, 1)]
+        # поздравляем только тех, кто ушёл в плюс: «3-е место» с минусом в банке поздравлением не назовёшь
+        podium = [(i, names.get(u, "?")) for i, (u, net) in enumerate(rows[:3], 1) if (net or 0) > 0]
         league = [(i, names.get(u, "?"), f"{bank:.0f}") for i, (u, bank) in enumerate(league_rows, 1)]
         stats = [f"Сыграно столов: {tables[0]}", f"Партий без победителя (ничья/таймер): {tables[1]}"]
         participants, league_title = len(rows), "Банк клуба (рейтинг EDH)"
@@ -79,6 +81,7 @@ async def on_tournament_finished(session, t: Tournament, swiss_table=None) -> No
             ClubMember.club_id == t.club_id).order_by(ClubMember.league_points.desc()).limit(10))).all()
         names = await _nicknames(session, [r.player_id for r in table] + [r[0] for r in league_rows])
         standings = [(r.rank, names.get(r.player_id, "?"), f"{r.points} оч.") for r in table]
+        podium = [(p, n) for p, n, _ in standings[:3]]
         league = [(i, names.get(u, "?"), f"{lp} оч.") for i, (u, lp) in enumerate(league_rows, 1)]
         played, draws = (await session.execute(select(func.count(), func.count().filter(Match.result == "draw"))
                          .where(Match.tournament_id == t.id, Match.p2_user_id.is_not(None)))).one()
@@ -101,7 +104,7 @@ async def on_tournament_finished(session, t: Tournament, swiss_table=None) -> No
     judge_label = (judge.nickname + (f" (№{judge.player_no})" if judge.player_no else "")) if judge else None
     data = ReportData(title=t.name, club=club.name, game=t.game, fmt=t.format.value, date=t.starts_at,
                       participants=participants, rounds=t.current_round or None,
-                      podium=[(p, n) for p, n, _ in standings[:3]], standings=standings, league_title=league_title,
+                      podium=podium, standings=standings, league_title=league_title,
                       league=league, stats=stats, url=site_url(f"/tournaments/{t.id}"), tz=settings.app_timezone,
                       judge=judge_label)
     await enqueue(session, "tournament_report", club.telegram_chat_id, format_report(data),

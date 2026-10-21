@@ -67,3 +67,11 @@ def test_backoff_and_chat_id():
     assert [backoff_seconds(i) for i in (1, 2, 3)] == [30, 60, 120]
     assert backoff_seconds(20) == 3600 and MAX_ATTEMPTS == 8
     assert parse_chat_id(" -1001234567890 ") == -1001234567890 and parse_chat_id("@club") == "@club"
+
+
+def test_templates_keep_nickname_in_nominative():
+    """Ники не склоняются: шаблон не должен ставить ник после предлога или как дополнение («у Света»)."""
+    import re
+    bad = re.compile(r"(?:^|\s)(?:у|за|для|от|с|к|о|об|остановить|поздравляем)\s+<b>\{name\}", re.IGNORECASE)
+    for tpl in WINNER_TEMPLATES + PODIUM_TEMPLATES:
+        assert not bad.search(tpl), tpl
