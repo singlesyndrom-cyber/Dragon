@@ -12,6 +12,7 @@ if os.getenv("RUN_INTEGRATION"):
 
     from app.db import Base, SessionLocal, engine
     from app.main import app
+    from tests.helpers import make_creator
     from app.models import GlobalRole, OutboxMessage, User
 
 
@@ -45,6 +46,7 @@ async def outbox():
 
 
 async def new_club(c, h, name="Дракон", chat="-100123"):
+    await make_creator(c, h)
     r = await c.post("/clubs", json={"name": name, "telegram_chat_id": chat}, headers=h)
     assert r.status_code == 201, r.text
     return r.json()
@@ -83,6 +85,8 @@ async def test_swiss_flow(client):
     assert (await client.get("/clubs/drakon")).status_code == 200
     assert [c["id"] for c in (await client.get("/clubs/managed", headers=org)).json()] == [club["id"]]
     assert (await client.get("/clubs/managed", headers=users[1][0])).json() == []
+    assert (await client.post("/clubs", json={"name": "Без статуса"}, headers=users[1][0])).status_code == 403
+    await make_creator(client, users[1][0])
     assert (await client.post("/clubs", json={"name": "дракон"}, headers=users[1][0])).status_code == 409
     other = (await client.post("/clubs", json={"name": "Дракон!"}, headers=users[1][0])).json()
     assert other["slug"] == "drakon-2"

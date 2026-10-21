@@ -13,6 +13,7 @@ if os.getenv("RUN_INTEGRATION"):
     from app.auction_texts import lot_caption, rating_card
     from app.db import Base, SessionLocal, engine
     from app.main import app
+    from tests.helpers import make_creator
     from app.models import User
     from app.schema import sync_schema
 
@@ -47,6 +48,7 @@ async def test_numbers_are_sequential_from_1001(client):
 async def test_add_by_number_and_guests_have_none(client):
     org, _ = await reg(client, 1)
     _, other = await reg(client, 2)
+    await make_creator(client, org)
     club = (await client.post("/clubs", json={"name": "Номерной клуб"}, headers=org)).json()
     tid = (await client.post("/tournaments", json={"club_id": club["id"], "name": "Пятница", "format": "swiss",
                                                    "rounds": 2}, headers=org)).json()["id"]
@@ -96,6 +98,7 @@ async def test_old_accounts_get_numbers_on_schema_sync(client):
     await reg(client, 1)
     await reg(client, 2)
     org, _ = await reg(client, 3)
+    await make_creator(client, org)
     r = await client.post("/clubs", json={"name": "Старый клуб"}, headers=org)
     assert r.status_code == 201, r.text
     r = await client.post("/tournaments", json={"club_id": r.json()["id"], "name": "Турнир", "format": "swiss",

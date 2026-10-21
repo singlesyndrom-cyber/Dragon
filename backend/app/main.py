@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from .config import settings
 from .db import engine
 from .schema import sync_schema
-from .routers import auctions, auth, cards, clubs, decks, edh, leagues, meta, news, outbox, players, tournaments
+from .routers import auctions, auth, cards, clubs, creators, decks, edh, leagues, meta, news, outbox, players, tournaments
 
 
 @asynccontextmanager
@@ -32,6 +32,7 @@ app.include_router(outbox.router)
 app.include_router(auctions.router)
 app.include_router(leagues.router)
 app.include_router(players.router)
+app.include_router(creators.router)
 
 
 @app.get("/health")

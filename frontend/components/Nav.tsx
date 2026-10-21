@@ -29,7 +29,7 @@ export default function Nav() {
         <div className="who">
           {!ready ? null : me ? (
             <>
-              {me.role === "admin" && <Link href="/admin">Админка</Link>}
+              {me.role === "admin" ? <Link href="/admin">Админка</Link> : me.is_moderator ? <Link href="/admin">Модерация</Link> : null}
               <Link href="/me">{me.nickname}</Link>
               <button className="link-btn" onClick={signOut}>Выйти</button>
             </>

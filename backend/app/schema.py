@@ -38,6 +38,7 @@ def sync_schema(conn) -> list[str]:
     insp = inspect(conn)
     q = conn.dialect.identifier_preparer.quote
     changes = []
+    added: set[tuple[str, str]] = set()
     for table in Base.metadata.sorted_tables:
         existing = {c["name"] for c in insp.get_columns(table.name)}
         for col in table.columns:
@@ -56,6 +57,7 @@ def sync_schema(conn) -> list[str]:
                     ddl += " NOT NULL"
             conn.exec_driver_sql(ddl)
             changes.append(ddl)
+            added.add((table.name, col.name))
         # ремонт: колонка уже есть, но добавлена без значения по умолчанию (старая версия этого кода)
         cols = {c["name"]: c for c in insp.get_columns(table.name)}
         for col in table.columns:
@@ -74,6 +76,12 @@ def sync_schema(conn) -> list[str]:
         for idx in table.indexes:
             conn.execute(CreateIndex(idx, if_not_exists=True))
     changes += _fill_player_numbers(conn)
+    if ("users", "is_club_creator") in added:
+        # статус появился после того, как клубы уже создавали: их организаторы получают его сразу
+        n = conn.exec_driver_sql(
+            "UPDATE users SET is_club_creator = true WHERE id IN "
+            "(SELECT user_id FROM club_members WHERE role = 'organizer')").rowcount
+        changes.append(f"users.is_club_creator: выдано организаторам {n}")
     for ch in changes:
         log.info("schema: %s", ch)
     return changes

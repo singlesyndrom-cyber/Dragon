@@ -37,6 +37,9 @@ FORGOT_IP = Rule("forgot_ip", 10, timedelta(hours=1),
 RESET_IP = Rule("reset_ip", 10, timedelta(minutes=15),
                 "Слишком много попыток со ссылками сброса. Попробуйте через {wait}.")
 
+CREATOR_REQUEST = Rule("creator_request", 5, timedelta(days=1),
+                       "Слишком много заявок за сутки. Попробуйте через {wait}.")
+
 KEEP = timedelta(days=1)   # старше - удаляются
 
 

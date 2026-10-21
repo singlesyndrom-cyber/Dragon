@@ -4,14 +4,30 @@ import { useCallback, useEffect, useState } from "react";
 import ArticleForm from "@/components/ArticleForm";
 import ConfirmButton from "@/components/ConfirmButton";
 import { Status, useAction } from "@/components/Form";
+import CreatorRequestsAdmin, { StaffRoles } from "@/components/CreatorRequestsAdmin";
 import Guard from "@/components/Guard";
+import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { dateTime, rub } from "@/lib/format";
 
 export default function AdminPage() {
+  return <Guard moderator><AdminContent /></Guard>;
+}
+
+function AdminContent() {
+  const { me } = useAuth();
+  if (me?.role !== "admin") {   // модератор видит только заявки
+    return (
+      <>
+        <h1>Модерация</h1>
+        <CreatorRequestsAdmin />
+      </>
+    );
+  }
   return (
-    <Guard admin>
+    <>
       <h1>Админка</h1>
+      <CreatorRequestsAdmin />
       <div className="split">
         <div>
           <Complaints />
@@ -20,13 +36,14 @@ export default function AdminPage() {
           <CardImport />
         </div>
         <aside className="stack">
+          <StaffRoles />
           <Scryfall />
           <Ban />
           <Categories />
         </aside>
       </div>
       <ArticleForm clubId={null} />
-    </Guard>
+    </>
   );
 }
 

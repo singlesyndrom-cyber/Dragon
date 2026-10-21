@@ -17,6 +17,8 @@ post() {  # путь, json, поле, [токен]
     *) echo "POST $1 -> $code: $body" >&2; docker compose logs --tail=60 backend >&2; exit 1 ;; esac
 }
 TOKEN=$(post /auth/register '{"email":"smoke@example.com","password":"smoke-pass-1","nickname":"Smoke"}' access_token)
+# клуб создаёт только «Создатель Клуба»: в проверке статус выдаём прямо в базе
+docker compose exec -T db psql -U kki -qc "UPDATE users SET is_club_creator = true WHERE nickname = 'Smoke'" >/dev/null
 CLUB=$(post /clubs '{"name":"Проверочный клуб","city":"Тест"}' id "$TOKEN")
 TID=$(post /tournaments "{\"club_id\":$CLUB,\"name\":\"Проверочный турнир\"}" id "$TOKEN")
 

@@ -41,6 +41,10 @@ class User(Base):
     # гость: игрок, которого организатор добавил по имени, без аккаунта; позже сливается с настоящим
     is_guest: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
     guest_club_id: Mapped[int | None] = mapped_column(Integer)   # клуб, где гость был добавлен
+    # статус «Создатель Клуба»: право создавать клубы. Выдаёт только админ/модератор через заявку
+    is_club_creator: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    # модератор: рассматривает заявки на статус «Создатель Клуба». Назначает только администратор
+    is_moderator: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
     # растёт при смене пароля: токены входа со старой версией перестают действовать
     token_version: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -541,4 +545,29 @@ class ResultEdit(Base):
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     before: Mapped[str] = mapped_column(String(16))
     after: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CreatorRequestStatus(str, enum.Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+
+class ClubCreatorRequest(Base):
+    """Заявка на статус «Создатель Клуба». У пользователя не больше одной заявки на рассмотрении:
+    это держит частичный уникальный индекс, а не только проверка в коде."""
+    __tablename__ = "club_creator_requests"
+    __table_args__ = (Index("uq_creator_request_pending", "user_id", unique=True,
+                            postgresql_where=text("status = 'pending'")),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    club_name: Mapped[str] = mapped_column(String(128))
+    city: Mapped[str] = mapped_column(String(64), default="")
+    about: Mapped[str] = mapped_column(Text, default="")
+    reject_reason: Mapped[str] = mapped_column(String(500), default="")
+    decided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

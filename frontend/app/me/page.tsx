@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Status, useAction } from "@/components/Form";
+import CreatorRequest from "@/components/CreatorRequest";
 import Guard from "@/components/Guard";
 import TelegramLogin from "@/components/TelegramLogin";
 import { api } from "@/lib/api";
@@ -43,6 +44,7 @@ function Cabinet() {
         </div>
         <aside className="stack">
           <MyClubs />
+          <CreatorRequest />
           <div className="panel">
             <h3>Аккаунт</h3>
             <p className="muted small">Способы входа: {me.providers.map((p) => ({ email: "email", telegram: "Telegram", vk: "VK" } as any)[p] || p).join(", ")}</p>
@@ -214,6 +216,7 @@ function Deals() {
 }
 
 function MyClubs() {
+  const { me } = useAuth();
   const [clubs, setClubs] = useState<any[] | null>(null);
   const [judging, setJudging] = useState<any[]>([]);
   useEffect(() => {
@@ -233,7 +236,7 @@ function MyClubs() {
             </li>
           ))}
         </ul>
-      ) : <p className="small muted">Создайте клуб, чтобы проводить турниры и вести лигу.</p>}
+      ) : <p className="small muted">{me?.is_club_creator ? "Создайте клуб, чтобы проводить турниры и вести лигу." : "Чтобы открыть свой клуб, получите статус «Создатель Клуба»: заявка ниже."}</p>}
       {judging.length ? (
         <>
           <h3 style={{ marginTop: 16 }}>Судейство</h3>
@@ -248,7 +251,7 @@ function MyClubs() {
           <p className="small muted" style={{ margin: 0 }}>Турнир ведётся кнопкой «Управлять турниром» на его странице.</p>
         </>
       ) : null}
-      <Link href="/clubs/new" className="btn" style={{ marginTop: 12 }}>Создать клуб</Link>
+      {me?.is_club_creator ? <Link href="/clubs/new" className="btn" style={{ marginTop: 12 }}>Создать клуб</Link> : null}
     </div>
   );
 }

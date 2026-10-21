@@ -82,7 +82,13 @@ jobs:
           npx playwright install --with-deps chromium
           docker compose -f ../docker-compose.yml exec -T db psql -U kki -c \
             "INSERT INTO clubs (name, slug, description, city) VALUES ('Старый клуб', 'старый-клуб', '', '')"
-          CYR_SLUG=старый-клуб node organizer.mjs 2>&1 | tee ../build.log
+          # администратор для одобрения заявки «Создатель Клуба» в сценарии
+          curl -sf -X POST localhost:8000/auth/register -H 'Content-Type: application/json' \
+            -d '{"email":"e2e-admin@example.com","password":"e2e-admin-pass-1","nickname":"Админ E2E"}' >/dev/null
+          docker compose -f ../docker-compose.yml exec -T db psql -U kki -c \
+            "UPDATE users SET role = 'admin' WHERE nickname = 'Админ E2E'"
+          ADMIN_EMAIL=e2e-admin@example.com ADMIN_PASSWORD=e2e-admin-pass-1 \
+            CYR_SLUG=старый-клуб node organizer.mjs 2>&1 | tee ../build.log
       - if: always()
         uses: actions/upload-artifact@v4
         with:

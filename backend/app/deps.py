@@ -43,6 +43,17 @@ async def require_admin(user: User = Depends(current_user)) -> User:
     return user
 
 
+async def require_moderator(user: User = Depends(current_user)) -> User:
+    """Рассмотрение заявок «Создатель Клуба»: администратор или модератор."""
+    if user.role != GlobalRole.admin and not user.is_moderator:
+        raise HTTPException(403, "Нужны права администратора или модератора")
+    return user
+
+
+def can_create_club(user: User) -> bool:
+    return user.role == GlobalRole.admin or bool(user.is_club_creator)
+
+
 async def is_club_organizer(session: AsyncSession, club_id: int, user: User) -> bool:
     if user.role == GlobalRole.admin:
         return True

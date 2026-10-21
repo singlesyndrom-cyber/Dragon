@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from .. import notify
 from ..db import get_session
 from ..slug import slugify as translit_slug
-from ..deps import JUDGE_GAMES, current_user, is_club_organizer, parse_judge_games, require_admin
+from ..deps import JUDGE_GAMES, can_create_club, current_user, is_club_organizer, parse_judge_games, require_admin
 from ..models import GlobalRole, Club, ClubMember, ClubRole, ClubStats, User
 
 router = APIRouter(prefix="/clubs", tags=["clubs"])
@@ -78,7 +78,11 @@ async def get_club(slug: str, session: AsyncSession = Depends(get_session)):
 @router.post("", status_code=201)
 async def create_club(data: ClubIn, owner: User = Depends(current_user),
                       session: AsyncSession = Depends(get_session)):
-    """Создатель становится организатором. Заявки на клубы можно модерировать админом позже."""
+    """Создать клуб может только пользователь со статусом «Создатель Клуба» (или администратор);
+    создатель становится организатором клуба."""
+    if not can_create_club(owner):
+        raise HTTPException(403, "Создавать клубы могут пользователи со статусом «Создатель Клуба». "
+                                 "Подайте заявку в личном кабинете")
     if (await session.execute(select(Club).where(func.lower(Club.name) == data.name.strip().lower()))).scalar_one_or_none():
         raise HTTPException(409, "Клуб с таким названием уже есть")
     base = slugify(data.name)

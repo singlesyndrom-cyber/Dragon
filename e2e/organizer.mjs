@@ -46,6 +46,33 @@ try {
   await visible(page.getByText("Ваш номер игрока"), "в кабинете виден номер игрока");
   await shot("cabinet");
 
+  step("Заявка на статус «Создатель Клуба» и одобрение в админке");
+  check(!(await page.getByRole("link", { name: "Создать клуб" }).count()), "без статуса кнопки «Создать клуб» нет");
+  await page.getByLabel("Название будущего клуба").fill(`Клуб Е2Е ${run}`);
+  await page.getByLabel("Город", { exact: true }).fill("Казань");
+  await page.getByLabel(/О клубе/).fill("Пятничные турниры по Magic и EDH в антикафе.");
+  await page.getByRole("button", { name: "Подать заявку на статус «Создатель Клуба»" }).click();
+  await visible(page.getByText("Заявка отправлена, находится на рассмотрении"), "заявка отправлена, статус «на рассмотрении»");
+  await shot("creator-request");
+  {
+    if (!process.env.ADMIN_EMAIL) throw new Error("Для сценария нужен администратор: ADMIN_EMAIL и ADMIN_PASSWORD");
+    const adm = await apiCall("/auth/login", { body: { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD } });
+    const ap = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+    ap.on("pageerror", (e) => errors.push(e.message));
+    await ap.goto(BASE + "/");
+    await ap.evaluate((tok) => localStorage.setItem("dragon_token", tok), adm.access_token);
+    await ap.goto(BASE + "/admin");
+    await visible(ap.getByRole("heading", { name: "Заявки на статус «Создатель Клуба»" }), "в админке есть раздел заявок");
+    const row = ap.getByRole("row", { name: /Организатор E2E/ });
+    await visible(row.getByText(`org-${run}@example.com`), "в заявке видны ник, email и дата");
+    await ap.screenshot({ path: `shots/${String(++n).padStart(2, "0")}-admin-requests.png`, fullPage: true });
+    await row.getByRole("button", { name: "Одобрить" }).click();
+    await visible(ap.getByText("получил статус «Создатель Клуба»"), "администратор одобрил заявку");
+    await ap.close();
+  }
+  await page.reload();
+  await visible(page.getByRole("link", { name: "Создать клуб" }), "после одобрения появилась кнопка «Создать клуб»");
+
   step("Создание клуба с русским названием");
   await page.getByRole("link", { name: "Создать клуб" }).first().click();
   await page.getByLabel("Название").fill(`Клуб Е2Е ${run}`);

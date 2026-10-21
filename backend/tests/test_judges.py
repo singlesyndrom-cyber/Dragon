@@ -12,6 +12,7 @@ if os.getenv("RUN_INTEGRATION"):
 
     from app.db import Base, SessionLocal, engine
     from app.main import app
+    from tests.helpers import make_creator
     from app.models import OutboxMessage
 
 
@@ -36,6 +37,7 @@ async def test_judge_role_flow(client):
     org, _ = await reg(client, 0)
     jh, judge = await reg(client, 1)
     players = [await reg(client, i) for i in (2, 3)]
+    await make_creator(client, org)
     club = (await client.post("/clubs", json={"name": "Судейский клуб", "telegram_chat_id": "-100777"}, headers=org)).json()
     cid = club["id"]
 
@@ -111,6 +113,7 @@ async def test_judge_role_flow(client):
 async def test_edh_judge_closes_tables(client):
     org, _ = await reg(client, 0)
     jh, judge = await reg(client, 1)
+    await make_creator(client, org)
     club = (await client.post("/clubs", json={"name": "EDH клуб"}, headers=org)).json()
     await client.put(f"/clubs/{club['id']}/judges", json={"player_no": judge["player_no"], "games": ["edh"]}, headers=org)
     tid = (await client.post("/tournaments", json={"club_id": club["id"], "name": "Командир", "format": "edh"},

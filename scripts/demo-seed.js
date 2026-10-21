@@ -2,7 +2,7 @@
  * Демо-данные для локального просмотра сайта: игроки, клуб, турниры (швейцарка, быстрый швейцарец,
  * два EDH-ивента), колоды и новости. Всё создаётся через обычный API, как это сделали бы люди.
  *
- * Как запустить: откройте сайт (http://localhost:3000), консоль разработчика (F12 → Console),
+ * Как запустить: войдите на сайт (http://localhost:3000) под администратором, откройте консоль разработчика (F12 → Console),
  * вставьте содержимое файла и нажмите Enter. Повторный запуск создаст ещё один такой же набор.
  *
  * Тестовые аккаунты: demo1@example.com … demo8@example.com, пароль у всех DEMO_PASSWORD ниже.
@@ -44,6 +44,14 @@ const demoSeed = async () => {
 
   // --- клуб ---
   const suffix = Math.random().toString(36).slice(2, 5);
+  // клуб создаёт только «Создатель Клуба»: заявку организатора одобряет администратор,
+  // поэтому скрипт запускают, войдя на сайт под администратором (его токен - в localStorage)
+  const adminToken = localStorage.getItem("dragon_token");
+  if (!adminToken) throw new Error("Войдите на сайт под администратором и запустите скрипт снова");
+  const req = await call("/creator-requests", {
+    token: org, body: { club_name: `Демо-клуб «Грифон» ${suffix}`, city: "Москва", about: "Демонстрационный клуб для проверки платформы." },
+  });
+  await call(`/admin/creator-requests/${req.id}/approve`, { token: adminToken, body: {} });
   const club = await call("/clubs", {
     token: org,
     body: {

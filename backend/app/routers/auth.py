@@ -14,7 +14,7 @@ from .. import ratelimit as rl
 from ..config import settings
 from ..db import get_session
 from ..deps import current_user
-from ..models import AuthAccount, PasswordReset, Provider, User
+from ..models import AuthAccount, GlobalRole, PasswordReset, Provider, User
 from ..notify import enqueue
 from ..security import create_token, hash_password, verify_password
 
@@ -260,4 +260,6 @@ async def vk_login(data: VkIn, session: AsyncSession = Depends(get_session)):
 async def me(user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
     providers = (await session.execute(select(AuthAccount.provider).where(AuthAccount.user_id == user.id))).scalars()
     return {"id": user.id, "player_no": user.player_no, "nickname": user.nickname, "role": user.role,
+            "is_club_creator": user.is_club_creator or user.role == GlobalRole.admin,
+            "is_moderator": user.is_moderator or user.role == GlobalRole.admin,
             "providers": list(providers)}

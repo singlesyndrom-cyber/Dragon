@@ -14,6 +14,15 @@ export default function NewClub() {
   const [f, setF] = useState({ name: "", city: "", description: "" });
 
   if (ready && !me) return <p><Link href="/login">Войдите</Link>, чтобы создать клуб.</p>;
+  if (ready && me && !me.is_club_creator) {
+    return (
+      <>
+        <h1>Новый клуб</h1>
+        <p className="lead">Создавать клубы могут игроки со статусом «Создатель Клуба».</p>
+        <p>Подайте заявку в <Link href="/me#creator">личном кабинете</Link>: администратор рассмотрит её, и после одобрения здесь откроется форма создания клуба.</p>
+      </>
+    );
+  }
   return (
     <>
       <h1>Новый клуб</h1>

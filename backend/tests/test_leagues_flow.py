@@ -13,6 +13,7 @@ if os.getenv("RUN_INTEGRATION"):
 
     from app.db import Base, engine
     from app.main import app
+    from tests.helpers import make_creator
 
 
 def test_season_end_dates():
@@ -40,6 +41,7 @@ async def reg(c, n):
 
 async def setup(c):
     org, org_id = await reg(c, 0)
+    await make_creator(c, org)
     club = (await c.post("/clubs", json={"name": "Сезонный клуб"}, headers=org)).json()
     return org, org_id, club
 
