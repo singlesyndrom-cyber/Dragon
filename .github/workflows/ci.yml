@@ -45,6 +45,16 @@ jobs:
           name: season-report
           path: backend/season-report.md
           if-no-files-found: ignore
+      - name: Season report as annotations
+        if: always()
+        run: |
+          [ -f season-report.md ] || exit 0
+          python3 -c "
+          t = open('season-report.md', encoding='utf-8').read()
+          esc = lambda s: s.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          for i, j in enumerate(range(0, len(t), 3500)):
+              print(f'::notice title=season-report {i + 1}::' + esc(t[j:j + 3500]))
+          "
 
   frontend:
     runs-on: ubuntu-latest
