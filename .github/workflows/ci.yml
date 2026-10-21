@@ -39,6 +39,12 @@ jobs:
       - run: pytest -v --tb=short --junitxml=junit.xml
       - if: always()
         run: python ../.github/scripts/junit_annotations.py junit.xml
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: season-report
+          path: backend/season-report.md
+          if-no-files-found: ignore
 
   frontend:
     runs-on: ubuntu-latest
