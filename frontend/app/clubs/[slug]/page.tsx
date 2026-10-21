@@ -31,7 +31,7 @@ export default async function ClubPage({ params }: { params: Promise<{ slug: str
       <h1>{club.name}</h1>
       <div className="split">
         <div>
-          {club.description ? <p className="lead">{club.description}</p> : null}
+          {club.description ? <p className="lead" style={{ whiteSpace: "pre-line" }}>{club.description}</p> : null}
           <dl className="facts">
             {club.city ? (<><dt>Город</dt><dd>{club.city}</dd></>) : null}
             <dt>Проведено турниров</dt><dd>{club.tournaments_total}</dd>
