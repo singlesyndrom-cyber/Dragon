@@ -34,6 +34,13 @@ services:
     command: python -m app.bot.main
     restart: unless-stopped
 
+  tgproxy:   # SSH-туннель до Telegram, если хостер его блокирует: deploy/tgproxy/README.md
+    build: ./deploy/tgproxy
+    profiles: [tgproxy]
+    env_file: .env
+    volumes: [./deploy/tgproxy/keys:/keys]
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./frontend

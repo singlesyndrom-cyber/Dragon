@@ -84,7 +84,7 @@ async def lot_photo(lot_id: int, session: AsyncSession = Depends(get_session)):
         raise HTTPException(503, "Бот не настроен")
     base = f"https://api.telegram.org/bot{settings.telegram_bot_token}"
     try:
-        async with httpx.AsyncClient(timeout=20) as c:
+        async with httpx.AsyncClient(timeout=20, proxy=settings.telegram_proxy or None) as c:
             meta = (await c.get(f"{base}/getFile", params={"file_id": lot.photo_file_id})).json()
             path = meta["result"]["file_path"]
             img = await c.get(f"https://api.telegram.org/file/bot{settings.telegram_bot_token}/{path}")

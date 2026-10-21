@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     jwt_secret: str
     jwt_expire_minutes: int = 10080
     telegram_bot_token: str = ""
+    # прокси до api.telegram.org, если хостинг его блокирует: socks5://tgproxy:1080 или http://user:pass@host:port
+    telegram_proxy: str = ""
     vk_app_id: str = ""
     vk_app_secret: str = ""
     telegram_global_chat_id: str = ""
