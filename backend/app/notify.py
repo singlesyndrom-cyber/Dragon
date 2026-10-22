@@ -147,3 +147,16 @@ async def on_tournament_finished(session, t: Tournament, swiss_table=None) -> No
                       judge=judge_label)
     await enqueue(session, "tournament_report", club.telegram_chat_id, format_report(data),
                   dedup_key=f"t-report:{t.id}:{club.telegram_chat_id}")
+
+
+
+async def to_user(session, user_id: int, kind: str, text: str, buttons: list | None = None,
+                  dedup_key: str | None = None) -> bool:
+    """Сообщение бота игроку в личку, если у него привязан Telegram."""
+    from .models import AuthAccount, Provider
+    chat = (await session.execute(select(AuthAccount.external_id).where(
+        AuthAccount.user_id == user_id, AuthAccount.provider == Provider.telegram))).scalars().first()
+    if not chat:
+        return False
+    await enqueue(session, kind, chat, text, buttons=buttons, dedup_key=f"{dedup_key}:{chat}" if dedup_key else None)
+    return True

@@ -624,3 +624,17 @@ class ServiceStatus(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(Text, default="", server_default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+
+class WaitlistEntry(Base):
+    """Лист ожидания турнира: когда место освобождается, первого в очереди записывают автоматически."""
+    __tablename__ = "tournament_waitlist"
+    __table_args__ = (UniqueConstraint("tournament_id", "user_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tournament_id: Mapped[int] = mapped_column(ForeignKey("tournaments.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    bracket: Mapped[int] = mapped_column(Integer, default=2, server_default=text("2"))
+    deck_id: Mapped[int | None] = mapped_column(ForeignKey("decks.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

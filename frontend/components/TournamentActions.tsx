@@ -45,7 +45,7 @@ export default function TournamentActions({ t }: { t: any }) {
       ) : open && !t.self_registration ? (
         <p className="muted" style={{ margin: 0 }}>На этот турнир игроков записывает организатор клуба.</p>
       ) : open && t.max_players && t.participants.length >= t.max_players ? (
-        <p className="muted" style={{ margin: 0 }}>Мест нет: записано {t.max_players} из {t.max_players}.</p>
+        <Waitlist t={t} me={me} busy={busy} run={run} refresh={() => router.refresh()} />
       ) : open ? (
         <>
           {t.deck_policy !== "none" ? (
@@ -100,5 +100,31 @@ export default function TournamentActions({ t }: { t: any }) {
       ) : null}
       <Status error={error} done={done} />
     </div>
+  );
+}
+
+/** Мест нет: встать в лист ожидания или выйти из него. Первого в очереди запишут сами, когда место освободится. */
+function Waitlist({ t, me, busy, run, refresh }: {
+  t: any; me: any; busy: boolean; run: (fn: () => Promise<unknown>, ok?: string) => Promise<boolean>; refresh: () => void;
+}) {
+  const mine = (t.waitlist || []).find((w: any) => w.user_id === me.id);
+  const total = (t.waitlist || []).length;
+  if (mine) {
+    return (
+      <>
+        <p style={{ margin: 0 }}>Мест нет. Вы в листе ожидания: <b>{mine.position}-й</b> из {total}. Освободится место — запишем автоматически{me.providers?.includes("telegram") ? " и напишем в Telegram" : ""}.</p>
+        <button disabled={busy} onClick={() => run(() => api(`/tournaments/${t.id}/waitlist`, { method: "DELETE" })).then((ok) => { if (ok) refresh(); })}>
+          Выйти из листа ожидания
+        </button>
+      </>
+    );
+  }
+  return (
+    <>
+      <p className="muted" style={{ margin: 0 }}>Мест нет: записано {t.max_players} из {t.max_players}{total ? `, в листе ожидания ${total}` : ""}.</p>
+      <button disabled={busy} onClick={() => run(() => api(`/tournaments/${t.id}/waitlist`, { method: "POST" })).then((ok) => { if (ok) refresh(); })}>
+        Встать в лист ожидания
+      </button>
+    </>
   );
 }

@@ -171,6 +171,15 @@ export default function Participants({ t, reload }: { t: any; reload: () => Prom
           </table>
         </div>
       ) : <p className="muted">Пока никого. Добавьте игроков выше{t.self_registration ? " или дождитесь, пока они запишутся сами по ссылке на турнир" : ""}.</p>}
+      {t.waitlist?.length ? (
+        <>
+          <h3>Лист ожидания ({t.waitlist.length})</h3>
+          <p className="hint" style={{ marginTop: 0 }}>Когда кто-то отменит запись или вы поднимете лимит, первые из очереди запишутся автоматически и получат сообщение бота.</p>
+          <ol className="small" style={{ margin: 0 }}>
+            {t.waitlist.map((w: any) => <li key={w.user_id}>{w.nickname}{w.player_no ? <span className="muted"> №{w.player_no}</span> : null}</li>)}
+          </ol>
+        </>
+      ) : null}
     </section>
   );
 }

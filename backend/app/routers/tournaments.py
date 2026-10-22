@@ -11,11 +11,11 @@ from sqlalchemy import delete, exists, func, null, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .. import leagues, notify
+from .. import leagues, notify, waitlist
 from ..config import settings
 from ..db import get_session
 from ..deps import can_judge, current_user, is_club_organizer
-from ..models import (Club, ClubMember, ClubStats, Deck, EdhSeat, EdhTable, EdhTableStatus, League, Match, MatchResult,
+from ..models import (Club, ClubMember, ClubStats, Deck, EdhSeat, WaitlistEntry, EdhTable, EdhTableStatus, League, Match, MatchResult,
                       ResultEdit, Tournament, TournamentFormat, TournamentPlayer, TournamentStatus, User)
 from ..swiss import MatchRec, compute_standings, default_rounds, pair_round
 from .decks import check_deck_for
@@ -237,7 +237,13 @@ async def get_tournament(tid: int, session: AsyncSession = Depends(get_session))
                                   .where(TournamentPlayer.tournament_id == tid).order_by(User.nickname))).all()
     league = await session.get(League, t.league_id) if t.league_id else None
     judge = await session.get(User, t.judge_id) if t.judge_id else None
+    wl = (await session.execute(select(WaitlistEntry.user_id, User.nickname, User.player_no)
+                                .join(User, User.id == WaitlistEntry.user_id).where(WaitlistEntry.tournament_id == tid)
+                                .order_by(WaitlistEntry.created_at, WaitlistEntry.id))).all() \
+        if t.status == TournamentStatus.registration else []
     return {**_t_out(t, club, len(rows)), "description": t.description,
+            "waitlist": [{"user_id": u, "nickname": n, "player_no": no, "position": i}
+                         for i, (u, n, no) in enumerate(wl, 1)],
             "judge": {"user_id": judge.id, "nickname": judge.nickname, "player_no": judge.player_no} if judge else None,
             "league": {"id": league.id, "name": league.name, "kind": league.kind.value} if league else None,
             "participants": [{"user_id": tp.user_id, "nickname": nick, "guest": guest, "player_no": no,
@@ -265,6 +271,8 @@ async def update_tournament(tid: int, data: TournamentPatch, user: User = Depend
         t.rounds_total = f["rounds"]
     if f.get("starts_at"):
         t.starts_at = _aware(f["starts_at"])
+    await session.flush()
+    await waitlist.promote(session, t)              # лимит подняли или сняли - записываем очередь
     await session.commit()
 
 
@@ -368,6 +376,8 @@ async def remove_player(tid: int, uid: int, user: User = Depends(current_user),
         TournamentPlayer.tournament_id == tid, TournamentPlayer.user_id == uid))).scalar_one_or_none()
     if tp:
         await session.delete(tp)
+        await session.flush()
+        await waitlist.promote(session, t)          # место освободилось - первому из очереди
         await session.commit()
 
 
@@ -387,44 +397,98 @@ async def drop_player(tid: int, uid: int, data: DropIn, user: User = Depends(cur
     await session.commit()
 
 
-@router.post("/{tid}/register", status_code=204)
-async def register(tid: int, bracket: int = Query(2, ge=1, le=5), deck_id: int | None = Query(None),
-                   user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
-    """Самозапись игрока. Сразу вступает в клуб (если ещё не участник); колоду из своего пула можно подать сразу."""
-    t = await _get(session, tid)
+class FullError(HTTPException):
+    """Мест нет: можно встать в лист ожидания."""
+
+
+async def self_register(session: AsyncSession, t: Tournament, user: User, bracket: int = 2,
+                        deck_id: int | None = None) -> TournamentPlayer:
+    """Самозапись (сайт и кнопка в Telegram), без коммита. Игрок сразу вступает в клуб."""
     if t.status != TournamentStatus.registration:
         raise HTTPException(400, "Регистрация закрыта")
     if not t.self_registration:
         raise HTTPException(403, "На этот турнир игроков записывает организатор")
-    if t.max_players and await _count_players(session, tid) >= t.max_players:
-        raise HTTPException(400, f"Мест нет: лимит {t.max_players} участников")
+    if user.is_banned:
+        raise HTTPException(403, "Аккаунт заблокирован")
     exists = await session.execute(select(TournamentPlayer).where(
-        TournamentPlayer.tournament_id == tid, TournamentPlayer.user_id == user.id))
+        TournamentPlayer.tournament_id == t.id, TournamentPlayer.user_id == user.id))
     if exists.scalar_one_or_none():
         raise HTTPException(409, "Вы уже зарегистрированы")
+    if t.max_players and await _count_players(session, t.id) >= t.max_players:
+        raise FullError(400, f"Мест нет: лимит {t.max_players} участников. Можно встать в лист ожидания")
     deck = None
     if deck_id is not None:
         deck = check_deck_for(await session.get(Deck, deck_id), t, user)
-    member = await session.execute(select(ClubMember).where(
-        ClubMember.club_id == t.club_id, ClubMember.user_id == user.id))
-    if not member.scalar_one_or_none():
-        session.add(ClubMember(club_id=t.club_id, user_id=user.id))  # автовступление в клуб
-    session.add(TournamentPlayer(tournament_id=tid, user_id=user.id, seed=random.randint(0, 10**9), bracket=bracket,
-                                 deck_id=deck.id if deck else None))
+    await _ensure_member(session, t.club_id, user.id)                # автовступление в клуб
+    await session.execute(delete(WaitlistEntry).where(WaitlistEntry.tournament_id == t.id,
+                                                      WaitlistEntry.user_id == user.id))
+    tp = TournamentPlayer(tournament_id=t.id, user_id=user.id, seed=random.randint(0, 10**9), bracket=bracket,
+                          deck_id=deck.id if deck else None)
+    session.add(tp)
+    return tp
+
+
+async def self_unregister(session: AsyncSession, t: Tournament, user: User) -> bool:
+    """Отмена своей записи до старта (без коммита); освободившееся место получает первый из листа ожидания."""
+    if t.status != TournamentStatus.registration:
+        raise HTTPException(400, "Турнир уже начался")
+    tp = (await session.execute(select(TournamentPlayer).where(
+        TournamentPlayer.tournament_id == t.id, TournamentPlayer.user_id == user.id))).scalar_one_or_none()
+    if not tp:
+        return False
+    await session.delete(tp)
+    await session.flush()
+    await waitlist.promote(session, t)
+    return True
+
+
+async def join_waitlist(session: AsyncSession, t: Tournament, user: User, bracket: int = 2,
+                        deck_id: int | None = None) -> int:
+    """Встать в лист ожидания (без коммита). Возвращает место в очереди."""
+    if t.status != TournamentStatus.registration:
+        raise HTTPException(400, "Регистрация закрыта")
+    if not t.self_registration:
+        raise HTTPException(403, "На этот турнир игроков записывает организатор")
+    if not t.max_players or await _count_players(session, t.id) < t.max_players:
+        raise HTTPException(400, "Места ещё есть — просто запишитесь")
+    if (await session.execute(select(TournamentPlayer.id).where(
+            TournamentPlayer.tournament_id == t.id, TournamentPlayer.user_id == user.id))).first():
+        raise HTTPException(409, "Вы уже записаны на турнир")
+    pos = await waitlist.position(session, t.id, user.id)
+    if pos:
+        return pos
+    deck = check_deck_for(await session.get(Deck, deck_id), t, user) if deck_id is not None else None
+    session.add(WaitlistEntry(tournament_id=t.id, user_id=user.id, bracket=bracket, deck_id=deck.id if deck else None))
+    await session.flush()
+    return await waitlist.position(session, t.id, user.id)
+
+
+@router.post("/{tid}/register", status_code=204)
+async def register(tid: int, bracket: int = Query(2, ge=1, le=5), deck_id: int | None = Query(None),
+                   user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    """Самозапись игрока. Сразу вступает в клуб (если ещё не участник); колоду из своего пула можно подать сразу."""
+    await self_register(session, await _get(session, tid), user, bracket, deck_id)
     await session.commit()
 
 
 @router.delete("/{tid}/register", status_code=204)
 async def unregister(tid: int, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
-    t = await _get(session, tid)
-    if t.status != TournamentStatus.registration:
-        raise HTTPException(400, "Турнир уже начался")
-    res = await session.execute(select(TournamentPlayer).where(
-        TournamentPlayer.tournament_id == tid, TournamentPlayer.user_id == user.id))
-    tp = res.scalar_one_or_none()
-    if tp:
-        await session.delete(tp)
+    if await self_unregister(session, await _get(session, tid), user):
         await session.commit()
+
+
+@router.post("/{tid}/waitlist")
+async def waitlist_join(tid: int, bracket: int = Query(2, ge=1, le=5), deck_id: int | None = Query(None),
+                        user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    pos = await join_waitlist(session, await _get(session, tid), user, bracket, deck_id)
+    await session.commit()
+    return {"position": pos}
+
+
+@router.delete("/{tid}/waitlist", status_code=204)
+async def waitlist_leave(tid: int, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    await session.execute(delete(WaitlistEntry).where(WaitlistEntry.tournament_id == tid, WaitlistEntry.user_id == user.id))
+    await session.commit()
 
 
 @router.post("/{tid}/start")
