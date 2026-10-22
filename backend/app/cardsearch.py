@@ -287,7 +287,8 @@ def parse(q: str) -> Parsed:
             c = _word(t.value)
         if c is None:
             return None
-        return not_(c) if t.neg else c
+        # NULL (нет русского типа, нет цен) - «не подходит»: иначе NOT NULL выкинул бы карту и из отрицания
+        return not_(func.coalesce(c, false())) if t.neg else c
 
     def conj():
         nonlocal pos
