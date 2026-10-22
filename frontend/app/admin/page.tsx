@@ -115,6 +115,29 @@ function Scryfall() {
       <button className="primary" disabled={busy || st?.running}
         onClick={() => run(() => api("/admin/cards/sync/scryfall", { method: "POST" })).then(load)}>Обновить сейчас</button>
       <Status error={error} />
+      <RussianUpload />
+    </div>
+  );
+}
+
+/** Русские названия из файла (ru-names.sql.gz), когда Scryfall не отдаёт их: дописывает к картам базы. */
+function RussianUpload() {
+  const [file, setFile] = useState<File | null>(null);
+  const { busy, error, done, run } = useAction();
+  const [res, setRes] = useState<any>(null);
+  return (
+    <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+      <p className="small" style={{ margin: "0 0 8px" }}><b>Русские названия из файла</b></p>
+      <p className="hint" style={{ marginTop: 0 }}>Файл ru-names.sql.gz или TSV. Только дописывает русские названия к картам, которые уже есть, ничего не удаляет.</p>
+      <input type="file" accept=".gz,.sql,.tsv,.txt" aria-label="Файл с русскими названиями"
+        onChange={(e) => { setFile(e.target.files?.[0] || null); setRes(null); }} />
+      <button disabled={busy || !file} style={{ marginTop: 8 }} onClick={() => run(async () => {
+        const form = new FormData();
+        form.append("file", file as File);
+        setRes(await api("/admin/cards/russian", { form }));
+      }, "Загружено")}>Загрузить русские названия</button>
+      {res ? <p className="small ok">В файле {res.in_file.toLocaleString("ru-RU")}, обновлено карт {res.updated.toLocaleString("ru-RU")}; всего карт с русским названием: {res.cards_with_russian.toLocaleString("ru-RU")}.</p> : null}
+      <Status error={error} done={res ? "" : done} />
     </div>
   );
 }

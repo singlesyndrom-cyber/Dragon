@@ -249,3 +249,27 @@ async def test_russian_names_survive_rate_limit(client, monkeypatch):
     async with make(limit_forever=True) as http:        # всё время 429 - первая страница всё равно применена
         run = await scryfall.sync(client=http)
     assert run.russian == 1 and "частично" in run.error and calls["page2"] == scryfall.RETRIES
+
+
+async def test_upload_russian_names_file(client):
+    """Русские названия из файла ru-names.sql.gz (выгрузка из локальной базы), когда Scryfall их не отдаёт."""
+    async with fake_scryfall([]) as http:
+        await scryfall.sync(client=http, russian=False)
+    sql = ("BEGIN;\nCOPY ru FROM stdin;\n"
+           "o-sol\tКольцо Сола\tкольцо сола\tкольцо сола\tАртефакт\t{T}: добавьте {C}{C}.\\nВторая строка\n"
+           "o-unknown\tНет в базе\tнет в базе\tнет в базе\t\\N\t\\N\n"
+           "\\.\nUPDATE cards ...;\nCOMMIT;\n")
+    async with SessionLocal() as s:
+        await s.execute(text("INSERT INTO users (nickname, role, is_banned) VALUES ('Админ', 'admin', false)"))
+        await s.commit()
+        uid = (await s.execute(text("SELECT id FROM users"))).scalar()
+    h = {"Authorization": f"Bearer {create_token(uid)}"}
+    files = {"file": ("ru-names.sql.gz", gzip.compress(sql.encode()), "application/gzip")}
+    r = await client.post("/admin/cards/russian", files=files, headers=h)
+    assert r.status_code == 200, r.text
+    assert r.json() == {"in_file": 2, "updated": 1, "cards_with_russian": 1}
+    async with SessionLocal() as s:
+        row = (await s.execute(text("SELECT name_ru, name_ru_lower, type_ru, text_ru FROM cards WHERE external_id = 'o-sol'"))).one()
+    assert row == ("Кольцо Сола", "кольцо сола", "Артефакт", "{T}: добавьте {C}{C}.\nВторая строка")
+    bad = await client.post("/admin/cards/russian", files={"file": ("x.txt", b"nothing here", "text/plain")}, headers=h)
+    assert bad.status_code == 400

@@ -1,4 +1,6 @@
+import gzip
 import json
+import re
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func, or_, select
@@ -130,3 +132,56 @@ async def import_cards(game: str, file: UploadFile = File(...), mapping: str | N
     if not cards:
         raise HTTPException(400, "Не удалось найти поле с названием карты: передайте mapping")
     return {"imported": await upsert_cards(session, cards), "skipped_no_name": skipped}
+
+
+
+# ---------- русские названия из файла (когда Scryfall недоступен) ----------
+_COPY_ESC = re.compile(r"\\(.)")
+_COPY_MAP = {"n": "\n", "t": "\t", "r": "\r", "b": "\b", "f": "\f", "v": "\v", "\\": "\\"}
+
+
+def _copy_field(v: str) -> str | None:
+    """Поле в текстовом формате COPY PostgreSQL: \\N - пусто, \\n - перенос строки и т.д."""
+    if v == "\\N":
+        return None
+    return _COPY_ESC.sub(lambda m: _COPY_MAP.get(m.group(1), m.group(1)), v)
+
+
+def parse_russian_file(raw: bytes) -> dict[str, dict]:
+    """Файл ru-names.sql(.gz) или TSV из 6 колонок: oracle_id, название, его нижний регистр, лицевая сторона,
+    тип, текст. Возвращает oracle_id -> русские поля (как их пишет загрузка из Scryfall)."""
+    if raw[:2] == b"\x1f\x8b":
+        raw = gzip.decompress(raw)
+    lines = raw.decode("utf-8").splitlines()
+    if any(line.startswith("COPY ru FROM stdin") for line in lines):
+        start = next(i for i, line in enumerate(lines) if line.startswith("COPY ru FROM stdin")) + 1
+        end = next((i for i in range(start, len(lines)) if lines[i] == "\\."), len(lines))
+        lines = lines[start:end]
+    out = {}
+    for line in lines:
+        parts = line.split("\t")
+        if len(parts) != 6 or not parts[1] or parts[1] == "\\N":
+            continue
+        oid, name, low, front, typ, txt = (_copy_field(p) for p in parts)
+        out[oid] = {"oracle_id": oid, "name_ru": name, "name_ru_lower": low or name.lower(),
+                    "name_ru_front": front or (low or name.lower()).split(" // ")[0], "type_ru": typ, "text_ru": txt}
+    return out
+
+
+@router.post("/admin/cards/russian")
+async def upload_russian(file: UploadFile = File(...), admin: User = Depends(require_admin),
+                         session: AsyncSession = Depends(get_session)):
+    """Русские названия MTG из файла: дописывает к картам, которые уже есть в базе, ничего не удаляет."""
+    raw = await file.read(MAX_UPLOAD + 1)
+    if len(raw) > MAX_UPLOAD:
+        raise HTTPException(413, "Файл больше 50 МБ")
+    try:
+        ru = parse_russian_file(raw)
+    except (OSError, UnicodeDecodeError, StopIteration) as e:
+        raise HTTPException(400, f"Не удалось прочитать файл: {e}")
+    if not ru:
+        raise HTTPException(400, "В файле нет русских названий: нужен ru-names.sql.gz или TSV из 6 колонок")
+    updated = await scryfall._apply_russian(session, ru)
+    total = (await session.execute(select(func.count()).select_from(Card).where(
+        Card.game == "mtg", Card.name_ru.is_not(None)))).scalar_one()
+    return {"in_file": len(ru), "updated": updated, "cards_with_russian": total}
