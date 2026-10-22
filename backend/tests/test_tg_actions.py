@@ -63,7 +63,7 @@ async def test_register_from_announcement_and_waitlist(client):
     assert user.player_no is not None                                   # аккаунт платформы создан по Telegram
     card = (await client.get(f"/tournaments/{tid}")).json()
     assert [p["nickname"] for p in card["participants"]] == ["masha", "vova"] and card["waitlist"][0]["nickname"] == "Петя"
-    assert [c["id"] for c in (await client.get(f"/clubs/{cid}/members", headers=org)).json() if c["nickname"] == "masha"]
+    assert [m["user_id"] for m in (await client.get(f"/clubs/{cid}/members", headers=org)).json() if m["nickname"] == "masha"]
 
     # Маша отменяет запись кнопкой - Петя записан и получает сообщение
     async with SessionLocal() as s:
