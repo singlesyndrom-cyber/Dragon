@@ -9,7 +9,7 @@ const LINKS = [
   ["/leagues", "Лиги"],
   ["/clubs", "Клубы"],
   ["/news", "Новости"],
-  ["/cards", "Карты"],
+  ["/cards", "Картотека"],
   ["/meta", "Мета"],
   ["/auctions", "Аукцион"],
 ] as const;

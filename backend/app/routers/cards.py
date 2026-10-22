@@ -7,7 +7,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import scryfall
+from .. import cardsearch, scryfall
 from ..cardimport import extract_rows, norm_name, normalize_generic
 from ..db import get_session
 from ..deps import require_admin
@@ -63,6 +63,42 @@ async def card_stats(session: AsyncSession = Depends(get_session)):
     last = await scryfall.last_run(session)
     return {"games": {g: {"cards": n, "russian": ru} for g, n, ru in rows},
             "scryfall_updated": last.finished_at if last and last.cards else None}
+
+
+def _row(c: Card) -> dict:
+    """Карта в выдаче Картотеки: хватает для сетки, списка и текстового вида."""
+    ex = c.extra or {}
+    return {**_brief(c), "set_name": c.set_name, "cmc": c.cmc, "text": c.text, "type_ru": c.type_ru,
+            "text_ru": c.text_ru, "power": ex.get("power"), "toughness": ex.get("toughness"),
+            "loyalty": ex.get("loyalty"), "colors": ex.get("colors"), "prices": c.prices or {},
+            "is_game_changer": c.is_game_changer}
+
+
+@router.get("/cards/search")
+async def search_cards_query(q: str = "", game: str | None = None, order: str | None = None, dir: str | None = None,
+                             page: int = 1, per_page: int = 60, session: AsyncSession = Depends(get_session)):
+    """Поиск Картотеки на языке запросов в духе Scryfall (см. app/cardsearch.py)."""
+    per_page = max(1, min(per_page, 120))
+    page = max(1, min(page, 500))
+    parsed = cardsearch.parse(q[:500])
+    game = parsed.game or game
+    where = parsed.where if not game else (Card.game == game) & parsed.where
+    total = (await session.execute(select(func.count()).select_from(Card).where(where))).scalar_one()
+    order = cardsearch.ORDERS.get((order or "").lower()) or parsed.order
+    direction = (dir if dir in ("asc", "desc") else None) or parsed.direction
+    rows = (await session.execute(select(Card).where(where).order_by(*cardsearch.order_by(order, direction))
+                                  .limit(per_page).offset((page - 1) * per_page))).scalars()
+    return {"total": total, "page": page, "per_page": per_page, "order": order or "name",
+            "dir": direction or "asc", "warnings": parsed.warnings, "items": [_row(c) for c in rows]}
+
+
+@router.get("/cards/sets")
+async def card_sets(game: str = "mtg", session: AsyncSession = Depends(get_session)):
+    """Сеты игры для расширенного поиска: код, название, сколько карт."""
+    rows = (await session.execute(select(Card.set_code, func.max(Card.set_name), func.count())
+                                  .where(Card.game == game, Card.set_code.is_not(None))
+                                  .group_by(Card.set_code).order_by(func.coalesce(func.max(Card.set_name), Card.set_code)))).all()
+    return [{"code": s, "name": n or s, "cards": k} for s, n, k in rows]
 
 
 @router.get("/cards/{card_id}")

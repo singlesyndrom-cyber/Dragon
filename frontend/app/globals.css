@@ -283,3 +283,33 @@ table.members td { vertical-align: middle; }
 
 /* длинные тексты ошибок (адреса, трассировки) не растягивают страницу вбок */
 .err, .loss, .hint { overflow-wrap: anywhere; }
+
+/* Картотека */
+.cardsearch { display: flex; gap: 8px; margin: 8px 0 10px; }
+.cardsearch input { flex: 1; min-width: 0; }
+.cardsearch.big input { font-size: 1.15rem; padding: 14px 16px; }
+.cardsearch.big button { padding: 0 22px; }
+.results-bar { margin: 4px 0 8px; }
+.seg { display: inline-flex; }
+.seg button { border-radius: 0; margin-left: -1px; }
+.seg button:first-child { border-radius: var(--radius-s) 0 0 var(--radius-s); margin-left: 0; }
+.seg button:last-child { border-radius: 0 var(--radius-s) var(--radius-s) 0; }
+.seg button.on { border-color: var(--gilt); color: var(--gilt); background: var(--gilt-soft); position: relative; }
+.warnings { padding-left: 18px; }
+.pager { justify-content: center; margin: 28px 0; }
+.manalink { display: inline-flex; padding: 4px; border-radius: 50%; }
+.manalink:hover { background: var(--gilt-soft); }
+.examples { list-style: none; padding: 0; margin: 0; }
+.examples li { padding: 6px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.examples code, .syntax code { background: var(--vellum-2); padding: 2px 6px; border-radius: var(--radius-s); }
+.textcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.textcards .panel + .panel { margin-top: 0; }
+.cardlist td { vertical-align: top; }
+.adv { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 14px 20px; align-items: center; max-width: 820px; }
+.adv > label { color: var(--muted); }
+.adv .colors label { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; }
+@media (max-width: 640px) {
+  .adv { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .adv > label { margin-top: 10px; }
+  .results-bar > .row { margin-left: 0 !important; }
+}

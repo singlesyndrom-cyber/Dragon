@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import Mana from "@/components/Mana";
 import WotcNotice from "@/components/WotcNotice";
 import { sget } from "@/lib/api";
+import { qv, searchHref } from "@/lib/cards";
 
 const FORMATS: [string, string][] = [
   ["commander", "Commander (EDH)"], ["standard", "Standard"], ["pioneer", "Pioneer"], ["modern", "Modern"],
@@ -26,8 +28,10 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
   const pt = x.power != null ? `${x.power}/${x.toughness}` : x.loyalty ? `верность ${x.loyalty}` : null;
   const prices = c.prices || {};
 
+  const typeQuery = (c.type || "").split(" — ")[0].split(/\s+/).filter(Boolean).map((w: string) => `t:${w}`).join(" ");
   return (
     <>
+      <p className="muted small"><Link href={`/cards?game=${c.game}`}>← Картотека</Link></p>
       <h1>{c.name_ru || c.name}</h1>
       {c.name_ru ? <p className="lead" style={{ marginTop: "-0.4em" }}>{c.name}</p> : null}
       <div className="split">
@@ -41,7 +45,7 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
           )) : (
             <section className="panel">
               <div className="row" style={{ justifyContent: "space-between" }}>
-                <span className="muted">{c.type}</span>
+                <Link href={searchHref(typeQuery, c.game)} className="muted">{c.type}</Link>
                 <span><Mana text={c.mana_cost} size={18} /></span>
               </div>
               <div style={{ marginTop: 12 }}><OracleText text={c.text} /></div>
@@ -81,9 +85,9 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
           ) : null}
           {faces[1]?.image ? <img src={faces[1].image} alt={faces[1].name} style={{ width: "100%", borderRadius: 14 }} /> : null}
           <dl className="facts">
-            {c.set_name ? (<><dt>Сет</dt><dd>{c.set_name}</dd></>) : null}
+            {c.set_name ? (<><dt>Сет</dt><dd><Link href={searchHref(`s:${c.set}`, c.game)}>{c.set_name}</Link></dd></>) : null}
             {c.rarity ? (<><dt>Редкость</dt><dd>{RARITY[c.rarity] || c.rarity}</dd></>) : null}
-            {x.artist ? (<><dt>Художник</dt><dd>{x.artist}</dd></>) : null}
+            {x.artist ? (<><dt>Художник</dt><dd><Link href={searchHref(`a:${qv(x.artist)}`, c.game)}>{x.artist}</Link></dd></>) : null}
             {prices.usd || prices.eur ? (
               <><dt>Цена</dt><dd className="num">{[prices.usd && `$${prices.usd}`, prices.eur && `€${prices.eur}`].filter(Boolean).join(", ")}
                 {prices.usd_foil ? <span className="muted"> (фойл ${prices.usd_foil})</span> : null}</dd></>
