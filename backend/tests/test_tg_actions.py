@@ -48,10 +48,11 @@ async def outbox(kind):
 
 
 async def test_register_from_announcement_and_waitlist(client):
-    org, cid, tid = await club_and_event(client, max_players=1)
+    org, cid, tid = await club_and_event(client, max_players=2)
     async with SessionLocal() as s:
+        assert "Записано 1 из 2" in await tg_actions.register(s, 444, "vova", None, tid)
         text = await tg_actions.register(s, 111, "masha", "Маша", tid)
-    assert text.startswith("✅ masha, вы записаны на «Командир»") and "Записано 1 из 1" in text
+    assert text.startswith("✅ masha, вы записаны на «Командир»") and "Записано 2 из 2" in text
     async with SessionLocal() as s:
         # повторное нажатие
         assert await tg_actions.register(s, 111, "masha", "Маша", tid) == "Вы уже зарегистрированы"
@@ -61,7 +62,7 @@ async def test_register_from_announcement_and_waitlist(client):
             AuthAccount.provider == Provider.telegram, AuthAccount.external_id == "111"))).scalar_one()
     assert user.player_no is not None                                   # аккаунт платформы создан по Telegram
     card = (await client.get(f"/tournaments/{tid}")).json()
-    assert [p["nickname"] for p in card["participants"]] == ["masha"] and card["waitlist"][0]["nickname"] == "Петя"
+    assert [p["nickname"] for p in card["participants"]] == ["masha", "vova"] and card["waitlist"][0]["nickname"] == "Петя"
     assert [c["id"] for c in (await client.get(f"/clubs/{cid}/members", headers=org)).json() if c["nickname"] == "masha"]
 
     # Маша отменяет запись кнопкой - Петя записан и получает сообщение
@@ -69,7 +70,7 @@ async def test_register_from_announcement_and_waitlist(client):
         assert await tg_actions.unregister(s, 111, "masha", "Маша", tid) == "Запись на «Командир» отменена."
         assert await tg_actions.unregister(s, 111, "masha", "Маша", tid) == "Вы не были записаны на этот турнир."
     card = (await client.get(f"/tournaments/{tid}")).json()
-    assert [p["nickname"] for p in card["participants"]] == ["Петя"]
+    assert [p["nickname"] for p in card["participants"]] == ["vova", "Петя"]
     assert (await outbox("waitlist_promoted"))[0].chat_id == "222"
 
     # турнир без самозаписи - кнопка честно отказывает

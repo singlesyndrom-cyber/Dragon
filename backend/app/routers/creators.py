@@ -78,9 +78,9 @@ async def create_request(data: RequestIn, user: User = Depends(current_user),
     req = ClubCreatorRequest(user_id=user.id, status=CreatorRequestStatus.pending.value,
                              club_name=" ".join(data.club_name.split()), city=data.city.strip(),
                              about=data.about.strip())
-    session.add(req)
-    await rl.hit(session, rl.CREATOR_REQUEST, str(user.id))
     try:
+        session.add(req)
+        await rl.hit(session, rl.CREATOR_REQUEST, str(user.id))   # может сбросить заявку в базу раньше коммита
         await session.commit()
     except IntegrityError:   # две заявки одновременно: вторую не пускает уникальный индекс
         await session.rollback()

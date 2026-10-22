@@ -33,8 +33,9 @@ ANNOUNCE_AHEAD = timedelta(days=7)   # анонс в чат - не раньше 
 
 async def on_tournament_created(session, t: Tournament) -> None:
     """Анонс сразу, если турнир в ближайшую неделю (или без даты); дальние анонсирует announce_due."""
+    from . import leagues   # единые часы платформы (тесты сезона их подменяют)
     starts = t.starts_at if t.starts_at.tzinfo else t.starts_at.replace(tzinfo=timezone.utc)
-    if starts - datetime.now(timezone.utc) > ANNOUNCE_AHEAD:
+    if starts - leagues.now() > ANNOUNCE_AHEAD:
         return
     await announce(session, t)
 
@@ -64,7 +65,8 @@ def announce_buttons(t: Tournament) -> list | None:
 
 async def announce_due(session) -> int:
     """Анонсировать турниры, до которых осталось меньше недели и которые ещё не анонсированы (серии)."""
-    now = datetime.now(timezone.utc)
+    from . import leagues
+    now = leagues.now()
     due = (await session.execute(select(Tournament).where(
         Tournament.announced.is_(False), Tournament.status == TournamentStatus.registration,
         Tournament.starts_at > now, Tournament.starts_at <= now + ANNOUNCE_AHEAD)
