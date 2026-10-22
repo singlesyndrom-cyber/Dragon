@@ -111,6 +111,30 @@ async def _download_oracle(client: httpx.AsyncClient) -> list[dict]:
     return cards
 
 
+SEARCH_PAUSE = 0.6                         # поиск у Scryfall строже: не больше ~2 запросов в секунду
+RETRIES = 6
+
+
+async def _get_with_retry(client: httpx.AsyncClient, url: str, params: dict | None) -> httpx.Response:
+    """429 (слишком часто) и 5xx - ждём (Retry-After или 2, 4, 8… секунд) и повторяем."""
+    for attempt in range(RETRIES):
+        r = await client.get(url, params=params)
+        if r.status_code != 429 and r.status_code < 500:
+            return r
+        wait = float(r.headers.get("Retry-After") or 0) or 2 ** (attempt + 1)
+        log.warning("Scryfall ответил %s, повтор через %.0f с", r.status_code, wait)
+        await asyncio.sleep(min(wait, 60))
+    return r
+
+
+class PartialRussian(Exception):
+    """Часть русских названий получена, но Scryfall перестал отвечать: применяем то, что есть."""
+
+    def __init__(self, got: dict, cause: Exception):
+        super().__init__(str(cause))
+        self.got, self.cause = got, cause
+
+
 async def _fetch_russian(client: httpx.AsyncClient, max_pages: int = 400) -> dict[str, dict]:
     """oracle_id -> русские поля. Берём первую найденную русскую печать каждой карты."""
     out: dict[str, dict] = {}
@@ -119,17 +143,22 @@ async def _fetch_russian(client: httpx.AsyncClient, max_pages: int = 400) -> dic
     for _ in range(max_pages):
         if not url:
             break
-        r = await client.get(url, params=params)
+        r = await _get_with_retry(client, url, params)
         if r.status_code == 404:          # ничего не найдено
             break
-        r.raise_for_status()
+        try:
+            r.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if out:
+                raise PartialRussian(out, e) from e
+            raise
         page = r.json()
         for obj in page.get("data", []):
             ru = normalize_ru(obj)
             if ru:
                 out.setdefault(ru["oracle_id"], ru)
         url, params = (page.get("next_page"), None) if page.get("has_more") else (None, None)
-        await asyncio.sleep(REQUEST_PAUSE)
+        await asyncio.sleep(SEARCH_PAUSE)
     return out
 
 
@@ -179,6 +208,9 @@ async def sync(trigger: str = "admin", client: httpx.AsyncClient | None = None, 
                     if russian:
                         try:
                             run.russian = await _apply_russian(s, await _fetch_russian(http))
+                        except PartialRussian as p:      # часть получили - применяем, остальное в следующий раз
+                            run.russian = await _apply_russian(s, p.got)
+                            run.error = f"Русские названия загружены частично. {explain(p.cause)}"[:2000]
                         except httpx.HTTPError as e:     # без русских названий база всё равно полезна
                             run.error = f"Русские названия не загружены. {explain(e)}"[:2000]
                 except Exception as e:  # noqa: BLE001

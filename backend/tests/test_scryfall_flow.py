@@ -221,3 +221,31 @@ async def test_schema_catch_up(client):
     assert tuple(row) == (True, "optional") and nullable == "NO"
     async with engine.begin() as conn:
         assert await conn.run_sync(sync_schema) == []      # после ремонта снова ничего не меняет
+
+
+async def test_russian_names_survive_rate_limit(client, monkeypatch):
+    """Scryfall ограничивает частоту поиска (429): ждём и повторяем; если так и не ответил - берём уже полученное."""
+    async def no_wait(_):
+        return None
+    monkeypatch.setattr(scryfall.asyncio, "sleep", no_wait)
+    calls = {"page2": 0}
+
+    def make(limit_forever: bool):
+        base = fake_scryfall([])._transport.handler
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/cards/search" and request.url.params.get("page") == "2":
+                calls["page2"] += 1
+                if limit_forever or calls["page2"] < 3:
+                    return httpx.Response(429, headers={"Retry-After": "1"})
+            return base(request)
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler), headers=scryfall.HEADERS)
+
+    async with make(limit_forever=False) as http:       # два отказа, потом ответ - загружено всё
+        run = await scryfall.sync(client=http)
+    assert run.error is None and run.russian == 2 and calls["page2"] == 3
+
+    calls["page2"] = 0
+    async with make(limit_forever=True) as http:        # всё время 429 - первая страница всё равно применена
+        run = await scryfall.sync(client=http)
+    assert run.russian == 1 and "частично" in run.error and calls["page2"] == scryfall.RETRIES

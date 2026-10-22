@@ -280,3 +280,6 @@ table.members td { vertical-align: middle; }
 .panel.health { margin-bottom: 24px; border-left: 4px solid var(--win); }
 .panel.health.is-bad { border-left-color: var(--loss); }
 .panel.health ul { margin: 0 0 12px; padding-left: 18px; }
+
+/* длинные тексты ошибок (адреса, трассировки) не растягивают страницу вбок */
+.err, .loss, .hint { overflow-wrap: anywhere; }
