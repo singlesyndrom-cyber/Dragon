@@ -1,7 +1,7 @@
 import logging
 import random
 from collections import Counter
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -146,18 +146,61 @@ async def create_tournament(data: TournamentIn, user: User = Depends(current_use
         raise HTTPException(403, "Нужны права организатора клуба")
     await _check_league(session, data.league_id, data.club_id, data.game, data.format,
                         _aware(data.starts_at) if data.starts_at else None)
-    rounds = None if data.format == TournamentFormat.edh else (
-        data.rounds or (1 if data.format == TournamentFormat.fast_swiss else None))
-    extra = {"starts_at": _aware(data.starts_at)} if data.starts_at else {}
-    t = Tournament(club_id=data.club_id, name=data.name.strip(), game=data.game, format=data.format,
-                   rounds_total=rounds, created_by=user.id, description=data.description.strip(),
-                   deck_policy=data.deck_policy, self_registration=data.self_registration,
-                   max_players=data.max_players, league_id=data.league_id, **extra)
+    t = _new_tournament(data, user, _aware(data.starts_at) if data.starts_at else datetime.now(timezone.utc))
     session.add(t)
     await session.flush()
     await notify.on_tournament_created(session, t)
     await session.commit()
     return {"id": t.id}
+
+
+def _new_tournament(data: TournamentIn, user: User, starts_at: datetime, name: str | None = None) -> Tournament:
+    rounds = None if data.format == TournamentFormat.edh else (
+        data.rounds or (1 if data.format == TournamentFormat.fast_swiss else None))
+    return Tournament(club_id=data.club_id, name=(name or data.name).strip(), game=data.game, format=data.format,
+                      rounds_total=rounds, created_by=user.id, description=data.description.strip(),
+                      deck_policy=data.deck_policy, self_registration=data.self_registration,
+                      max_players=data.max_players, league_id=data.league_id, starts_at=starts_at, announced=False)
+
+
+class SeriesIn(BaseModel):
+    tournament: TournamentIn
+    until: date                       # последний день серии (включительно)
+    date_in_name: bool = True         # «Воскресный EDH 26.10» - чтобы турниры серии различались
+
+
+@router.post("/series", status_code=201)
+async def create_series(data: SeriesIn, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    """Еженедельная серия: тот же день недели и время, до даты until (не больше 26 турниров).
+    Анонс в чат клуба уходит за неделю до каждого турнира, а не всеми сразу."""
+    base = data.tournament
+    if not await is_club_organizer(session, base.club_id, user):
+        raise HTTPException(403, "Нужны права организатора клуба")
+    if not base.starts_at:
+        raise HTTPException(422, "Укажите дату и время первого турнира серии")
+    first = _aware(base.starts_at)
+    tz = ZoneInfo(settings.app_timezone)
+    dates, d = [], first
+    while d.astimezone(tz).date() <= data.until:
+        dates.append(d)
+        d = (d.astimezone(tz) + timedelta(days=7)).astimezone(timezone.utc)   # то же местное время, даже при смене часового пояса
+    if not dates:
+        raise HTTPException(400, "Дата окончания серии раньше первого турнира")
+    if len(dates) > 26:
+        raise HTTPException(400, f"Слишком длинная серия: {len(dates)} турниров, максимум 26 (полгода)")
+    for when in dates:
+        await _check_league(session, base.league_id, base.club_id, base.game, base.format, when)
+    ids = []
+    for when in dates:
+        name = f"{base.name.strip()} {when.astimezone(tz):%d.%m}" if data.date_in_name else base.name
+        t = _new_tournament(base, user, when, name)
+        session.add(t)
+        await session.flush()
+        t.series_id = ids[0] if ids else t.id
+        ids.append(t.id)
+        await notify.on_tournament_created(session, t)
+    await session.commit()
+    return {"ids": ids, "count": len(ids), "first": dates[0], "last": dates[-1]}
 
 
 def _t_out(t: Tournament, club: Club | None, players: int | None = None) -> dict:

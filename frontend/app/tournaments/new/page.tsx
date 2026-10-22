@@ -21,6 +21,8 @@ function Wizard() {
   const [kindKey, setKindKey] = useState<string>(sp.get("kind") || "");
   const [allSeasons, setAllSeasons] = useState<any[]>([]);
   const [f, setF] = useState<Fields>(EMPTY);
+  const [repeat, setRepeat] = useState(false);
+  const [until, setUntil] = useState("");
   const set = (patch: Partial<Fields>) => setF((cur) => ({ ...cur, ...patch }));
   const { busy, error, run } = useAction();
 
@@ -70,8 +72,14 @@ function Wizard() {
         e.preventDefault();
         if (!kind) return;
         run(async () => {
-          const r = await api("/tournaments", { body: { club_id: +clubId, game: kind.game, format: kind.format, ...toBody(f, kind.format) } });
-          router.push(`/manage/tournaments/${r.id}`);
+          const body = { club_id: +clubId, game: kind.game, format: kind.format, ...toBody(f, kind.format) };
+          if (repeat) {
+            await api("/tournaments/series", { body: { tournament: body, until } });
+            router.push(`/manage/clubs/${clubId}`);
+          } else {
+            const r = await api("/tournaments", { body });
+            router.push(`/manage/tournaments/${r.id}`);
+          }
         });
       }}>
         <fieldset>
@@ -100,8 +108,12 @@ function Wizard() {
         {kind && clubId ? (
           <>
             <TournamentFields f={f} set={set} format={kind.format} seasons={seasons} />
+            <Repeat starts={f.starts_at} repeat={repeat} setRepeat={setRepeat} until={until} setUntil={setUntil}
+              seasonEnd={(seasons || []).find((x: any) => String(x.id) === f.league_id)?.ends_on} />
             <div className="row">
-              <button className="primary" disabled={busy}>Создать турнир</button>
+              <button className="primary" disabled={busy || (repeat && (!f.starts_at || !until))}>
+                {repeat ? "Создать серию турниров" : "Создать турнир"}
+              </button>
               <span className="hint" style={{ margin: 0 }}>Дальше откроется страница турнира: участники, туры и таблица.</span>
             </div>
           </>
@@ -109,5 +121,45 @@ function Wizard() {
         <Status error={error} />
       </form>
     </>
+  );
+}
+
+/** Еженедельная серия: тот же день и время до выбранной даты; анонс каждого - за неделю до него. */
+function Repeat({ starts, repeat, setRepeat, until, setUntil, seasonEnd }: {
+  starts: string; repeat: boolean; setRepeat: (v: boolean) => void; until: string; setUntil: (v: string) => void;
+  seasonEnd?: string;
+}) {
+  const dates = useMemo(() => {
+    if (!repeat || !starts || !until) return [];
+    const out: Date[] = [];
+    for (let d = new Date(starts); d.toISOString().slice(0, 10) <= until && out.length < 27; d = new Date(d.getTime() + 7 * 864e5)) out.push(d);
+    return out;
+  }, [repeat, starts, until]);
+  const fmt = (d: Date) => d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+  return (
+    <fieldset>
+      <legend>Повторение</legend>
+      <label className="check">
+        <input type="checkbox" checked={repeat} onChange={(e) => {
+          setRepeat(e.target.checked);
+          if (e.target.checked && !until) setUntil(seasonEnd || (starts ? new Date(new Date(starts).getTime() + 84 * 864e5).toISOString().slice(0, 10) : ""));
+        }} />
+        <span>Повторять каждую неделю в тот же день и время</span>
+      </label>
+      {repeat ? (
+        <>
+          <label className="inline"><span>До даты включительно</span>
+            <input type="date" value={until} min={starts ? starts.slice(0, 10) : undefined} onChange={(e) => setUntil(e.target.value)} />
+          </label>
+          {!starts ? <p className="hint">Укажите дату и время первого турнира.</p> : dates.length ? (
+            <p className="hint">
+              Будет создано турниров: <b>{dates.length > 26 ? "больше 26 — сократите срок" : dates.length}</b>
+              {dates.length <= 26 ? ` (${fmt(dates[0])}${dates.length > 1 ? ` … ${fmt(dates[dates.length - 1])}` : ""})` : ""}.
+              К названию добавится дата. Анонс каждого турнира уйдёт в чат клуба за неделю до него.
+            </p>
+          ) : <p className="hint">Дата окончания раньше первого турнира.</p>}
+        </>
+      ) : null}
+    </fieldset>
   );
 }

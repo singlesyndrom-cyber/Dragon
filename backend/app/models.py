@@ -185,6 +185,10 @@ class Tournament(Base):
     max_players: Mapped[int | None] = mapped_column(Integer)
     league_id: Mapped[int | None] = mapped_column(ForeignKey("leagues.id", ondelete="SET NULL"), index=True)
     judge_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))  # главный судья
+    # анонс в чат клуба: новые турниры анонсируются не раньше чем за неделю (серии - по мере приближения).
+    # server_default true: турниры, созданные до появления колонки, уже были анонсированы
+    announced: Mapped[bool] = mapped_column(default=False, server_default=text("true"))
+    series_id: Mapped[int | None] = mapped_column(Integer, index=True)   # серия еженедельных турниров: id первого
 
     players: Mapped[list["TournamentPlayer"]] = relationship(cascade="all, delete-orphan")
     matches: Mapped[list["Match"]] = relationship(cascade="all, delete-orphan")

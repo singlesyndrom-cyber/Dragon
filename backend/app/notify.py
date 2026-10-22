@@ -1,13 +1,13 @@
 """Производители событий: кладут сообщения в очередь outbox в текущей транзакции (без коммита).
 Отправкой занимается отдельный процесс бота (app/bot)."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from .config import settings
 from .models import (Article, Club, ClubMember, EdhSeat, EdhTable, EdhTableStatus, Match, OutboxMessage,
-                     OutboxStatus, Tournament, TournamentFormat, TournamentPlayer, User)
+                     OutboxStatus, Tournament, TournamentFormat, TournamentPlayer, TournamentStatus, User)
 from .reports import ReportData, esc, format_announce, format_article, format_report
 
 
@@ -28,14 +28,52 @@ async def enqueue(session, kind: str, chat_id: str | int | None, text: str, phot
     await session.execute(stmt)
 
 
+ANNOUNCE_AHEAD = timedelta(days=7)   # анонс в чат - не раньше чем за неделю до турнира
+
+
 async def on_tournament_created(session, t: Tournament) -> None:
+    """Анонс сразу, если турнир в ближайшую неделю (или без даты); дальние анонсирует announce_due."""
+    starts = t.starts_at if t.starts_at.tzinfo else t.starts_at.replace(tzinfo=timezone.utc)
+    if starts - datetime.now(timezone.utc) > ANNOUNCE_AHEAD:
+        return
+    await announce(session, t)
+
+
+async def announce(session, t: Tournament) -> bool:
     club = await session.get(Club, t.club_id)
     if not club or not club.telegram_chat_id:
-        return
+        return False
     text = format_announce(t.name, club.name, t.game, t.format.value, t.starts_at, settings.app_timezone,
                            site_url(f"/tournaments/{t.id}"), t.rounds_total)
     await enqueue(session, "tournament_announce", club.telegram_chat_id, text,
-                  dedup_key=f"t-announce:{t.id}:{club.telegram_chat_id}")
+                  dedup_key=f"t-announce:{t.id}:{club.telegram_chat_id}", buttons=announce_buttons(t))
+    t.announced = True
+    return True
+
+
+def announce_buttons(t: Tournament) -> list | None:
+    """Кнопки под анонсом: запись прямо из Telegram (если разрешена самозапись) и ссылка на сайт."""
+    rows = []
+    if t.self_registration:
+        rows.append([{"text": "✅ Записаться", "callback_data": f"reg:{t.id}"}])
+    url = site_url(f"/tournaments/{t.id}")
+    if url and url.startswith("https://"):
+        rows.append([{"text": "Подробнее на сайте", "url": url}])
+    return rows or None
+
+
+async def announce_due(session) -> int:
+    """Анонсировать турниры, до которых осталось меньше недели и которые ещё не анонсированы (серии)."""
+    now = datetime.now(timezone.utc)
+    due = (await session.execute(select(Tournament).where(
+        Tournament.announced.is_(False), Tournament.status == TournamentStatus.registration,
+        Tournament.starts_at > now, Tournament.starts_at <= now + ANNOUNCE_AHEAD)
+        .order_by(Tournament.starts_at))).scalars().all()
+    n = 0
+    for t in due:
+        n += await announce(session, t)
+    await session.commit()
+    return n
 
 
 async def on_article_published(session, a: Article) -> None:
