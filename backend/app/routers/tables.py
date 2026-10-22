@@ -247,14 +247,74 @@ def when(b: TableBooking) -> str:
     return f"{WEEKDAYS[s.weekday()]} {s:%d.%m}, {s:%H:%M}–{e:%H:%M}"
 
 
-async def notify_organizers(session: AsyncSession, club: Club, actor: User, text: str, dedup: str):
-    """Сообщение бота в личку организаторам клуба с привязанным Telegram (кроме того, кто действовал)."""
+def gets_bookings(m: ClubMember) -> bool:
+    """Получает ли участник штаба клуба сообщения о бронях (по умолчанию - организаторы)."""
+    if m.role != ClubRole.organizer and not m.judge_games:
+        return False
+    return m.booking_notify if m.booking_notify is not None else m.role == ClubRole.organizer
+
+
+async def notify_staff(session: AsyncSession, club: Club, actor: User, text: str, dedup: str):
+    """Сообщение бота в личку тем организаторам и судьям клуба, кто получает брони и привязал Telegram
+    (кроме того, кто действовал)."""
     rows = (await session.execute(
-        select(AuthAccount.external_id).join(ClubMember, ClubMember.user_id == AuthAccount.user_id)
-        .where(ClubMember.club_id == club.id, ClubMember.role == ClubRole.organizer,
-               AuthAccount.provider == Provider.telegram, AuthAccount.user_id != actor.id))).scalars().all()
-    for chat in rows:
-        await notify.enqueue(session, "booking", chat, text, dedup_key=f"{dedup}:{chat}")
+        select(ClubMember, AuthAccount.external_id).join(AuthAccount, AuthAccount.user_id == ClubMember.user_id)
+        .where(ClubMember.club_id == club.id, AuthAccount.provider == Provider.telegram,
+               AuthAccount.user_id != actor.id))).all()
+    for m, chat in rows:
+        if gets_bookings(m):
+            await notify.enqueue(session, "booking", chat, text, dedup_key=f"{dedup}:{chat}")
+
+
+class NotifyIn(BaseModel):
+    enabled: bool
+
+
+@router.get("/clubs/{club_id}/booking-recipients")
+async def booking_recipients(club_id: int, user: User = Depends(current_user),
+                             session: AsyncSession = Depends(get_session)):
+    """Организаторы и судьи клуба: кто получает сообщения о бронях и привязан ли у него Telegram."""
+    await _club(session, club_id)
+    await _require_org(session, club_id, user)
+    rows = (await session.execute(
+        select(ClubMember, User.nickname, User.player_no).join(User, User.id == ClubMember.user_id)
+        .where(ClubMember.club_id == club_id, (ClubMember.role == ClubRole.organizer) | (ClubMember.judge_games != ""))
+        .order_by(ClubMember.role.desc(), User.nickname))).all()
+    tg = set((await session.execute(select(AuthAccount.user_id).where(
+        AuthAccount.provider == Provider.telegram, AuthAccount.user_id.in_([m.user_id for m, _, _ in rows])))).scalars()) \
+        if rows else set()
+    return [{"user_id": m.user_id, "nickname": nick, "player_no": no, "organizer": m.role == ClubRole.organizer,
+             "judge_games": [g for g in m.judge_games.split(",") if g], "enabled": gets_bookings(m),
+             "telegram": m.user_id in tg, "me": m.user_id == user.id} for m, nick, no in rows]
+
+
+async def _staff_member(session: AsyncSession, club_id: int, user_id: int) -> ClubMember:
+    m = (await session.execute(select(ClubMember).where(ClubMember.club_id == club_id,
+                                                        ClubMember.user_id == user_id))).scalar_one_or_none()
+    if not m or (m.role != ClubRole.organizer and not m.judge_games):
+        raise HTTPException(400, "Сообщения о бронях получают только организаторы и судьи клуба")
+    return m
+
+
+@router.put("/clubs/{club_id}/booking-recipients/{user_id}")
+async def set_recipient(club_id: int, user_id: int, data: NotifyIn, user: User = Depends(current_user),
+                        session: AsyncSession = Depends(get_session)):
+    """Организатор включает или выключает сообщения о бронях любому организатору или судье клуба."""
+    await _require_org(session, club_id, user)
+    m = await _staff_member(session, club_id, user_id)
+    m.booking_notify = data.enabled
+    await session.commit()
+    return {"user_id": user_id, "enabled": gets_bookings(m)}
+
+
+@router.put("/clubs/{club_id}/booking-notify")
+async def set_my_notify(club_id: int, data: NotifyIn, user: User = Depends(current_user),
+                        session: AsyncSession = Depends(get_session)):
+    """Организатор или судья сам подписывается на сообщения о бронях или отписывается от них."""
+    m = await _staff_member(session, club_id, user.id)
+    m.booking_notify = data.enabled
+    await session.commit()
+    return {"enabled": gets_bookings(m)}
 
 
 @router.post("/clubs/{club_id}/bookings/notify-test", status_code=202)
@@ -330,7 +390,7 @@ async def book(club_id: int, data: BookingIn, user: User = Depends(current_user)
     session.add(b)
     await session.flush()
     note = f"\n💬 {notify.esc(b.note)}" if b.note else ""
-    await notify_organizers(session, club, user,
+    await notify_staff(session, club, user,
                              f"📅 <b>Новая бронь стола</b>\n🏠 {notify.esc(club.name)} · стол «{notify.esc(table.name)}»\n"
                              f"🕒 {when(b)}\n👤 {who(user)}{note}", f"booking:{b.id}:new")
     await session.commit()
@@ -355,7 +415,7 @@ async def cancel(booking_id: int, user: User = Depends(current_user), session: A
     table = await session.get(ClubTable, b.table_id)
     owner = await session.get(User, b.user_id)
     by = "" if owner.id == user.id else f"\n✋ Отменил: {who(user)}"
-    await notify_organizers(session, club, user,
+    await notify_staff(session, club, user,
                              f"❌ <b>Бронь отменена</b>\n🏠 {notify.esc(club.name)} · стол «{notify.esc(table.name)}»\n"
                              f"🕒 {when(b)}\n👤 {who(owner)}{by}", f"booking:{b.id}:cancel")
     await session.commit()

@@ -123,6 +123,8 @@ class ClubMember(Base):
     last_bonus_week: Mapped[str | None] = mapped_column(String(10))  # '2026-W43': надбавка +150 раз в неделю
     # судья клуба: направления через запятую (mtg, edh, berserk); пусто - не судья. Назначает организатор.
     judge_games: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    # сообщения бота о бронях столов: None = по роли (организатор - да, судья - нет), иначе выбор организатора/свой
+    booking_notify: Mapped[bool | None] = mapped_column(nullable=True)
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     club: Mapped[Club] = relationship(back_populates="members")

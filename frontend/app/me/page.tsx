@@ -285,6 +285,13 @@ function MyClubs() {
               <div className="row small" style={{ marginTop: 4, gap: 14 }}>
                 <Link href={`/clubs/${c.slug}`}>{c.upcoming ? `Турниры: ${c.upcoming} с открытой записью` : "Турниры клуба"}</Link>
                 {c.tables ? <Link href={`/clubs/${c.slug}/tables`}>Забронировать стол</Link> : null}
+                {c.staff ? (
+                  <label className="check" style={{ margin: 0 }} title="Сообщения бота в личку о новых бронях столов и отменах">
+                    <input type="checkbox" checked={c.booking_notify} disabled={busy}
+                      onChange={(e) => run(async () => { await api(`/clubs/${c.id}/booking-notify`, { method: "PUT", body: { enabled: e.target.checked } }); await load(); })} />
+                    <span>брони в Telegram</span>
+                  </label>
+                ) : null}
                 {c.organizer ? <Link href={`/tournaments/new?club=${c.id}`}>Создать турнир</Link> : (
                   <ConfirmButton className="link-btn" danger disabled={busy}
                     question={`Выйти из клуба «${c.name}»? Очки лиги и банк EDH в нём обнулятся, будущие брони отменятся.`}

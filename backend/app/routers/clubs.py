@@ -83,7 +83,9 @@ async def my_clubs(user: User = Depends(current_user), session: AsyncSession = D
                                          .group_by(ClubTable.club_id))).all()) if ids else {}
     return [{"id": c.id, "name": c.name, "slug": c.slug, "city": c.city, "organizer": m.role == ClubRole.organizer,
              "league_points": m.league_points, "edh_bank": round(m.edh_bank, 1), "events_played": m.events_played,
-             "upcoming": upcoming.get(c.id, 0), "tables": tables.get(c.id, 0)} for c, m in rows]
+             "upcoming": upcoming.get(c.id, 0), "tables": tables.get(c.id, 0),
+             "staff": m.role == ClubRole.organizer or bool(m.judge_games),
+             "booking_notify": tables_api.gets_bookings(m)} for c, m in rows]
 
 
 @router.get("/{slug}")
@@ -166,7 +168,7 @@ async def leave_club(club_id: int, user: User = Depends(current_user), session: 
             TableBooking.ends_at > now))).scalars():
         b.status, b.cancelled_by, b.cancelled_at = "cancelled", user.id, now
         table = await session.get(ClubTable, b.table_id)
-        await tables_api.notify_organizers(
+        await tables_api.notify_staff(
             session, club, user, f"❌ <b>Бронь отменена</b> (игрок вышел из клуба)\n🏠 {notify.esc(club.name)} · "
             f"стол «{notify.esc(table.name)}»\n🕒 {tables_api.when(b)}\n👤 {tables_api.who(user)}", f"booking:{b.id}:cancel")
     await session.delete(m)

@@ -201,3 +201,41 @@ async def test_notify_test_goes_to_the_organizer(client):
     cid2 = (await client.post("/clubs", json={"name": "Второй клуб"}, headers=org2)).json()["id"]
     r = await client.post(f"/clubs/{cid2}/bookings/notify-test", headers=org2)
     assert r.status_code == 400 and "Telegram" in r.json()["detail"]
+
+
+async def test_booking_recipients_chosen_by_organizer(client):
+    cid, org = await setup_club(client)                       # организатор с Telegram 5550001
+    jh, judge = await reg(client, 1)
+    ph, player = await reg(client, 2)
+    for h in (jh, ph):
+        await client.post(f"/clubs/{cid}/join", headers=h)
+    await client.put(f"/clubs/{cid}/judges", json={"player_no": judge["player_no"], "games": ["edh"]}, headers=org)
+    async with SessionLocal() as s:
+        s.add(AuthAccount(user_id=judge["id"], provider=Provider.telegram, external_id="5550002"))
+        await s.commit()
+    t1 = (await client.post(f"/clubs/{cid}/tables", json={"name": "Стол 1"}, headers=org)).json()["id"]
+
+    # по умолчанию: организатор получает, судья - нет
+    rec = (await client.get(f"/clubs/{cid}/booking-recipients", headers=org)).json()
+    assert [(r["nickname"], r["organizer"], r["enabled"], r["telegram"]) for r in rec] == [
+        ("Игрок0", True, True, True), ("Игрок1", False, False, True)]
+    assert (await client.get(f"/clubs/{cid}/booking-recipients", headers=jh)).status_code == 403
+    # судье включает организатор, обычному игроку включить нельзя
+    assert (await client.put(f"/clubs/{cid}/booking-recipients/{judge['id']}", json={"enabled": True},
+                             headers=jh)).status_code == 403
+    r = await client.put(f"/clubs/{cid}/booking-recipients/{judge['id']}", json={"enabled": True}, headers=org)
+    assert r.json() == {"user_id": judge["id"], "enabled": True}
+    assert (await client.put(f"/clubs/{cid}/booking-recipients/{player['id']}", json={"enabled": True},
+                             headers=org)).status_code == 400
+    # организатор сам отписывается
+    assert (await client.put(f"/clubs/{cid}/booking-notify", json={"enabled": False}, headers=org)).json() == {"enabled": False}
+    assert (await client.put(f"/clubs/{cid}/booking-notify", json={"enabled": True}, headers=ph)).status_code == 400
+    mine = (await client.get("/clubs/mine", headers=jh)).json()[0]
+    assert mine["staff"] is True and mine["booking_notify"] is True
+
+    day = next_weekday(4).isoformat()
+    assert (await client.post(f"/clubs/{cid}/bookings", json={"table_id": t1, "date": day, "start": "16:00",
+                                                              "duration": 60}, headers=ph)).status_code == 201
+    async with SessionLocal() as s:
+        chats = [m.chat_id for m in (await s.execute(select(OutboxMessage).where(OutboxMessage.kind == "booking"))).scalars()]
+    assert chats == ["5550002"]                                # только судья: организатор отписался

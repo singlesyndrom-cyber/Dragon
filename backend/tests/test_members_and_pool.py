@@ -56,7 +56,8 @@ async def test_join_leave_and_my_clubs(client):
                               headers=org)).json()["id"]
     mine = (await client.get("/clubs/mine", headers=ph)).json()
     assert mine == [{"id": cid, "name": "Дракон", "slug": mine[0]["slug"], "city": "", "organizer": False,
-                     "league_points": 0, "edh_bank": 1000.0, "events_played": 0, "upcoming": 1, "tables": 1}]
+                     "league_points": 0, "edh_bank": 1000.0, "events_played": 0, "upcoming": 1, "tables": 1,
+                     "staff": False, "booking_notify": False}]
 
     # бронь и запись на турнир; выйти, пока записан, нельзя
     day = (datetime.now(ZoneInfo(settings.app_timezone)).date() + timedelta(days=2)).isoformat()

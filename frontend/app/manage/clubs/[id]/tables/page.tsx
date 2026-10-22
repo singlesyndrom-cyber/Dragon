@@ -42,7 +42,7 @@ function ManageTables({ clubId }: { clubId: number }) {
       <p className="lead" style={{ marginTop: 0 }}>
         Добавьте столы и часы работы — участники клуба смогут бронировать их на странице
         {club ? <> <Link href={`/clubs/${club.slug}/tables`}>«Столы и бронирование»</Link></> : " клуба"}.
-        О каждой новой брони и отмене бот напишет вам в личку, если у вас привязан Telegram.
+        О новых бронях и отменах бот пишет в личку тем организаторам и судьям, кого вы отметили справа.
       </p>
       <div className="split">
         <div>
@@ -129,16 +129,43 @@ function TableCard({ clubId, t, reload }: { clubId: number; t: Table; reload: ()
   );
 }
 
-/** Проверка: бот присылает организатору в личку образец сообщения о брони. */
+const JUDGE_LABEL: Record<string, string> = { mtg: "Magic", edh: "EDH", berserk: "Берсерк" };
+
+/** Кто получает сообщения о бронях: организаторы и судьи клуба с галочками + проверка своей лички. */
 function NotifyTest({ clubId }: { clubId: number }) {
-  const { busy, error, done, run } = useAction();
+  const [rows, setRows] = useState<any[] | null>(null);
+  const list = useAction();
+  const test = useAction();
+  const load = useCallback(() => api<any[]>(`/clubs/${clubId}/booking-recipients`).then(setRows).catch(() => setRows([])), [clubId]);
+  useEffect(() => { load(); }, [load]);
   return (
     <div className="panel">
       <h3 style={{ marginTop: 0 }}>Уведомления о бронях</h3>
-      <p className="muted small">Бот пишет организаторам клуба в личку о каждой новой брони и отмене. О своих бронях вы сообщений не получаете.</p>
-      <button disabled={busy} onClick={() => run(() => api(`/clubs/${clubId}/bookings/notify-test`, { method: "POST" }),
+      <p className="muted small">Отметьте, кому бот пишет в личку о новых бронях и отменах. О своих бронях человек сообщений не получает.</p>
+      {rows?.length ? (
+        <ul className="news-list">
+          {rows.map((r) => (
+            <li key={r.user_id} style={{ padding: "8px 0" }}>
+              <label className="check" style={{ margin: 0 }}>
+                <input type="checkbox" checked={r.enabled} disabled={list.busy}
+                  onChange={(e) => list.run(async () => {
+                    await api(`/clubs/${clubId}/booking-recipients/${r.user_id}`, { method: "PUT", body: { enabled: e.target.checked } });
+                    await load();
+                  })} />
+                <span>
+                  {r.nickname}{r.me ? " (вы)" : ""}
+                  <span className="muted small"> · {r.organizer ? "организатор" : `судья: ${r.judge_games.map((g: string) => JUDGE_LABEL[g] || g).join(", ")}`}</span>
+                  {!r.telegram ? <span className="small" style={{ color: "var(--loss)" }}> · Telegram не привязан</span> : null}
+                </span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      ) : rows ? <p className="muted small">Назначьте судей в управлении клубом, чтобы выбрать их получателями.</p> : null}
+      <Status error={list.error} />
+      <button disabled={test.busy} onClick={() => test.run(() => api(`/clubs/${clubId}/bookings/notify-test`, { method: "POST" }),
         "Отправлено: проверьте личные сообщения от бота")}>Проверить уведомления</button>
-      <Status error={error} done={done} />
+      <Status error={test.error} done={test.done} />
     </div>
   );
 }
