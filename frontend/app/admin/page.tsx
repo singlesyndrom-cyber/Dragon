@@ -39,7 +39,7 @@ function AdminContent() {
         <aside className="stack">
           <StaffRoles />
           <Scryfall />
-          <Ban />
+          <Accounts />
           <Categories />
         </aside>
       </div>
@@ -256,19 +256,63 @@ function Outbox() {
   );
 }
 
-function Ban() {
-  const [uid, setUid] = useState("");
-  const { busy, error, done, run } = useAction();
-  const go = (banned: boolean) => run(() => api(`/admin/users/${uid}/ban`, { body: { banned } }),
-    banned ? "Пользователь заблокирован" : "Блокировка снята");
+/** Аккаунт по номеру игрока: карточка, блокировка, удаление (если нет истории), объединение с основным. */
+function Accounts() {
+  const [no, setNo] = useState("");
+  const [u, setU] = useState<any>(null);
+  const [into, setInto] = useState("");
+  const { busy, error, done, run, setError } = useAction();
+  const find = () => run(async () => { setU(null); setU(await api(`/admin/users/lookup/${no}`)); });
+  const reload = () => api(`/admin/users/lookup/${u.player_no}`).then(setU).catch(() => setU(null));
+  const history = u ? u.tournaments + u.matches + u.edh_seats + u.deals + u.lots + u.bids + u.tournaments_created : 0;
   return (
     <div className="panel">
-      <h3>Блокировка</h3>
-      <label><span>ID пользователя</span><input inputMode="numeric" value={uid} onChange={(e) => setUid(e.target.value.replace(/\D/g, ""))} /></label>
-      <div className="row">
-        <button className="danger" disabled={busy || !uid} onClick={() => go(true)}>Заблокировать</button>
-        <button disabled={busy || !uid} onClick={() => go(false)}>Разблокировать</button>
-      </div>
+      <h3>Аккаунты</h3>
+      <form className="row" onSubmit={(e) => { e.preventDefault(); if (no) find(); }}>
+        <input inputMode="numeric" placeholder="Номер игрока" aria-label="Номер игрока" value={no} style={{ maxWidth: 140 }}
+          onChange={(e) => { setNo(e.target.value.replace(/\D/g, "")); setError(""); }} />
+        <button disabled={busy || !no}>Найти</button>
+      </form>
+      {u ? (
+        <div className="stack" style={{ marginTop: 12 }}>
+          <div>
+            <b>{u.nickname}</b> <span className="muted small">№{u.player_no}</span>
+            {u.role === "admin" ? <span className="badge" style={{ marginLeft: 6 }}>админ</span> : null}
+            {u.moderator ? <span className="badge" style={{ marginLeft: 6 }}>модератор</span> : null}
+            {u.banned ? <span className="badge" style={{ marginLeft: 6, color: "var(--loss)" }}>заблокирован</span> : null}
+          </div>
+          <div className="small muted">
+            {u.emails.join(", ") || "без email"} · Telegram {u.telegram ? "привязан" : "нет"} · с {dateTime(u.created_at)}<br />
+            Клубов {u.clubs}, турниров {u.tournaments}, колод {u.decks}, сделок {u.deals}, лотов {u.lots}
+          </div>
+          <div className="row">
+            <button className={u.banned ? undefined : "danger"} disabled={busy || u.role === "admin"}
+              onClick={() => run(() => api(`/admin/users/${u.id}/ban`, { body: { banned: !u.banned } }).then(reload),
+                u.banned ? "Блокировка снята" : "Пользователь заблокирован")}>
+              {u.banned ? "Разблокировать" : "Заблокировать"}
+            </button>
+            <ConfirmButton className="link-btn" danger disabled={busy || history > 0 || u.role === "admin"}
+              question={`Удалить аккаунт ${u.nickname} №${u.player_no} навсегда?`} confirmLabel="Удалить"
+              onConfirm={() => run(async () => { await api(`/admin/users/${u.player_no}`, { method: "DELETE" }); setU(null); }, "Аккаунт удалён")}>
+              удалить
+            </ConfirmButton>
+          </div>
+          {history > 0 ? <p className="hint" style={{ margin: 0 }}>У игрока есть история — удалить нельзя, только объединить или заблокировать.</p> : null}
+          <div className="row">
+            <input inputMode="numeric" placeholder="Основной №" aria-label="Номер основного аккаунта" value={into} style={{ maxWidth: 140 }}
+              onChange={(e) => setInto(e.target.value.replace(/\D/g, ""))} />
+            <ConfirmButton disabled={busy || !into || into === String(u.player_no)}
+              question={`Перенести всё из №${u.player_no} в №${into} и удалить №${u.player_no}?`} confirmLabel="Объединить"
+              onConfirm={() => run(async () => {
+                const r = await api<any>("/admin/users/merge", { body: { from_no: u.player_no, into_no: +into } });
+                setNo(String(r.into)); setInto(""); setU(await api(`/admin/users/lookup/${r.into}`));
+              }, "Аккаунты объединены")}>
+              Объединить в основной
+            </ConfirmButton>
+          </div>
+          <p className="hint" style={{ margin: 0 }}>Объединение переносит способы входа, турниры, колоды, сделки и клубы; очки лиги складываются.</p>
+        </div>
+      ) : null}
       <Status error={error} done={done} />
     </div>
   );
