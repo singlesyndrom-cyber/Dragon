@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
+import ConfirmButton from "@/components/ConfirmButton";
 import { Status, useAction } from "@/components/Form";
 import Guard from "@/components/Guard";
 import EdhTables from "@/components/hub/EdhTables";
@@ -79,6 +81,7 @@ function Hub({ id }: { id: number }) {
         {tab === "standings" ? <StandingsTab t={t} /> : null}
         {tab === "settings" ? <SettingsTab t={t} reload={load} /> : null}
       </div>
+      <DeleteTournament t={t} />
     </>
   );
 }
@@ -108,6 +111,36 @@ function HeadJudge({ t, isOrg, reload }: { t: any; isOrg: boolean; reload: () =>
       </label>
       <Status error={error} />
     </div>
+  );
+}
+
+/** Удаление турнира: организатор клуба или судья клуба по этой игре, с подтверждением на странице. */
+function DeleteTournament({ t }: { t: any }) {
+  const router = useRouter();
+  const { busy, error, run } = useAction();
+  const edh = t.format === "edh";
+  const effect = t.status === "registration"
+    ? "Турнир и список участников будут удалены."
+    : edh
+      ? "Турнир, столы и результаты будут удалены, изменения банков EDH по этому ивенту откатятся."
+      : "Турнир, туры и результаты будут удалены, очки лиги клуба за него откатятся.";
+  return (
+    <section className="danger-zone">
+      <h3>Удаление турнира</h3>
+      <p className="hint">
+        {effect} Гости, которые больше нигде не играли, тоже удалятся. Сообщения, уже отправленные ботом в Telegram,
+        останутся в чате. Отменить удаление нельзя.
+      </p>
+      <ConfirmButton className="danger" danger disabled={busy}
+        question={`Удалить турнир «${t.name}» безвозвратно?`} confirmLabel="Да, удалить"
+        onConfirm={() => run(async () => {
+          await api(`/tournaments/${t.id}`, { method: "DELETE" });
+          router.replace(t.club_slug ? `/clubs/${t.club_slug}` : "/tournaments");
+        })}>
+        Удалить турнир
+      </ConfirmButton>
+      <Status error={error} />
+    </section>
   );
 }
 

@@ -1,3 +1,4 @@
+import logging
 import random
 from collections import Counter
 from datetime import datetime
@@ -6,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, null, select
+from sqlalchemy import delete, exists, func, null, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,11 +15,12 @@ from .. import leagues, notify
 from ..config import settings
 from ..db import get_session
 from ..deps import can_judge, current_user, is_club_organizer
-from ..models import (Club, ClubMember, ClubStats, League, Match, MatchResult, ResultEdit, Tournament,
-                      TournamentFormat, TournamentPlayer, TournamentStatus, User)
+from ..models import (Club, ClubMember, ClubStats, EdhSeat, EdhTable, EdhTableStatus, League, Match, MatchResult,
+                      ResultEdit, Tournament, TournamentFormat, TournamentPlayer, TournamentStatus, User)
 from ..swiss import MatchRec, compute_standings, default_rounds, pair_round
 
 router = APIRouter(prefix="/tournaments", tags=["tournaments"])
+log = logging.getLogger("tournaments")
 
 
 DeckPolicy = Literal["none", "optional", "required"]
@@ -505,3 +507,76 @@ async def _recompute_club_stats(session: AsyncSession, club_id: int):
     # Формула рейтинга клуба - стартовая, подкрутим по вашему желанию:
     # больше турниров и больше участников = выше рейтинг
     stats.club_rating = total * 10 + participants
+
+
+# ---------- удаление турнира ----------
+async def _revert_results(session: AsyncSession, t: Tournament) -> None:
+    """Откатывает то, что турнир уже начислил: очки лиги и счётчик ивентов (швейцарка), банки EDH.
+    Недельная надбавка EDH +150 не откатывается: она за посещение недели, а не за конкретный ивент."""
+    if t.format != TournamentFormat.edh:
+        if t.status != TournamentStatus.finished:
+            return                                   # до завершения швейцарка ничего не начисляет
+        players, _, recs = await _state(session, t)
+        table = {r.player_id: r.points for r in compute_standings(players, recs)}
+        for m in (await session.execute(select(ClubMember).where(
+                ClubMember.club_id == t.club_id, ClubMember.user_id.in_(list(table))).with_for_update())).scalars():
+            m.league_points = max(0, (m.league_points or 0) - table[m.user_id])
+            m.events_played = max(0, (m.events_played or 0) - 1)
+        return
+    # EDH: банк двигается при закрытии каждого стола - возвращаем сумму изменений
+    nets = dict((await session.execute(
+        select(EdhSeat.user_id, func.sum(EdhSeat.delta)).join(EdhTable, EdhTable.id == EdhSeat.table_id)
+        .where(EdhTable.tournament_id == t.id, EdhTable.status == EdhTableStatus.finished)
+        .group_by(EdhSeat.user_id))).all())
+    if nets:
+        for uid, holder in (await leagues.bank_holders(session, t, list(nets), lock=True)).items():
+            holder.edh_bank = round(holder.edh_bank - (nets[uid] or 0), 2)
+    if t.status == TournamentStatus.finished:
+        attended = (await session.execute(select(TournamentPlayer.user_id).where(
+            TournamentPlayer.tournament_id == t.id, TournamentPlayer.checked_in.is_(True)))).scalars().all()
+        if attended:
+            for m in (await session.execute(select(ClubMember).where(
+                    ClubMember.club_id == t.club_id, ClubMember.user_id.in_(attended)))).scalars():
+                m.events_played = max(0, (m.events_played or 0) - 1)
+            if t.league_id:
+                for m in (await leagues.bank_holders(session, t, list(attended))).values():
+                    m.events_played = max(0, (m.events_played or 0) - 1)
+
+
+async def _remove_orphan_guests(session: AsyncSession, guest_ids: list[int]) -> int:
+    """Гости без аккаунта, которые после удаления больше нигде не играли, удаляются вместе с турниром."""
+    removed = 0
+    for uid in guest_ids:
+        played = (await session.execute(select(
+            exists().where(TournamentPlayer.user_id == uid)
+            | exists().where(EdhSeat.user_id == uid)
+            | exists().where(or_(Match.p1_user_id == uid, Match.p2_user_id == uid))))).scalar()
+        if played:
+            continue
+        try:
+            async with session.begin_nested():
+                await session.execute(delete(User).where(User.id == uid, User.is_guest.is_(True)))
+            removed += 1
+        except Exception:  # noqa: BLE001  гостя держит ещё что-то (колода и т.п.) - оставляем
+            log.info("гость %s не удалён: на него есть ссылки", uid)
+    return removed
+
+
+@router.delete("/{tid}")
+async def delete_tournament(tid: int, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    """Удаление турнира: организатор клуба или судья клуба по этой игре. Подтверждение - на стороне сайта.
+    Начисленные турниром очки лиги и банки EDH откатываются, статистика клуба пересчитывается."""
+    t = await _get(session, tid)
+    await _require_judge(session, t, user)
+    club_id, name = t.club_id, t.name
+    await _revert_results(session, t)
+    guest_ids = (await session.execute(select(User.id).join(TournamentPlayer, TournamentPlayer.user_id == User.id)
+                                       .where(TournamentPlayer.tournament_id == tid, User.is_guest.is_(True)))).scalars().all()
+    session.expunge(t)
+    await session.execute(delete(Tournament).where(Tournament.id == tid))   # игроки, туры, столы - каскадом в БД
+    await session.flush()
+    guests_removed = await _remove_orphan_guests(session, list(guest_ids))
+    await _recompute_club_stats(session, club_id)
+    await session.commit()
+    log.warning("турнир %s «%s» (клуб %s) удалён пользователем %s", tid, name, club_id, user.id)
+    return {"deleted": tid, "guests_removed": guests_removed}
