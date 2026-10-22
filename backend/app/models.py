@@ -3,6 +3,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (Date, DateTime, Enum, Float, ForeignKey, Index, Integer, Sequence, String, text,
                         Text, UniqueConstraint, func)
+from sqlalchemy.dialects.postgresql import JSONB as _JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -99,6 +100,8 @@ class Club(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     city: Mapped[str] = mapped_column(String(64), default="")
     telegram_chat_id: Mapped[str | None] = mapped_column(String(64))  # для автоотчётов (блок 7)
+    # часы работы для брони столов: {"0": ["12:00", "23:00"], ...} - день недели (0 = пн), нет ключа - выходной
+    opening_hours: Mapped[dict | None] = mapped_column(_JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     members: Mapped[list["ClubMember"]] = relationship(back_populates="club", cascade="all, delete-orphan")
@@ -570,4 +573,36 @@ class ClubCreatorRequest(Base):
     reject_reason: Mapped[str] = mapped_column(String(500), default="")
     decided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------- Столы клуба и бронирование ----------------
+class ClubTable(Base):
+    """Игровой стол клуба или антикафе: его заводит организатор, участники клуба бронируют."""
+    __tablename__ = "club_tables"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    seats: Mapped[int] = mapped_column(Integer, default=4, server_default=text("4"))
+    games: Mapped[str] = mapped_column(String(64), default="", server_default="")        # «MTG, EDH, Берсерк»
+    description: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TableBooking(Base):
+    """Бронь стола. Пересечения по одному столу исключает API (под блокировкой строки стола)."""
+    __tablename__ = "table_bookings"
+    __table_args__ = (Index("ix_table_bookings_table_time", "table_id", "starts_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id", ondelete="CASCADE"), index=True)
+    table_id: Mapped[int] = mapped_column(ForeignKey("club_tables.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    note: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    status: Mapped[str] = mapped_column(String(16), default="active", server_default="active")   # active | cancelled
+    cancelled_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
