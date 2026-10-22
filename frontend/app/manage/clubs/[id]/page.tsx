@@ -32,6 +32,11 @@ function ManageClub({ clubId }: { clubId: number }) {
         <div>
           <NewTournament clubId={clubId} />
           <section className="panel actions" style={{ marginTop: 16 }}>
+            <h2 style={{ margin: 0 }}>Участники клуба</h2>
+            <p style={{ margin: 0 }} className="muted">Список всех игроков клуба с очками лиги, банком и активностью; запись в турнир в один клик или сразу нескольких.</p>
+            <Link href={`/manage/clubs/${clubId}/members`} className="btn">Открыть участников</Link>
+          </section>
+          <section className="panel actions" style={{ marginTop: 16 }}>
             <h2 style={{ margin: 0 }}>Столы и бронирование</h2>
             <p style={{ margin: 0 }} className="muted">Столы клуба, часы работы и брони участников. О новых бронях бот пишет организаторам в личку.</p>
             <Link href={`/manage/clubs/${clubId}/tables`} className="btn">Открыть столы</Link>

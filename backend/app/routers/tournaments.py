@@ -279,6 +279,41 @@ async def add_player(tid: int, data: PlayerAdd, user: User = Depends(current_use
             "player_no": None if player.is_guest else player.player_no}
 
 
+class BulkAdd(BaseModel):
+    user_ids: list[int] = Field(min_length=1, max_length=200)
+    bracket: int = Field(default=2, ge=1, le=5)
+
+
+@router.post("/{tid}/players/bulk")
+async def add_players_bulk(tid: int, data: BulkAdd, user: User = Depends(current_user),
+                           session: AsyncSession = Depends(get_session)):
+    """Записать в турнир сразу несколько участников клуба (со страницы «Участники»).
+    Уже записанные пропускаются; если мест не хватает - записываются первые по списку, остальные возвращаются."""
+    t = await _get(session, tid)
+    await _require_judge(session, t, user)
+    late_edh = t.format == TournamentFormat.edh and t.status == TournamentStatus.running
+    if t.status != TournamentStatus.registration and not late_edh:
+        raise HTTPException(400, "Игроков можно добавлять только до старта")
+    wanted = list(dict.fromkeys(data.user_ids))
+    members = set((await session.execute(select(ClubMember.user_id).where(
+        ClubMember.club_id == t.club_id, ClubMember.user_id.in_(wanted)))).scalars())
+    already = set((await session.execute(select(TournamentPlayer.user_id).where(
+        TournamentPlayer.tournament_id == tid))).scalars())
+    room = None if not t.max_players else max(0, t.max_players - len(already))
+    added, skipped, no_room = [], [], []
+    for uid in wanted:
+        if uid not in members or uid in already:
+            skipped.append(uid)
+        elif room is not None and len(added) >= room:
+            no_room.append(uid)
+        else:
+            session.add(TournamentPlayer(tournament_id=tid, user_id=uid, seed=random.randint(0, 10**9),
+                                         bracket=data.bracket, checked_in=late_edh))
+            added.append(uid)
+    await session.commit()
+    return {"added": added, "skipped": skipped, "no_room": no_room}
+
+
 @router.delete("/{tid}/players/{uid}", status_code=204)
 async def remove_player(tid: int, uid: int, user: User = Depends(current_user),
                         session: AsyncSession = Depends(get_session)):

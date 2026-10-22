@@ -11,7 +11,8 @@ from .. import notify
 from ..db import get_session
 from ..slug import slugify as translit_slug
 from ..deps import JUDGE_GAMES, can_create_club, current_user, is_club_organizer, parse_judge_games, require_admin
-from ..models import (Club, ClubMember, ClubRole, ClubStats, ClubTable, GlobalRole, TableBooking, Tournament,
+from ..models import (AuthAccount, Club, ClubMember, ClubRole, ClubStats, ClubTable, GlobalRole, Provider,
+                      TableBooking, Tournament,
                       TournamentPlayer, TournamentStatus, User)
 from . import tables as tables_api
 
@@ -278,13 +279,54 @@ async def set_club_judge(club_id: int, data: JudgeSet, user: User = Depends(curr
             "games": parse_judge_games(m.judge_games)}
 
 
+async def is_staff(session: AsyncSession, club_id: int, user: User) -> bool:
+    """Штаб клуба: организатор (и администратор) или судья любого направления."""
+    if await is_club_organizer(session, club_id, user):
+        return True
+    games = (await session.execute(select(ClubMember.judge_games).where(
+        ClubMember.club_id == club_id, ClubMember.user_id == user.id))).scalar_one_or_none()
+    return bool(games)
+
+
+@router.get("/{club_id}/members")
+async def club_members(club_id: int, tournament_id: int | None = None, user: User = Depends(current_user),
+                       session: AsyncSession = Depends(get_session)):
+    """Участники клуба для штаба: роль, лига, банк EDH, активность, Telegram.
+    С tournament_id - ещё и записан ли каждый в этот турнир."""
+    if not await session.get(Club, club_id):
+        raise HTTPException(404, "Клуб не найден")
+    if not await is_staff(session, club_id, user):
+        raise HTTPException(403, "Список участников видят организаторы и судьи клуба")
+    rows = (await session.execute(select(ClubMember, User).join(User, User.id == ClubMember.user_id)
+                                  .where(ClubMember.club_id == club_id))).all()
+    ids = [u.id for _, u in rows]
+    last = dict((await session.execute(
+        select(TournamentPlayer.user_id, func.max(Tournament.starts_at))
+        .join(Tournament, Tournament.id == TournamentPlayer.tournament_id)
+        .where(Tournament.club_id == club_id, Tournament.status != TournamentStatus.registration,
+               TournamentPlayer.user_id.in_(ids))
+        .group_by(TournamentPlayer.user_id))).all()) if ids else {}
+    tg = set((await session.execute(select(AuthAccount.user_id).where(
+        AuthAccount.provider == Provider.telegram, AuthAccount.user_id.in_(ids))).scalars())) if ids else set()
+    registered = set()
+    if tournament_id:
+        registered = set((await session.execute(select(TournamentPlayer.user_id).where(
+            TournamentPlayer.tournament_id == tournament_id))).scalars())
+    out = [{"user_id": u.id, "nickname": u.nickname, "player_no": u.player_no, "guest": u.is_guest,
+            "organizer": m.role == ClubRole.organizer, "judge_games": parse_judge_games(m.judge_games),
+            "league_points": m.league_points, "edh_bank": round(m.edh_bank, 1), "events_played": m.events_played,
+            "joined_at": m.joined_at, "last_played": last.get(u.id), "telegram": u.id in tg,
+            "registered": u.id in registered} for m, u in rows]
+    return sorted(out, key=lambda r: (not r["organizer"], not r["judge_games"], r["guest"], r["nickname"].lower()))
+
+
 @router.get("/{club_id}/players")
 async def club_players(club_id: int, q: str = "", user: User = Depends(current_user),
                        session: AsyncSession = Depends(get_session)):
     """Подсказки для «Добавить игрока»: участники клуба (и гости клуба) по нику или номеру игрока.
     По точному номеру находится любой игрок платформы, даже если он ещё не играл в этом клубе."""
-    if not await is_club_organizer(session, club_id, user):
-        raise HTTPException(403, "Нужны права организатора клуба")
+    if not await is_staff(session, club_id, user):
+        raise HTTPException(403, "Нужны права организатора или судьи клуба")
     term = q.strip().lstrip("№#").strip()
     cols = (User.id, User.nickname, User.is_guest, User.player_no)
     out, seen = [], set()

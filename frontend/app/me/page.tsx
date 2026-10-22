@@ -313,6 +313,7 @@ function MyClubs() {
               <li key={c.id} className="row" style={{ justifyContent: "space-between", padding: "8px 0" }}>
                 <Link href={`/clubs/${c.slug}`}>{c.name}</Link>
                 <span className="muted small">{c.games.map((g: string) => JUDGE_GAMES[g]).join(", ")}</span>
+                <Link href={`/manage/clubs/${c.id}/members`} className="small">Участники</Link>
               </li>
             ))}
           </ul>
