@@ -55,7 +55,7 @@ function ManageTables({ clubId }: { clubId: number }) {
           <DayPicker value={day} onChange={setDay} daysAhead={s?.days_ahead} />
           {s ? <TableSchedule schedule={s} mode="admin" canBook={false} reload={reload} /> : null}
         </div>
-        <aside><Hours clubId={clubId} reload={loadDay} /></aside>
+        <aside className="stack"><NotifyTest clubId={clubId} /><Hours clubId={clubId} reload={loadDay} /></aside>
       </div>
     </>
   );
@@ -126,6 +126,20 @@ function TableCard({ clubId, t, reload }: { clubId: number; t: Table; reload: ()
       </div>
       <Status error={error} />
     </article>
+  );
+}
+
+/** Проверка: бот присылает организатору в личку образец сообщения о брони. */
+function NotifyTest({ clubId }: { clubId: number }) {
+  const { busy, error, done, run } = useAction();
+  return (
+    <div className="panel">
+      <h3 style={{ marginTop: 0 }}>Уведомления о бронях</h3>
+      <p className="muted small">Бот пишет организаторам клуба в личку о каждой новой брони и отмене. О своих бронях вы сообщений не получаете.</p>
+      <button disabled={busy} onClick={() => run(() => api(`/clubs/${clubId}/bookings/notify-test`, { method: "POST" }),
+        "Отправлено: проверьте личные сообщения от бота")}>Проверить уведомления</button>
+      <Status error={error} done={done} />
+    </div>
   );
 }
 

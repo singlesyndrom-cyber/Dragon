@@ -257,6 +257,28 @@ async def notify_organizers(session: AsyncSession, club: Club, actor: User, text
         await notify.enqueue(session, "booking", chat, text, dedup_key=f"{dedup}:{chat}")
 
 
+@router.post("/clubs/{club_id}/bookings/notify-test", status_code=202)
+async def notify_test(club_id: int, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    """Организатор проверяет, что сообщения о бронях доходят: бот присылает ему в личку образец сообщения.
+    Обычные уведомления о своих действиях организатор не получает, поэтому проверка - отдельной кнопкой."""
+    club = await _club(session, club_id)
+    await _require_org(session, club_id, user)
+    chat = (await session.execute(select(AuthAccount.external_id).where(
+        AuthAccount.user_id == user.id, AuthAccount.provider == Provider.telegram))).scalar_one_or_none()
+    if not chat:
+        raise HTTPException(400, "К вашему аккаунту не привязан Telegram: привяжите его в личном кабинете")
+    table = (await session.execute(select(ClubTable.name).where(ClubTable.club_id == club_id)
+                                   .order_by(ClubTable.id).limit(1))).scalar_one_or_none() or "Стол 1"
+    start = datetime.now(_tz()).replace(hour=18, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    sample = TableBooking(starts_at=start, ends_at=start + timedelta(hours=3))
+    await notify.enqueue(session, "booking_test", chat,
+                         "🧪 <b>Проверка уведомлений о бронях</b>\nТак будет выглядеть сообщение о новой брони:\n\n"
+                         f"📅 <b>Новая бронь стола</b>\n🏠 {notify.esc(club.name)} · стол «{notify.esc(table)}»\n"
+                         f"🕒 {when(sample)}\n👤 {who(user)}\n💬 Пример комментария игрока")
+    await session.commit()
+    return {"queued": True}
+
+
 def who(u: User) -> str:
     return notify.esc(u.nickname) + (f" (№{u.player_no})" if u.player_no else "")
 

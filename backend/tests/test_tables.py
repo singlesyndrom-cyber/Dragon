@@ -184,3 +184,20 @@ async def test_delete_table_with_future_bookings(client):
     await client.delete(f"/bookings/{bid}", headers=ph)
     assert (await client.delete(f"/clubs/{cid}/tables/{t1}", headers=org)).status_code == 204
     assert (await client.get(f"/clubs/{cid}/tables")).json() == []
+
+
+async def test_notify_test_goes_to_the_organizer(client):
+    cid, org = await setup_club(client)
+    ph, _ = await reg(client, 1)
+    await client.post(f"/clubs/{cid}/join", headers=ph)
+    assert (await client.post(f"/clubs/{cid}/bookings/notify-test", headers=ph)).status_code == 403
+    assert (await client.post(f"/clubs/{cid}/bookings/notify-test", headers=org)).status_code == 202
+    async with SessionLocal() as s:
+        msg = (await s.execute(select(OutboxMessage).where(OutboxMessage.kind == "booking_test"))).scalar_one()
+    assert msg.chat_id == "5550001" and "Проверка уведомлений" in msg.text and "Антикафе Грифон" in msg.text
+    # без привязанного Telegram - понятная ошибка
+    org2, _ = await reg(client, 2)
+    await make_creator(client, org2)
+    cid2 = (await client.post("/clubs", json={"name": "Второй клуб"}, headers=org2)).json()["id"]
+    r = await client.post(f"/clubs/{cid2}/bookings/notify-test", headers=org2)
+    assert r.status_code == 400 and "Telegram" in r.json()["detail"]
