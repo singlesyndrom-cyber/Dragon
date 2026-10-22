@@ -206,6 +206,7 @@ class TournamentPlayer(Base):
     checked_in: Mapped[bool] = mapped_column(default=False)        # пришёл на ивент (отмечает организатор)
     deck_id: Mapped[int | None] = mapped_column(ForeignKey("decks.id", ondelete="SET NULL"))
     dropped: Mapped[bool] = mapped_column(default=False, server_default=text("false"))   # выбыл: без пар в следующих турах
+    reminded: Mapped[bool] = mapped_column(default=False, server_default=text("false"))  # напоминание накануне отправлено
 
     user: Mapped[User] = relationship()
 
@@ -613,6 +614,7 @@ class TableBooking(Base):
     status: Mapped[str] = mapped_column(String(16), default="active", server_default="active")   # active | cancelled
     cancelled_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reminded: Mapped[bool] = mapped_column(default=False, server_default=text("false"))   # напоминание за 2 часа
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

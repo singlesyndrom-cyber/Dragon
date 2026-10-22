@@ -400,6 +400,12 @@ async def book(club_id: int, data: BookingIn, user: User = Depends(current_user)
 @router.delete("/bookings/{booking_id}", status_code=204)
 async def cancel(booking_id: int, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
     """Отменить бронь может тот, кто бронировал, и организатор клуба."""
+    await cancel_booking(session, booking_id, user)
+    await session.commit()
+
+
+async def cancel_booking(session: AsyncSession, booking_id: int, user: User) -> TableBooking:
+    """Отмена брони (сайт и кнопка в напоминании бота), без коммита."""
     b = (await session.execute(select(TableBooking).where(TableBooking.id == booking_id)
                                .with_for_update())).scalar_one_or_none()
     if not b:
@@ -416,9 +422,9 @@ async def cancel(booking_id: int, user: User = Depends(current_user), session: A
     owner = await session.get(User, b.user_id)
     by = "" if owner.id == user.id else f"\n✋ Отменил: {who(user)}"
     await notify_staff(session, club, user,
-                             f"❌ <b>Бронь отменена</b>\n🏠 {notify.esc(club.name)} · стол «{notify.esc(table.name)}»\n"
-                             f"🕒 {when(b)}\n👤 {who(owner)}{by}", f"booking:{b.id}:cancel")
-    await session.commit()
+                       f"❌ <b>Бронь отменена</b>\n🏠 {notify.esc(club.name)} · стол «{notify.esc(table.name)}»\n"
+                       f"🕒 {when(b)}\n👤 {who(owner)}{by}", f"booking:{b.id}:cancel")
+    return b
 
 
 @router.get("/bookings/mine")
