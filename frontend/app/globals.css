@@ -245,7 +245,7 @@ tbody tr.dropped td { color: var(--muted); }
 .danger-zone h3 { margin-top: 0; }
 
 /* ---------- столы клуба и бронирование ---------- */
-.tables-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; margin: 12px 0 24px; }
+.tables-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; margin: 12px 0 24px; align-items: start; }
 .table-card { background: var(--vellum); border-radius: var(--radius-m); padding: 16px; display: flex; flex-direction: column; gap: 8px;
   border: 1px solid transparent; }
 .table-card header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
@@ -268,3 +268,4 @@ tbody tr.dropped td { color: var(--muted); }
 .chip.on { border-color: var(--gilt); color: var(--gilt); background: var(--gilt-soft); }
 .hours-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .hours-row select { width: auto; }
+.hours-row label.check { flex: 0 0 140px; }

@@ -12,13 +12,17 @@ export default function TableSchedule({ schedule, mode, canBook, reload }: {
   schedule: Schedule; mode: "book" | "admin"; canBook: boolean; reload: () => Promise<void>;
 }) {
   const [open, setOpen] = useState<number | null>(null);
+  const over = !!schedule.open && new Date(schedule.open.end).getTime() <= Date.now();   // рабочий день уже закончился
   if (!schedule.tables.length) {
     return <p className="muted">{mode === "admin" ? "Столов пока нет — добавьте первый выше." : "Клуб ещё не добавил столы."}</p>;
   }
   return (
     <>
       {schedule.open ? (
-        <p className="muted small">Клуб работает {schedule.open.from}–{schedule.open.to}. Бронь — с шагом 30 минут.</p>
+        <p className="muted small">
+          Клуб работает {schedule.open.from}–{schedule.open.to}.{" "}
+          {over ? "На этот день клуб уже закрыт — выберите другой день." : "Бронь — с шагом 30 минут."}
+        </p>
       ) : <p className="muted">В этот день клуб не работает.</p>}
       <div className="tables-grid">
         {schedule.tables.map((t) => (
@@ -40,14 +44,14 @@ export default function TableSchedule({ schedule, mode, canBook, reload }: {
                   </span>
                   {b.mine || mode === "admin" ? <CancelBooking b={b} reload={reload} /> : null}
                 </li>
-              )) : <li className="muted small">{schedule.open ? "Свободен весь день" : "—"}</li>}
+              )) : <li className="muted small">{!schedule.open ? "—" : over ? "Броней не было" : "Броней нет — стол свободен"}</li>}
             </ul>
-            {mode === "book" && canBook && schedule.open ? (
+            {mode === "book" && canBook && schedule.open && !over ? (
               open === t.id
                 ? <BookForm schedule={schedule} table={t} done={async () => { setOpen(null); await reload(); }} cancel={() => setOpen(null)} />
                 : freeStarts(schedule, t.bookings).length
                   ? <button className="primary" onClick={() => setOpen(t.id)}>Забронировать</button>
-                  : <p className="muted small" style={{ margin: 0 }}>Свободного времени на этот день нет.</p>
+                  : <p className="muted small" style={{ margin: 0 }}>Свободного времени на этот день больше нет.</p>
             ) : null}
           </article>
         ))}
