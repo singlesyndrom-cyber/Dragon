@@ -7,10 +7,13 @@ export default async function Meta({ searchParams }: { searchParams: Promise<Rec
   const sp = await searchParams;
   const qs = new URLSearchParams();
   for (const k of ["club_id", "game", "format", "since_days", "commander"]) if (sp[k]) qs.set(k, sp[k] as string);
-  const [cmd, cards, clubs] = await Promise.all([
+  const poolQs = new URLSearchParams({ game: "mtg", limit: "20" });
+  if (sp.club_id) poolQs.set("club_id", sp.club_id);
+  const [cmd, cards, clubs, pool] = await Promise.all([
     sget<any>(`/meta/commanders?${qs}&min_games=5`),
     sget<any>(`/meta/cards?${qs}&limit=40`),
     sget<any[]>("/clubs"),
+    sget<any>(`/meta/pool?${poolQs}`),
   ]);
   return (
     <>
@@ -74,6 +77,35 @@ export default async function Meta({ searchParams }: { searchParams: Promise<Rec
           </table>
         </div>
       ) : <p className="muted">Данных пока нет.</p>}
+      <h2>Популярное у игроков</h2>
+      <p className="muted small">
+        Колоды из пулов игроков{sp.club_id ? " этого клуба" : ""}, которые владельцы отметили «в мете» в личном кабинете
+        (без имён и без результатов — только что собирают). Колод: {pool?.decks ?? 0}.
+      </p>
+      {pool?.decks ? (
+        <div className="split">
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Командир</th><th className="r">Колод</th><th className="r">Доля</th></tr></thead>
+              <tbody>
+                {pool.commanders.map((c: any) => (
+                  <tr key={c.commander}><td>{c.commander}</td><td className="r">{c.decks}</td><td className="r">{pct(c.pick_rate)}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Карта</th><th className="r">Доля колод</th></tr></thead>
+              <tbody>
+                {pool.cards.map((c: any) => (
+                  <tr key={c.card}><td>{c.card}</td><td className="r">{c.usage_pct.toLocaleString("ru-RU")}%</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : <p className="muted">Пока никто не добавил колоды в мету. Отметьте свои колоды «в мете» в <a href="/me#decks">личном кабинете</a>.</p>}
     </>
   );
 }

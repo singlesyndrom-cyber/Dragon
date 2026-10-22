@@ -16,13 +16,14 @@ export default function TournamentActions({ t }: { t: any }) {
   const [decks, setDecks] = useState<any[]>([]);
   const [deckId, setDeckId] = useState("");
   const [canManage, setCanManage] = useState(false);
+  const [member, setMember] = useState(true);
 
   const mine = me ? t.participants.find((p: any) => p.user_id === me.id) : null;
   const open = t.status === "registration";
 
   useEffect(() => {
     if (!me) return;
-    api(`/clubs/${t.club_id}/membership`).then((m) => setCanManage(canRun(m, t))).catch(() => {});
+    api(`/clubs/${t.club_id}/membership`).then((m) => { setCanManage(canRun(m, t)); setMember(!!m.member); }).catch(() => {});
     api<any[]>("/decks/mine").then((d) => setDecks(d.filter((x) => x.game === t.game))).catch(() => {});
   }, [me, t.club_id, t.game, t.format]);
 
@@ -47,6 +48,16 @@ export default function TournamentActions({ t }: { t: any }) {
         <p className="muted" style={{ margin: 0 }}>Мест нет: записано {t.max_players} из {t.max_players}.</p>
       ) : open ? (
         <>
+          {t.deck_policy !== "none" ? (
+            <label>
+              <span>Колода из вашего пула{t.deck_policy === "required" ? " (обязательно)" : " (можно подать позже)"}</span>
+              <select value={deckId} onChange={(e) => setDeckId(e.target.value)}>
+                <option value="">{decks.length ? "Без колоды" : "Колод этой игры пока нет"}</option>
+                {decks.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              {!decks.length ? <span className="hint"><Link href="/me#decks">Добавьте колоду в кабинете</Link> — потом её можно подать в один клик.</span> : null}
+            </label>
+          ) : null}
           {t.format === "edh" ? (
             <label>
               <span>Брекет вашей колоды</span>
@@ -55,11 +66,12 @@ export default function TournamentActions({ t }: { t: any }) {
               </select>
             </label>
           ) : null}
-          <button className="primary" disabled={busy} onClick={() =>
-            run(() => api(`/tournaments/${t.id}/register?bracket=${bracket}`, { method: "POST" }))
-              .then((ok) => { if (ok) router.refresh(); })}>
-            Записаться
+          <button className="primary" disabled={busy || (t.deck_policy === "required" && !deckId)} onClick={() =>
+            run(() => api(`/tournaments/${t.id}/register?bracket=${bracket}${deckId ? `&deck_id=${deckId}` : ""}`, { method: "POST" }))
+              .then((ok) => { if (ok) { setDeckId(""); router.refresh(); } })}>
+            Записаться{deckId ? " с колодой" : ""}
           </button>
+          {!member ? <p className="hint" style={{ margin: 0 }}>Вы ещё не в клубе «{t.club}»: запись сразу добавит вас в клуб.</p> : null}
         </>
       ) : <p className="muted" style={{ margin: 0 }}>{t.status === "finished" ? "Турнир завершён." : "Регистрация закрыта: турнир уже идёт."}</p>}
 

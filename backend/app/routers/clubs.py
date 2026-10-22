@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -10,7 +11,9 @@ from .. import notify
 from ..db import get_session
 from ..slug import slugify as translit_slug
 from ..deps import JUDGE_GAMES, can_create_club, current_user, is_club_organizer, parse_judge_games, require_admin
-from ..models import GlobalRole, Club, ClubMember, ClubRole, ClubStats, User
+from ..models import (Club, ClubMember, ClubRole, ClubStats, ClubTable, GlobalRole, TableBooking, Tournament,
+                      TournamentPlayer, TournamentStatus, User)
+from . import tables as tables_api
 
 router = APIRouter(prefix="/clubs", tags=["clubs"])
 
@@ -64,6 +67,23 @@ async def judging_clubs(user: User = Depends(current_user), session: AsyncSessio
                                   .where(ClubMember.user_id == user.id, ClubMember.judge_games != "",
                                          ClubMember.role != ClubRole.organizer).order_by(Club.name))).all()
     return [{"id": c.id, "name": c.name, "slug": c.slug, "games": parse_judge_games(g)} for c, g in rows]
+
+
+@router.get("/mine")
+async def my_clubs(user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    """Клубы, где пользователь участник: роль, очки лиги, банк EDH, ближайшие турниры и есть ли столы для брони."""
+    rows = (await session.execute(select(Club, ClubMember).join(ClubMember, ClubMember.club_id == Club.id)
+                                  .where(ClubMember.user_id == user.id).order_by(Club.name))).all()
+    ids = [c.id for c, _ in rows]
+    upcoming = dict((await session.execute(
+        select(Tournament.club_id, func.count()).where(Tournament.club_id.in_(ids),
+                                                       Tournament.status == TournamentStatus.registration)
+        .group_by(Tournament.club_id))).all()) if ids else {}
+    tables = dict((await session.execute(select(ClubTable.club_id, func.count()).where(ClubTable.club_id.in_(ids))
+                                         .group_by(ClubTable.club_id))).all()) if ids else {}
+    return [{"id": c.id, "name": c.name, "slug": c.slug, "city": c.city, "organizer": m.role == ClubRole.organizer,
+             "league_points": m.league_points, "edh_bank": round(m.edh_bank, 1), "events_played": m.events_played,
+             "upcoming": upcoming.get(c.id, 0), "tables": tables.get(c.id, 0)} for c, m in rows]
 
 
 @router.get("/{slug}")
@@ -121,6 +141,35 @@ async def join_club(club_id: int, user: User = Depends(current_user),
     if res.scalar_one_or_none():
         raise HTTPException(409, "Вы уже в клубе")
     session.add(ClubMember(club_id=club_id, user_id=user.id))
+    await session.commit()
+
+
+@router.post("/{club_id}/leave", status_code=204)
+async def leave_club(club_id: int, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    """Выйти из клуба. Организатор выйти не может; сначала нужно отменить запись на незавершённые турниры клуба.
+    Будущие брони столов в этом клубе отменяются (организаторы получат сообщение). Очки лиги и банк обнуляются."""
+    m = (await session.execute(select(ClubMember).where(ClubMember.club_id == club_id,
+                                                        ClubMember.user_id == user.id))).scalar_one_or_none()
+    if not m:
+        raise HTTPException(404, "Вы не состоите в этом клубе")
+    if m.role == ClubRole.organizer:
+        raise HTTPException(400, "Организатор не может выйти из своего клуба")
+    busy = (await session.execute(select(Tournament.name).join(TournamentPlayer, TournamentPlayer.tournament_id == Tournament.id)
+                                  .where(Tournament.club_id == club_id, TournamentPlayer.user_id == user.id,
+                                         Tournament.status != TournamentStatus.finished))).scalars().first()
+    if busy:
+        raise HTTPException(400, f"Вы участвуете в турнире «{busy}»: сначала отмените запись или дождитесь его окончания")
+    club = await session.get(Club, club_id)
+    now = datetime.now(timezone.utc)
+    for b in (await session.execute(select(TableBooking).where(
+            TableBooking.club_id == club_id, TableBooking.user_id == user.id, TableBooking.status == "active",
+            TableBooking.ends_at > now))).scalars():
+        b.status, b.cancelled_by, b.cancelled_at = "cancelled", user.id, now
+        table = await session.get(ClubTable, b.table_id)
+        await tables_api.notify_organizers(
+            session, club, user, f"❌ <b>Бронь отменена</b> (игрок вышел из клуба)\n🏠 {notify.esc(club.name)} · "
+            f"стол «{notify.esc(table.name)}»\n🕒 {tables_api.when(b)}\n👤 {tables_api.who(user)}", f"booking:{b.id}:cancel")
+    await session.delete(m)
     await session.commit()
 
 

@@ -22,6 +22,12 @@ class DeckIn(BaseModel):
     game: str = "mtg"
     text: str = Field(min_length=1, max_length=20000)
     commander: str | None = None
+    in_meta: bool = False
+
+
+class DeckPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    in_meta: bool | None = None
 
 
 async def _fill(session: AsyncSession, deck: Deck, data: DeckIn) -> dict:
@@ -80,7 +86,7 @@ async def _can_view(session: AsyncSession, deck: Deck, user: User) -> bool:
 
 @router.post("", status_code=201)
 async def create_deck(data: DeckIn, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
-    deck = Deck(user_id=user.id, name=data.name, game=data.game)
+    deck = Deck(user_id=user.id, name=data.name, game=data.game, in_meta=data.in_meta)
     session.add(deck)
     await session.flush()
     report = await _fill(session, deck, data)
@@ -96,7 +102,7 @@ async def replace_deck(deck_id: int, data: DeckIn, user: User = Depends(current_
         raise HTTPException(404, "Колода не найдена")
     if await _locked(session, deck_id):
         raise HTTPException(409, "Турнир уже начался: деклист изменить нельзя")
-    deck.name, deck.game = data.name, data.game
+    deck.name, deck.game, deck.in_meta = data.name, data.game, data.in_meta
     report = await _fill(session, deck, data)
     await session.commit()
     return {"id": deck.id, **report}
@@ -105,7 +111,22 @@ async def replace_deck(deck_id: int, data: DeckIn, user: User = Depends(current_
 @router.get("/mine")
 async def my_decks(user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
     res = await session.execute(select(Deck).where(Deck.user_id == user.id).order_by(Deck.created_at.desc()))
-    return [{"id": d.id, "name": d.name, "game": d.game} for d in res.scalars()]
+    return [{"id": d.id, "name": d.name, "game": d.game, "in_meta": d.in_meta} for d in res.scalars()]
+
+
+@router.patch("/{deck_id}")
+async def patch_deck(deck_id: int, data: DeckPatch, user: User = Depends(current_user),
+                     session: AsyncSession = Depends(get_session)):
+    """Переименовать колоду или включить/выключить её учёт в мете - без перезаливки деклиста."""
+    deck = await session.get(Deck, deck_id)
+    if not deck or deck.user_id != user.id:
+        raise HTTPException(404, "Колода не найдена")
+    if data.name is not None:
+        deck.name = data.name.strip()
+    if data.in_meta is not None:
+        deck.in_meta = data.in_meta
+    await session.commit()
+    return {"id": deck.id, "name": deck.name, "game": deck.game, "in_meta": deck.in_meta}
 
 
 @router.get("/{deck_id}")
@@ -116,7 +137,7 @@ async def get_deck(deck_id: int, user: User = Depends(current_user), session: As
     rows = (await session.execute(select(DeckCard, Card.image_url).outerjoin(Card, Card.id == DeckCard.card_id)
                                   .where(DeckCard.deck_id == deck_id)
                                   .order_by(DeckCard.is_commander.desc(), DeckCard.name))).all()
-    return {"id": deck.id, "name": deck.name, "game": deck.game,
+    return {"id": deck.id, "name": deck.name, "game": deck.game, "in_meta": deck.in_meta,
             "cards": [{"name": c.name, "qty": c.qty, "section": c.section, "is_commander": c.is_commander,
                        "matched": c.card_id is not None, "image_url": img} for c, img in rows]}
 
@@ -132,20 +153,27 @@ async def delete_deck(deck_id: int, user: User = Depends(current_user), session:
     await session.commit()
 
 
-@router.put("/{deck_id}/attach/{tid}", status_code=204)
-async def attach(deck_id: int, tid: int, user: User = Depends(current_user),
-                 session: AsyncSession = Depends(get_session)):
-    """Привязать колоду к своей заявке на турнир (до старта)."""
-    deck = await session.get(Deck, deck_id)
-    t = await session.get(Tournament, tid)
-    if not deck or deck.user_id != user.id or not t:
-        raise HTTPException(404, "Колода или турнир не найдены")
+def check_deck_for(deck: Deck | None, t: Tournament, user: User) -> Deck:
+    """Колода игрока подходит турниру: своя, та же игра, турнир принимает деклисты и ещё не начался."""
+    if not deck or deck.user_id != user.id:
+        raise HTTPException(404, "Колода не найдена")
     if t.status != TournamentStatus.registration:
         raise HTTPException(400, "Деклист можно подать только до начала турнира")
     if t.deck_policy == "none":
         raise HTTPException(400, "На этот турнир деклисты не принимаются")
     if t.game != deck.game:
         raise HTTPException(400, f"Игра колоды ({deck.game}) не совпадает с игрой турнира ({t.game})")
+    return deck
+
+
+@router.put("/{deck_id}/attach/{tid}", status_code=204)
+async def attach(deck_id: int, tid: int, user: User = Depends(current_user),
+                 session: AsyncSession = Depends(get_session)):
+    """Привязать колоду к своей заявке на турнир (до старта)."""
+    t = await session.get(Tournament, tid)
+    if not t:
+        raise HTTPException(404, "Турнир не найден")
+    check_deck_for(await session.get(Deck, deck_id), t, user)
     tp = (await session.execute(select(TournamentPlayer).where(
         TournamentPlayer.tournament_id == tid, TournamentPlayer.user_id == user.id))).scalar_one_or_none()
     if not tp:

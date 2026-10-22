@@ -296,6 +296,8 @@ class Deck(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(128))
     game: Mapped[str] = mapped_column(String(16), default="mtg")
+    # игрок разрешил учитывать колоду в разделе «Мета» (блок «Популярное у игроков», без имён)
+    in_meta: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     cards: Mapped[list["DeckCard"]] = relationship(cascade="all, delete-orphan", passive_deletes=True)

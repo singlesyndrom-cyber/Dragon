@@ -115,7 +115,7 @@ function ChangePassword() {
 
 function Decks() {
   const [decks, setDecks] = useState<any[]>([]);
-  const [f, setF] = useState({ name: "", game: "mtg", commander: "", text: "" });
+  const [f, setF] = useState({ name: "", game: "mtg", commander: "", text: "", in_meta: true });
   const [report, setReport] = useState<any>(null);
   const { busy, error, run } = useAction();
   const load = () => api<any[]>("/decks/mine").then(setDecks).catch(() => {});
@@ -128,8 +128,15 @@ function Decks() {
           {decks.map((d) => (
             <li key={d.id} className="row" style={{ justifyContent: "space-between", padding: "10px 0" }}>
               <span>{d.name} <span className="muted small">{d.game === "mtg" ? "MTG" : "Берсерк"}</span></span>
-              <button className="link-btn" onClick={() =>
-                run(() => api(`/decks/${d.id}`, { method: "DELETE" })).then(load)}>Удалить</button>
+              <span className="row" style={{ gap: 14 }}>
+                <label className="check small" style={{ margin: 0 }} title="Колода анонимно попадёт в блок «Популярное у игроков» в разделе Мета">
+                  <input type="checkbox" checked={d.in_meta} disabled={busy}
+                    onChange={(e) => run(() => api(`/decks/${d.id}`, { method: "PATCH", body: { in_meta: e.target.checked } })).then(load)} />
+                  <span>в мете</span>
+                </label>
+                <button className="link-btn" onClick={() =>
+                  run(() => api(`/decks/${d.id}`, { method: "DELETE" })).then(load)}>Удалить</button>
+              </span>
             </li>
           ))}
         </ul>
@@ -138,7 +145,7 @@ function Decks() {
       <form className="section" onSubmit={(e) => {
         e.preventDefault();
         run(async () => {
-          const body: any = { name: f.name, game: f.game, text: f.text };
+          const body: any = { name: f.name, game: f.game, text: f.text, in_meta: f.in_meta };
           if (f.commander.trim()) body.commander = f.commander.trim();
           setReport(await api("/decks", { body }));
           setF({ ...f, name: "", commander: "", text: "" });
@@ -158,6 +165,10 @@ function Decks() {
         <label><span>Командир, если его нет в списке</span><input value={f.commander} onChange={(e) => setF({ ...f, commander: e.target.value })} /></label>
         <label><span>Список карт: экспорт из Moxfield, Archidekt или строки вида «1 Sol Ring»</span>
           <textarea required value={f.text} onChange={(e) => setF({ ...f, text: e.target.value })} style={{ minHeight: 200 }} />
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={f.in_meta} onChange={(e) => setF({ ...f, in_meta: e.target.checked })} />
+          <span>Учитывать в мете — колода анонимно попадёт в «Популярное у игроков» (без вашего имени)</span>
         </label>
         <button className="primary" disabled={busy}>Сохранить колоду</button>
         <Status error={error} />
@@ -250,10 +261,12 @@ function MyClubs() {
   const { me } = useAuth();
   const [clubs, setClubs] = useState<any[] | null>(null);
   const [judging, setJudging] = useState<any[]>([]);
+  const { busy, error, run } = useAction();
+  const load = useCallback(() => api<any[]>("/clubs/mine").then(setClubs).catch(() => setClubs([])), []);
   useEffect(() => {
-    api<any[]>("/clubs/managed").then(setClubs).catch(() => setClubs([]));
+    load();
     api<any[]>("/clubs/judging").then(setJudging).catch(() => {});
-  }, []);
+  }, [load]);
   if (clubs === null) return null;
   return (
     <div className="panel">
@@ -261,13 +274,30 @@ function MyClubs() {
       {clubs.length ? (
         <ul className="news-list">
           {clubs.map((c) => (
-            <li key={c.id} className="row" style={{ justifyContent: "space-between", padding: "8px 0" }}>
-              <Link href={`/clubs/${c.slug}`}>{c.name}</Link>
-              <Link href={`/tournaments/new?club=${c.id}`} className="small">Создать турнир</Link>
+            <li key={c.id} style={{ padding: "10px 0" }}>
+              <div className="row" style={{ justifyContent: "space-between" }}>
+                <Link href={`/clubs/${c.slug}`}><b>{c.name}</b></Link>
+                {c.organizer ? <span className="badge">организатор</span> : null}
+              </div>
+              <div className="muted small">
+                Очки лиги {c.league_points} · банк EDH {Math.round(c.edh_bank).toLocaleString("ru-RU")} · ивентов {c.events_played}
+              </div>
+              <div className="row small" style={{ marginTop: 4, gap: 14 }}>
+                <Link href={`/clubs/${c.slug}`}>{c.upcoming ? `Турниры: ${c.upcoming} с открытой записью` : "Турниры клуба"}</Link>
+                {c.tables ? <Link href={`/clubs/${c.slug}/tables`}>Забронировать стол</Link> : null}
+                {c.organizer ? <Link href={`/tournaments/new?club=${c.id}`}>Создать турнир</Link> : (
+                  <ConfirmButton className="link-btn" danger disabled={busy}
+                    question={`Выйти из клуба «${c.name}»? Очки лиги и банк EDH в нём обнулятся, будущие брони отменятся.`}
+                    confirmLabel="Выйти" onConfirm={() => run(async () => { await api(`/clubs/${c.id}/leave`, { method: "POST" }); await load(); })}>
+                    выйти
+                  </ConfirmButton>
+                )}
+              </div>
             </li>
           ))}
         </ul>
-      ) : <p className="small muted">{me?.is_club_creator ? "Создайте клуб, чтобы проводить турниры и вести лигу." : "Чтобы открыть свой клуб, получите статус «Создатель Клуба»: заявка ниже."}</p>}
+      ) : <p className="small muted">Вы пока не состоите в клубах. <Link href="/clubs">Найдите свой клуб</Link> и вступите — запись на турниры и бронь столов станут в один клик.</p>}
+      <Status error={error} />
       {judging.length ? (
         <>
           <h3 style={{ marginTop: 16 }}>Судейство</h3>
@@ -282,7 +312,8 @@ function MyClubs() {
           <p className="small muted" style={{ margin: 0 }}>Турнир ведётся кнопкой «Управлять турниром» на его странице.</p>
         </>
       ) : null}
-      {me?.is_club_creator ? <Link href="/clubs/new" className="btn" style={{ marginTop: 12 }}>Создать клуб</Link> : null}
+      {me?.is_club_creator ? <Link href="/clubs/new" className="btn" style={{ marginTop: 12 }}>Создать клуб</Link>
+        : <p className="small muted" style={{ marginBottom: 0 }}>Чтобы открыть свой клуб, получите статус «Создатель Клуба»: заявка ниже.</p>}
     </div>
   );
 }

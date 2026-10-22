@@ -7,11 +7,16 @@ services:
       POSTGRES_DB: kki
     volumes: [pgdata:/var/lib/postgresql/data]
     ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kki"]
+      interval: 3s
+      retries: 30
   backend:
     build: ./backend
     env_file: .env
     dns: [1.1.1.1, 8.8.8.8, 77.88.8.8]   # явные DNS: в Docker Desktop контейнеры иногда не находят внешние сайты
-    depends_on: [db]
+    depends_on:
+      db: { condition: service_healthy }
     ports: ["8000:8000"]
     volumes: ["./backend:/srv"]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
@@ -19,7 +24,8 @@ services:
     build: ./backend
     env_file: .env
     dns: [1.1.1.1, 8.8.8.8, 77.88.8.8]
-    depends_on: [db]
+    depends_on:
+      db: { condition: service_healthy }
     volumes: ["./backend:/srv"]
     command: python -m app.bot.main
     restart: unless-stopped

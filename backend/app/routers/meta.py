@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
 from ..meta import Entry, Game, build_entry, card_usage, commander_stats
-from ..models import (DeckCard, EdhSeat, EdhTable, EdhTableStatus, Match, Tournament, TournamentFormat,
+from ..models import (ClubMember, Deck, DeckCard, User, EdhSeat, EdhTable, EdhTableStatus, Match, Tournament, TournamentFormat,
                       TournamentPlayer, TournamentStatus)
 
 router = APIRouter(prefix="/meta", tags=["meta"])
@@ -100,3 +100,29 @@ async def staples(club_id: int | None = None, game: str | None = None, format: T
     entries, _ = await load_scope(session, club_id, game, format, since_days)
     return {"scope": _scope(club_id, game, format, since_days), "commander": commander,
             **card_usage(entries, commander, min_decks, limit)}
+
+
+
+@router.get("/pool")
+async def pool(game: str = Query("mtg", pattern="^(mtg|berserk)$"), club_id: int | None = None,
+               commander: str | None = None, limit: int = Query(40, ge=1, le=200),
+               session: AsyncSession = Depends(get_session)):
+    """«Популярное у игроков»: колоды из пулов, которые владельцы отметили «Учитывать в мете».
+    Без имён и без винрейта (это не турнирные результаты) - только частота командиров и карт.
+    С club_id - колоды участников этого клуба."""
+    q = (select(Deck.id).join(User, User.id == Deck.user_id)
+         .where(Deck.in_meta.is_(True), Deck.game == game, User.is_banned.is_(False)))
+    if club_id:
+        q = q.where(Deck.user_id.in_(select(ClubMember.user_id).where(ClubMember.club_id == club_id)))
+    ids = (await session.execute(q)).scalars().all()
+    rows_by_deck = defaultdict(list)
+    for chunk in batched(ids, 5000):
+        res = await session.execute(select(DeckCard.deck_id, DeckCard.name, DeckCard.is_commander, DeckCard.section)
+                                    .where(DeckCard.deck_id.in_(chunk)))
+        for d, name, is_c, sec in res.all():
+            rows_by_deck[d].append((name, is_c, sec))
+    entries = [build_entry(d, rows_by_deck.get(d, [])) for d in ids]
+    cmd = [{"commander": c["commander"], "decks": c["decks"], "pick_rate": c["pick_rate"]}
+           for c in commander_stats(entries, [], 0)] if game == "mtg" else []
+    return {"game": game, "club_id": club_id, "decks": len(entries), "commanders": cmd[:limit],
+            **card_usage(entries, commander, 1, limit)}

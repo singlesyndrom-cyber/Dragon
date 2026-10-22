@@ -242,12 +242,12 @@ class BookingIn(BaseModel):
     note: str = Field(default="", max_length=200)
 
 
-def _when(b: TableBooking) -> str:
+def when(b: TableBooking) -> str:
     s, e = b.starts_at.astimezone(_tz()), b.ends_at.astimezone(_tz())
     return f"{WEEKDAYS[s.weekday()]} {s:%d.%m}, {s:%H:%M}–{e:%H:%M}"
 
 
-async def _notify_organizers(session: AsyncSession, club: Club, actor: User, text: str, dedup: str):
+async def notify_organizers(session: AsyncSession, club: Club, actor: User, text: str, dedup: str):
     """Сообщение бота в личку организаторам клуба с привязанным Telegram (кроме того, кто действовал)."""
     rows = (await session.execute(
         select(AuthAccount.external_id).join(ClubMember, ClubMember.user_id == AuthAccount.user_id)
@@ -257,7 +257,7 @@ async def _notify_organizers(session: AsyncSession, club: Club, actor: User, tex
         await notify.enqueue(session, "booking", chat, text, dedup_key=f"{dedup}:{chat}")
 
 
-def _who(u: User) -> str:
+def who(u: User) -> str:
     return notify.esc(u.nickname) + (f" (№{u.player_no})" if u.player_no else "")
 
 
@@ -308,11 +308,11 @@ async def book(club_id: int, data: BookingIn, user: User = Depends(current_user)
     session.add(b)
     await session.flush()
     note = f"\n💬 {notify.esc(b.note)}" if b.note else ""
-    await _notify_organizers(session, club, user,
+    await notify_organizers(session, club, user,
                              f"📅 <b>Новая бронь стола</b>\n🏠 {notify.esc(club.name)} · стол «{notify.esc(table.name)}»\n"
-                             f"🕒 {_when(b)}\n👤 {_who(user)}{note}", f"booking:{b.id}:new")
+                             f"🕒 {when(b)}\n👤 {who(user)}{note}", f"booking:{b.id}:new")
     await session.commit()
-    return {"id": b.id, "table": table.name, "start": b.starts_at, "end": b.ends_at, "when": _when(b)}
+    return {"id": b.id, "table": table.name, "start": b.starts_at, "end": b.ends_at, "when": when(b)}
 
 
 @router.delete("/bookings/{booking_id}", status_code=204)
@@ -332,10 +332,10 @@ async def cancel(booking_id: int, user: User = Depends(current_user), session: A
     club = await session.get(Club, b.club_id)
     table = await session.get(ClubTable, b.table_id)
     owner = await session.get(User, b.user_id)
-    by = "" if owner.id == user.id else f"\n✋ Отменил: {_who(user)}"
-    await _notify_organizers(session, club, user,
+    by = "" if owner.id == user.id else f"\n✋ Отменил: {who(user)}"
+    await notify_organizers(session, club, user,
                              f"❌ <b>Бронь отменена</b>\n🏠 {notify.esc(club.name)} · стол «{notify.esc(table.name)}»\n"
-                             f"🕒 {_when(b)}\n👤 {_who(owner)}{by}", f"booking:{b.id}:cancel")
+                             f"🕒 {when(b)}\n👤 {who(owner)}{by}", f"booking:{b.id}:cancel")
     await session.commit()
 
 
@@ -347,4 +347,4 @@ async def my_bookings(user: User = Depends(current_user), session: AsyncSession 
         .where(TableBooking.user_id == user.id, TableBooking.status == "active", TableBooking.ends_at > _now())
         .order_by(TableBooking.starts_at))).all()
     return [{"id": b.id, "club": club, "club_slug": slug, "club_id": b.club_id, "table": tname,
-             "start": b.starts_at, "end": b.ends_at, "when": _when(b), "note": b.note} for b, tname, club, slug in rows]
+             "start": b.starts_at, "end": b.ends_at, "when": when(b), "note": b.note} for b, tname, club, slug in rows]

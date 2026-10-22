@@ -1,4 +1,5 @@
 import Link from "next/link";
+import JoinClubButton from "@/components/JoinClubButton";
 import { sget } from "@/lib/api";
 import { WEEKDAYS } from "@/lib/format";
 
@@ -13,11 +14,14 @@ export default async function Clubs() {
         <h1>Клубы и магазины</h1>
         <Link href="/clubs/new" className="btn">Добавить клуб</Link>
       </div>
+      <p className="lead" style={{ marginTop: 0 }}>
+        Вступите в клуб, чтобы записываться на его турниры в один клик, бронировать столы и попадать в лигу клуба.
+      </p>
       {sorted.length ? (
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>Клуб</th><th>Город</th><th className="r">Турниров</th><th className="r">Средняя явка</th><th>Чаще играют</th><th className="r">Рейтинг</th></tr>
+              <tr><th>Клуб</th><th>Город</th><th className="r">Турниров</th><th className="r">Средняя явка</th><th>Чаще играют</th><th className="r">Рейтинг</th><th></th></tr>
             </thead>
             <tbody>
               {sorted.map((c) => (
@@ -28,6 +32,7 @@ export default async function Clubs() {
                   <td className="r">{Math.round(c.avg_participants * 10) / 10}</td>
                   <td>{c.busiest_weekday !== null ? WEEKDAYS[c.busiest_weekday] : <span className="muted">—</span>}</td>
                   <td className="r gold">{Math.round(c.rating)}</td>
+                  <td className="r"><JoinClubButton clubId={c.id} /></td>
                 </tr>
               ))}
             </tbody>

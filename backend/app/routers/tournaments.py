@@ -15,9 +15,10 @@ from .. import leagues, notify
 from ..config import settings
 from ..db import get_session
 from ..deps import can_judge, current_user, is_club_organizer
-from ..models import (Club, ClubMember, ClubStats, EdhSeat, EdhTable, EdhTableStatus, League, Match, MatchResult,
+from ..models import (Club, ClubMember, ClubStats, Deck, EdhSeat, EdhTable, EdhTableStatus, League, Match, MatchResult,
                       ResultEdit, Tournament, TournamentFormat, TournamentPlayer, TournamentStatus, User)
 from ..swiss import MatchRec, compute_standings, default_rounds, pair_round
+from .decks import check_deck_for
 
 router = APIRouter(prefix="/tournaments", tags=["tournaments"])
 log = logging.getLogger("tournaments")
@@ -309,8 +310,9 @@ async def drop_player(tid: int, uid: int, data: DropIn, user: User = Depends(cur
 
 
 @router.post("/{tid}/register", status_code=204)
-async def register(tid: int, bracket: int = Query(2, ge=1, le=5), user: User = Depends(current_user),
-                   session: AsyncSession = Depends(get_session)):
+async def register(tid: int, bracket: int = Query(2, ge=1, le=5), deck_id: int | None = Query(None),
+                   user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    """Самозапись игрока. Сразу вступает в клуб (если ещё не участник); колоду из своего пула можно подать сразу."""
     t = await _get(session, tid)
     if t.status != TournamentStatus.registration:
         raise HTTPException(400, "Регистрация закрыта")
@@ -322,11 +324,15 @@ async def register(tid: int, bracket: int = Query(2, ge=1, le=5), user: User = D
         TournamentPlayer.tournament_id == tid, TournamentPlayer.user_id == user.id))
     if exists.scalar_one_or_none():
         raise HTTPException(409, "Вы уже зарегистрированы")
+    deck = None
+    if deck_id is not None:
+        deck = check_deck_for(await session.get(Deck, deck_id), t, user)
     member = await session.execute(select(ClubMember).where(
         ClubMember.club_id == t.club_id, ClubMember.user_id == user.id))
     if not member.scalar_one_or_none():
         session.add(ClubMember(club_id=t.club_id, user_id=user.id))  # автовступление в клуб
-    session.add(TournamentPlayer(tournament_id=tid, user_id=user.id, seed=random.randint(0, 10**9), bracket=bracket))
+    session.add(TournamentPlayer(tournament_id=tid, user_id=user.id, seed=random.randint(0, 10**9), bracket=bracket,
+                                 deck_id=deck.id if deck else None))
     await session.commit()
 
 
