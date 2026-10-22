@@ -27,6 +27,7 @@ function AdminContent() {
   return (
     <>
       <h1>Админка</h1>
+      <SystemHealth />
       <CreatorRequestsAdmin />
       <div className="split">
         <div>
@@ -44,6 +45,44 @@ function AdminContent() {
       </div>
       <ArticleForm clubId={null} />
     </>
+  );
+}
+
+const kb = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} МБ` : `${Math.max(1, Math.round(n / 1024))} КБ`);
+const ago = (m: number | null) => (m === null ? "ни разу" : m < 1 ? "только что" : m < 60 ? `${Math.round(m)} мин назад` : `${Math.round(m / 60)} ч назад`);
+
+/** Бот, очередь Telegram и резервные копии - одним взглядом; обновляется раз в минуту. */
+function SystemHealth() {
+  const [h, setH] = useState<any>(null);
+  const load = useCallback(() => api("/admin/system").then(setH).catch(() => {}), []);
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 60000);
+    return () => clearInterval(t);
+  }, [load]);
+  if (!h) return null;
+  const b = h.backups;
+  return (
+    <section className={`panel health ${h.ok ? "is-ok" : "is-bad"}`}>
+      <h2 style={{ marginTop: 0 }}>Состояние системы: {h.ok ? "всё работает" : "нужно внимание"}</h2>
+      {h.problems.length ? <ul>{h.problems.map((p: string) => <li key={p} className="err" style={{ margin: 0 }}>{p}</li>)}</ul> : null}
+      <dl className="facts">
+        <dt>Бот</dt><dd>последний сигнал {ago(h.bot.minutes_ago)}</dd>
+        <dt>Очередь Telegram</dt>
+        <dd>
+          {h.outbox.pending ? `${h.outbox.pending} ждут отправки (самое старое ${ago(h.outbox.oldest_minutes)})` : "пусто"}
+          {h.outbox.failed ? `, не отправлено: ${h.outbox.failed}` : ""}
+          {h.outbox.last_sent_at ? <span className="muted">; последнее отправлено {dateTime(h.outbox.last_sent_at)}</span> : null}
+        </dd>
+        <dt>Резервные копии</dt>
+        <dd>
+          {!b.available ? <span className="muted">папка копий не подключена (обновите docker-compose.prod.yml)</span>
+            : b.last ? <>{b.last.ok ? "последняя" : "ОШИБКА"} {dateTime(b.last.at)}{b.last.ok ? `, ${kb(b.last.size)} (облегчённая ${kb(b.last.light_size)})` : `: ${b.last.error}`}; всего файлов {b.files.length}</>
+              : "ещё не было"}
+        </dd>
+      </dl>
+      <p className="hint">Если бот молчит больше 5 минут, сообщения висят больше 10 минут или копии нет больше суток, администраторам уходит письмо.</p>
+    </section>
   );
 }
 

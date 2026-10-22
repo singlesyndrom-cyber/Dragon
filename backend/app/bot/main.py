@@ -8,6 +8,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from .. import scryfall
 from ..config import settings
 from . import auctions, handlers
+from .system_tasks import backup_sender_loop, heartbeat_loop
 from .worker import run_outbox
 
 
@@ -23,7 +24,8 @@ async def main() -> None:
     auctions.BOT["username"] = (await bot.get_me()).username or ""
     dp.include_router(auctions.router)   # раньше handlers: /start с параметром ставки
     dp.include_router(handlers.router)
-    tasks = [asyncio.create_task(run_outbox(bot)), asyncio.create_task(auctions.finish_loop(bot))]
+    tasks = [asyncio.create_task(run_outbox(bot)), asyncio.create_task(auctions.finish_loop(bot)),
+             asyncio.create_task(heartbeat_loop()), asyncio.create_task(backup_sender_loop(bot))]
     if settings.scryfall_auto_sync:
         tasks.append(asyncio.create_task(scryfall.auto_sync_loop()))
     try:

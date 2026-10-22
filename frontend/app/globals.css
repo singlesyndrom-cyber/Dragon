@@ -275,3 +275,8 @@ tbody tr.dropped td { color: var(--muted); }
 .members-bar select { width: auto; max-width: 100%; }
 table.members th .sort { color: inherit; text-decoration: none; font: inherit; }
 table.members td { vertical-align: middle; }
+
+/* ---------- состояние системы ---------- */
+.panel.health { margin-bottom: 24px; border-left: 4px solid var(--win); }
+.panel.health.is-bad { border-left-color: var(--loss); }
+.panel.health ul { margin: 0 0 12px; padding-left: 18px; }

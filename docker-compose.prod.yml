@@ -22,6 +22,7 @@ services:
     depends_on:
       db: { condition: service_healthy }
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips="*"
+    volumes: ["./backups:/backups:ro"]   # админка показывает состояние копий
     restart: unless-stopped
 
   bot:   # ровно один экземпляр
@@ -32,6 +33,18 @@ services:
     depends_on:
       db: { condition: service_healthy }
     command: python -m app.bot.main
+    volumes: ["./backups:/backups:ro"]   # бот отправляет облегчённую копию администраторам
+    restart: unless-stopped
+
+  backup:   # резервные копии базы каждый день в 04:00 МСК: deploy/backup/README.md
+    image: postgres:16
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Europe/Moscow
+    volumes: ["./backups:/backups", "./deploy/backup/run.sh:/run.sh:ro"]
+    entrypoint: ["sh", "/run.sh"]
+    depends_on:
+      db: { condition: service_healthy }
     restart: unless-stopped
 
   tgproxy:   # SSH-туннель до Telegram, если хостер его блокирует: deploy/tgproxy/README.md

@@ -8,7 +8,9 @@ from sqlalchemy.exc import InterfaceError, OperationalError
 from .config import settings
 from .db import engine
 from .schema import sync_schema
-from .routers import auctions, auth, cards, clubs, creators, decks, edh, leagues, meta, news, outbox, players, tables, tournaments
+from . import system
+from .routers import (auctions, auth, cards, clubs, creators, decks, edh, leagues, meta, news, outbox, players,
+                      system as system_api, tables, tournaments)
 
 log = logging.getLogger("startup")
 
@@ -26,9 +28,12 @@ async def lifespan(app: FastAPI):
                     raise
                 log.warning("база недоступна (%s), повтор через 2 с", e)
                 await asyncio.sleep(2)
-    expirer = asyncio.create_task(edh.expire_overdue_loop())  # авто-закрытие столов по таймеру 70 минут
+    tasks = [asyncio.create_task(edh.expire_overdue_loop())]   # авто-закрытие столов по таймеру 70 минут
+    if settings.monitor_enabled:
+        tasks.append(asyncio.create_task(system.monitor_loop()))   # письмо админам, если бот или копии встали
     yield
-    expirer.cancel()
+    for t in tasks:
+        t.cancel()
 
 
 app = FastAPI(title="KKI Platform", lifespan=lifespan)
@@ -46,6 +51,7 @@ app.include_router(leagues.router)
 app.include_router(players.router)
 app.include_router(creators.router)
 app.include_router(tables.router)
+app.include_router(system_api.router)
 
 
 @app.get("/health")

@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     app_timezone: str = "Europe/Moscow"
     scryfall_auto_sync: bool = True     # бот сам загружает базу MTG при пустой базе и раз в неделю
     # почта для восстановления пароля; пусто - письма пишутся в лог бэкенда
+    backups_dir: str = "/backups"       # куда контейнер backup кладёт копии (смонтировано только для чтения)
+    monitor_enabled: bool = True        # письма администраторам, если бот молчит или очередь сообщений встала
     smtp_host: str = ""
     smtp_port: int = 465
     smtp_security: str = "ssl"          # ssl (порт 465) | starttls (порт 587) | none
