@@ -31,6 +31,11 @@ function ManageClub({ clubId }: { clubId: number }) {
       <div className="split">
         <div>
           <NewTournament clubId={clubId} />
+          <section className="panel actions" style={{ marginTop: 16 }}>
+            <h2 style={{ margin: 0 }}>Столы и бронирование</h2>
+            <p style={{ margin: 0 }} className="muted">Столы клуба, часы работы и брони участников. О новых бронях бот пишет организаторам в личку.</p>
+            <Link href={`/manage/clubs/${clubId}/tables`} className="btn">Открыть столы</Link>
+          </section>
           <ClubTournaments clubId={clubId} />
           <Seasons clubId={clubId} />
           <ArticleForm clubId={clubId} />

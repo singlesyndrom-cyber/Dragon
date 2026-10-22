@@ -226,7 +226,7 @@ async def day_schedule(club_id: int, day: date = Query(alias="date"), user: User
             "mine": bool(user and b.user_id == user.id),
             "nickname": nick if member else None, "player_no": no if member else None,
             "note": b.note if (user and b.user_id == user.id) else ""})
-    return {"date": day, "weekday": WEEKDAYS[day.weekday()],
+    return {"club_id": club_id, "date": day, "weekday": WEEKDAYS[day.weekday()],
             "open": {"from": _hhmm(win[0]), "to": _hhmm(win[1]), "start": win[0], "end": win[1]} if win else None,
             "member": member, "step": STEP, "max_duration": MAX_DURATION, "days_ahead": DAYS_AHEAD,
             "tables": [{**_table_out(t), "bookings": by_table.get(t.id, [])} for t in tables]}

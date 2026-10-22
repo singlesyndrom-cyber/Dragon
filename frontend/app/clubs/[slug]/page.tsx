@@ -12,12 +12,13 @@ export default async function ClubPage({ params }: { params: Promise<{ slug: str
   const slug = decodeURIComponent((await params).slug);   // адрес может прийти уже закодированным
   const club = await sget<any>(`/clubs/${encodeURIComponent(slug)}`);
   if (!club) notFound();
-  const [board, tournaments, news, seasons, staff] = await Promise.all([
+  const [board, tournaments, news, seasons, staff, tables] = await Promise.all([
     sget<any[]>(`/clubs/${club.id}/leaderboard`),
     sget<any[]>(`/tournaments?club_id=${club.id}&limit=20`),
     sget<any[]>(`/news?club_id=${club.id}&limit=5`),
     sget<any[]>(`/leagues?club_id=${club.id}`),
     sget<any[]>(`/clubs/${club.id}/judges`),
+    sget<any[]>(`/clubs/${club.id}/tables`),
   ]);
   const judges = (staff || []).filter((s) => !s.organizer);
   const liveSeasons = (seasons || []).filter((s) => s.status !== "finished");
@@ -83,6 +84,15 @@ export default async function ClubPage({ params }: { params: Promise<{ slug: str
         </div>
         <aside>
           <ClubActions clubId={club.id} />
+          {tables?.length ? (
+            <div className="panel stack" style={{ marginTop: 16 }}>
+              <h3 style={{ margin: 0 }}>Столы клуба</h3>
+              <p className="muted small" style={{ margin: 0 }}>
+                {tables.length} {tables.length === 1 ? "стол" : tables.length < 5 ? "стола" : "столов"} — посмотрите свободное время и забронируйте.
+              </p>
+              <Link href={`/clubs/${club.slug}/tables`} className="btn primary">Забронировать стол</Link>
+            </div>
+          ) : null}
           <h3 style={{ marginTop: 24 }}>Новости клуба</h3>
           {news?.length ? (
             <ul className="news-list">

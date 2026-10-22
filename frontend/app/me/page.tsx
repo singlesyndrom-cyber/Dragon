@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import ConfirmButton from "@/components/ConfirmButton";
 import { Status, useAction } from "@/components/Form";
 import CreatorRequest from "@/components/CreatorRequest";
 import Guard from "@/components/Guard";
@@ -43,6 +44,7 @@ function Cabinet() {
           <Deals />
         </div>
         <aside className="stack">
+          <MyBookings />
           <MyClubs />
           <CreatorRequest />
           <div className="panel">
@@ -212,6 +214,35 @@ function Deals() {
       </div>
       <Status error={error} done={done} />
     </section>
+  );
+}
+
+/** Будущие брони столов во всех клубах; отмена - с подтверждением. */
+function MyBookings() {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const { busy, error, run } = useAction();
+  const load = useCallback(() => api<any[]>("/bookings/mine").then(setRows).catch(() => setRows([])), []);
+  useEffect(() => { load(); }, [load]);
+  if (!rows?.length) return null;
+  return (
+    <div className="panel">
+      <h3>Мои брони столов</h3>
+      <ul className="news-list">
+        {rows.map((b) => (
+          <li key={b.id} style={{ padding: "8px 0" }}>
+            <div><b>{b.table}</b> · <Link href={`/clubs/${b.club_slug}/tables`}>{b.club}</Link></div>
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <span className="num small">{b.when}</span>
+              <ConfirmButton className="link-btn" danger disabled={busy} question="Отменить бронь?" confirmLabel="Отменить"
+                onConfirm={() => run(async () => { await api(`/bookings/${b.id}`, { method: "DELETE" }); await load(); })}>
+                отменить
+              </ConfirmButton>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <Status error={error} />
+    </div>
   );
 }
 
