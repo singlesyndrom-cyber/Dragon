@@ -307,7 +307,7 @@ async def club_members(club_id: int, tournament_id: int | None = None, user: Use
                TournamentPlayer.user_id.in_(ids))
         .group_by(TournamentPlayer.user_id))).all()) if ids else {}
     tg = set((await session.execute(select(AuthAccount.user_id).where(
-        AuthAccount.provider == Provider.telegram, AuthAccount.user_id.in_(ids))).scalars())) if ids else set()
+        AuthAccount.provider == Provider.telegram, AuthAccount.user_id.in_(ids)))).scalars()) if ids else set()
     registered = set()
     if tournament_id:
         registered = set((await session.execute(select(TournamentPlayer.user_id).where(
