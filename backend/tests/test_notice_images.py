@@ -51,6 +51,8 @@ class Fake:
     def __call__(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
         if url.startswith("https://cards.scryfall.io/"):
+            if "DragonTCG" not in request.headers.get("user-agent", ""):
+                return httpx.Response(400)                                  # как настоящий Scryfall
             self.calls.append(("scryfall", url))
             return httpx.Response(200, content=png(10, 10, "RGB"), headers={"content-type": "image/png"})
         if url.startswith("https://upload.vk.test/"):

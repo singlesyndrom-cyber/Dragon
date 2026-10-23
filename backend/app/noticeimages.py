@@ -94,7 +94,10 @@ async def image_bytes(img: NoticeImage) -> bytes:
     if img.data:
         return img.data
     async with vk.client() as c:          # тот же клиент, что для VK (в тестах - подменённый транспорт)
-        r = await c.get(img.source_url, follow_redirects=True)
+        # Scryfall без осмысленного User-Agent отвечает 400 - те же заголовки, что при загрузке базы карт
+        from .scryfall import HEADERS
+        r = await c.get(img.source_url, follow_redirects=True,
+                        headers={"User-Agent": HEADERS["User-Agent"], "Accept": "image/*"})
     r.raise_for_status()
     return r.content
 
