@@ -14,6 +14,7 @@ def test_parse_edition_page():
     cards = {c["name"]: c for c in berserk.parse_edition(PAGE, "Гибель Богов")}
     assert list(cards) == ["Изобретатель Братства", "Преторианец", "Бернхольм", "Бешеный карлик"]
     inv = cards["Изобретатель Братства"]
+    assert inv["external_id"] == "7/1" and inv["extra"]["proberserk_id"] == "7cdf0cb7a77e4a459b7281e7d9560846"
     assert inv["set_code"] == "7" and inv["type_line"] == "Существо · Братство" and inv["cmc"] == 3
     assert inv["rarity"] == "uncommon" and inv["image_url"] == "https://proberserk.ru/images/cards/7/1.jpg"
     assert inv["extra"]["health"] == 7 and inv["extra"]["move"] == 1 and inv["extra"]["strike"] == "1-1-2"
@@ -25,6 +26,12 @@ def test_parse_edition_page():
     assert land["extra"]["elite"] and land["extra"]["health"] is None and land["extra"]["move"] is None
     assert land["rarity"] == "rare"
     assert cards["Бешеный карлик"]["extra"]["elements"] == ["Нейтральная"] and cards["Бешеный карлик"]["extra"]["class"] is None
+
+
+def test_icons_in_text():
+    from app import berserk
+    assert berserk.mark_icons("Не более 4counter.\r\ncountertap: Воздействие. wolf: прыжок, ova1. Пиво lager") == \
+        "Не более 4{counter}.\n{counter}{tap}: Воздействие. {wolf}: прыжок, {ova}1. Пиво lager"
 
 
 pytestmark_db = pytest.mark.skipif(not os.getenv("RUN_INTEGRATION"), reason="нужен PostgreSQL (RUN_INTEGRATION=1)")
@@ -49,6 +56,12 @@ async def client():
 
 @pytestmark_db
 async def test_sync_search_deck_and_images(client, tmp_path, monkeypatch):
+    from sqlalchemy import text as sql
+    from app.db import SessionLocal
+    async with SessionLocal() as s:          # карта со старым ключом - после загрузки должна исчезнуть
+        await s.execute(sql("INSERT INTO cards (game, external_id, name, name_lower, name_front, is_game_changer, extra) "
+                            "VALUES ('berserk', 'dc921', 'Старая', 'старая', 'старая', false, '{}')"))
+        await s.commit()
     seen: list = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -63,6 +76,7 @@ async def test_sync_search_deck_and_images(client, tmp_path, monkeypatch):
     assert all(r.headers["user-agent"].startswith("DragonClub") for r in seen)
     assert [r.url.path for r in seen] == ["/edition/aa7e3", "/edition/aa7e3", "/edition/e2ba8", "/edition/ab007"]
 
+    assert not (await client.get("/cards/search", params={"q": "старая", "game": "berserk"})).json()["items"]
     stats = (await client.get("/cards/stats")).json()
     assert stats["games"]["berserk"]["cards"] == 4 and stats["berserk_updated"]
 
@@ -92,6 +106,13 @@ async def test_sync_search_deck_and_images(client, tmp_path, monkeypatch):
     card = next(c for c in d["cards"] if c["name"] == "Преторианец")["card"]
     assert card["bk"]["icons"] == {"armor": 1} and card["text"].startswith("Рывок")
     assert (await client.patch(f"/decks/{deck['id']}", json={"format": "commander"}, headers=h)).status_code == 400
+    # лимитед: копий сколько угодно; констрактед: не больше 50 карт
+    r = (await client.patch(f"/decks/{deck['id']}", json={"format": "berserk_limited"}, headers=h)).json()
+    assert not any("копий" in p["text"] for p in r["problems"])
+    await client.put(f"/decks/{deck['id']}", headers=h, json={"name": "Степи", "game": "berserk", "format": "berserk",
+                                                               "text": "\n".join(["3 Преторианец"] * 17) + "\n2 Бернхольм"})
+    texts = " ".join(p["text"] for p in (await client.get(f"/decks/{deck['id']}", headers=h)).json()["problems"])
+    assert "В колоде 53 карт, можно не больше 50" in texts
 
     # картинки - через наш сервер, с кэшем
     from app.config import settings

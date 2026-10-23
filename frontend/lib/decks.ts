@@ -5,7 +5,9 @@ export const DECK_FORMATS: [string, string][] = [
   ["pioneer", "Pioneer"], ["modern", "Modern"], ["legacy", "Legacy"], ["vintage", "Vintage"], ["pauper", "Pauper"],
   ["casual", "Свободный"],
 ];
-export const BK_FORMATS: [string, string][] = [["berserk", "Берсерк (классика)"], ["casual", "Свободный"]];
+export const BK_FORMATS: [string, string][] = [
+  ["berserk", "Констрактед (30–50, до 3 копий)"], ["berserk_limited", "Лимитед: драфт, силед"], ["casual", "Свободный"],
+];
 export const COMMANDER_FORMATS = new Set(["commander", "duel", "brawl"]);
 export const formatTitle = (f: string) => [...DECK_FORMATS, ...BK_FORMATS].find(([k]) => k === f)?.[1] || f;
 

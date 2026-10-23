@@ -435,3 +435,8 @@ table.members td { vertical-align: middle; }
 .printgrid img { width: 100%; aspect-ratio: 488 / 680; object-fit: cover; border-radius: 5px; display: block; }
 .printgrid .noimg { aspect-ratio: 488 / 680; display: grid; place-items: center; }
 .decklist .pset { font-family: monospace; }
+
+/* набор отряда «Берсерка» */
+.squadcard { padding: 0; border: 0; background: none; cursor: pointer; }
+.squadcard.dim { opacity: 0.45; }
+.squadcard:focus-visible { outline: 2px solid var(--gilt); }

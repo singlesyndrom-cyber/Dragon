@@ -19,8 +19,11 @@ FORMATS: dict[str, dict] = {
     "vintage": {"title": "Vintage", "size": 60},
     "pauper": {"title": "Pauper", "size": 60},
     "casual": {"title": "Свободный", "size": 0},
-    # классический «Берсерк»: колода от 30 карт, не больше 3 одинаковых
-    "berserk": {"title": "Берсерк", "size": 30, "copies": 3, "game": "berserk", "sideboard": False},
+    # классический «Берсерк» (Расширенные правила 6.1-1, глоссарий «Колода констрактед / лимитед»)
+    "berserk": {"title": "Берсерк: констрактед", "size": 30, "max": 50, "copies": 3, "game": "berserk",
+                "sideboard": False},
+    "berserk_limited": {"title": "Берсерк: лимитед", "size": 30, "copies": None, "game": "berserk",
+                        "sideboard": False},
 }
 GAME_FORMATS = {"berserk": "berserk"}      # формат по умолчанию для колод не-MTG
 SIDEBOARD_MAX = 15
@@ -91,6 +94,8 @@ def check(entries: list[Entry], fmt: str) -> list[dict]:
             err(f"В колоде {total} карт, нужно ровно {rules['size']} (с командиром)")
         elif not is_cmd and total < rules["size"]:
             err(f"В основной колоде {total} карт, нужно не меньше {rules['size']}")
+        elif rules.get("max") and total > rules["max"]:
+            err(f"В колоде {total} карт, можно не больше {rules['max']}")
         if not is_cmd and rules.get("sideboard", True) and sum(e.qty for e in side) > SIDEBOARD_MAX:
             err(f"В сайдборде {sum(e.qty for e in side)} карт, можно не больше {SIDEBOARD_MAX}")
 

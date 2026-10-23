@@ -49,7 +49,7 @@ KEYS = {
     "game": "game", "игра": "game",
     "el": "element", "element": "element", "стихия": "element",               # «Берсерк»
     "class": "class", "класс": "class",
-    "hp": "health", "health": "health", "здоровье": "health", "жизнь": "health",
+    "hp": "health", "health": "health", "здоровье": "health", "жизнь": "health", "жизни": "health",
     "order": "order", "сортировка": "order", "dir": "dir",
 }
 COLOR_WORDS = {

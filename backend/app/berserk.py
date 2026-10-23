@@ -14,7 +14,7 @@ import re
 from datetime import datetime, timezone
 
 import httpx
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 
 from .cardimport import _finalize
 from .db import SessionLocal
@@ -43,8 +43,21 @@ RARITY = {"обычная": "common", "необычная": "uncommon", "ред�
           "промо": "special", "фойл": "special"}
 # значки в тексте карт (на сайте - картинки с этими именами)
 ICONS = ("tap", "counter", "instant", "first", "second", "strike", "health", "move", "armor", "ova", "ovz", "ovs",
-         "uchr", "direct", "regen", "stamina", "zom", "zoz", "zor", "zov", "zot", "zoo", "zoal", "elite", "ordinary")
-ICON_WORD = re.compile(r"\b(" + "|".join(sorted(ICONS, key=len, reverse=True)) + r")(?=\d|\b|[^a-z])")
+         "uchr", "direct", "regen", "stamina", "zom", "zoz", "zor", "zov", "zot", "zoo", "zoal", "elite", "ordinary",
+         "wolf", "human")
+LATIN_RUN = re.compile(r"(?<![A-Za-z])[a-z]+(?![A-Za-z])")     # значки иногда слиты: «countertap», «4counter»
+
+
+def _split_icons(run: str) -> list[str] | None:
+    """«countertap» -> ["counter", "tap"]; None, если это не цепочка значков (обычное латинское слово)."""
+    if not run:
+        return []
+    for icon in sorted(ICONS, key=len, reverse=True):
+        if run.startswith(icon):
+            rest = _split_icons(run[len(icon):])
+            if rest is not None:
+                return [icon, *rest]
+    return None
 
 
 class SyncBusy(Exception):
@@ -58,7 +71,8 @@ def _clean(s: str) -> str:
 def mark_icons(s: str) -> str:
     """«tap: Выстрел» -> «{tap}: Выстрел», «ova1» -> «{ova}1»: значки отрисует сайт."""
     s = html.unescape(s).replace("\r", "")
-    s = ICON_WORD.sub(lambda m: "{" + m.group(1) + "}", s)
+    s = LATIN_RUN.sub(lambda m: "".join("{" + t + "}" for t in parts) if (parts := _split_icons(m.group(0)))
+                      else m.group(0), s)
     return "\n".join(re.sub(r"[ \t]+", " ", ln).strip() for ln in s.split("\n")).strip()
 
 
@@ -102,7 +116,8 @@ def parse_edition(page: str, set_name: str) -> list[dict]:
         health, strike = _clean(cells[7]), _clean(cells[9])
         move = _clean(HIDDEN.sub(" ", cells[8]))          # у артефактов и местностей тут значок типа, не число
         c = {
-            "external_id": card_id, "name": name, "set_code": set_code, "set_name": set_name,
+            # номер карты на ProBerserk короткий и бывает одинаковым в разных выпусках - ключ по картинке выпуска
+            "external_id": img.rsplit(".", 1)[0][:64], "name": name, "set_code": set_code, "set_name": set_name,
             "type_line": f"{kind} · {klass}" if klass else kind,
             "mana_cost": str(int(cost.group(1))) if cost else None, "cmc": float(cost.group(1)) if cost else None,
             "text": mark_icons(hidden.group(1)) if hidden else None,
@@ -112,7 +127,7 @@ def parse_edition(page: str, set_name: str) -> list[dict]:
             "extra": {"number": number, "elements": elements, "elite": elite, "unique": unique, "class": klass or None,
                       "kind": kind, "health": int(health) if health.isdigit() else None,
                       "move": int(move) if move.isdigit() else None, "strike": strike or None,
-                      "icons": icons, "source": "ProBerserk.ru"},
+                      "icons": icons, "source": "ProBerserk.ru", "proberserk_id": card_id},
         }
         cards.append(_finalize(c, "berserk"))
     return cards
@@ -155,7 +170,12 @@ async def sync(trigger: str = "admin", client: httpx.AsyncClient | None = None, 
                 http = client or httpx.AsyncClient(headers=HEADERS, timeout=httpx.Timeout(15, read=60),
                                                    follow_redirects=True)
                 try:
-                    run.cards = await upsert_cards(s, await fetch_all(http, pause))
+                    cards = await fetch_all(http, pause)
+                    run.cards = await upsert_cards(s, cards)
+                    # карты, которых больше нет в источнике (или со старым ключом), убираем; колоды теряют только ссылку
+                    keep = {c["external_id"] for c in cards}
+                    await s.execute(delete(Card).where(Card.game == "berserk", Card.external_id.not_in(keep)))
+                    await s.commit()
                 except Exception as e:  # noqa: BLE001
                     await s.rollback()
                     run.error = explain(e)[:2000]

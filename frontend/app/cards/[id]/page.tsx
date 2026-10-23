@@ -115,7 +115,7 @@ function BerserkPanel({ c }: { c: any }) {
           <span key={el}>{i ? ", " : ""}<Link href={searchHref(`el:${el.toLowerCase()}`, "berserk")}>{el}</Link></span>
         ))}</dd>
         <dt>Стоимость</dt><dd>{c.mana_cost} · {b.elite ? "элитная" : "рядовая"}{b.unique ? " · уникальная" : ""}</dd>
-        {b.health != null ? <><dt>Здоровье</dt><dd className="num">{b.health}</dd></> : null}
+        {b.health != null ? <><dt>Жизни</dt><dd className="num">{b.health}</dd></> : null}
         {b.move != null ? <><dt>Движение</dt><dd className="num">{b.move}</dd></> : null}
         {b.strike ? <><dt>Удар</dt><dd className="num">{b.strike}</dd></> : null}
         {icons.length ? (

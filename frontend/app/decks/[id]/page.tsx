@@ -8,6 +8,7 @@ import FlipCard from "@/components/FlipCard";
 import DeckStats from "@/components/deck/DeckStats";
 import ExportBox from "@/components/deck/ExportBox";
 import Problems from "@/components/deck/Problems";
+import SquadBuilder from "@/components/deck/SquadBuilder";
 import TestHand from "@/components/deck/TestHand";
 import { useLang } from "@/components/deck/useLang";
 import { Status, useAction } from "@/components/Form";
@@ -82,7 +83,7 @@ function Deck({ id }: { id: string }) {
       <Problems problems={d.problems} />
 
       <div className="tabs section" role="tablist">
-        {([["list", "Список"], ["stats", "Статистика"], ["hand", "Тестовая рука"], ["export", "Экспорт"]] as const).map(([k, l]) => (
+        {([["list", "Список"], ["stats", "Статистика"], ["hand", d.game === "berserk" ? "Набор отряда" : "Тестовая рука"], ["export", "Экспорт"]] as const).map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
@@ -92,7 +93,7 @@ function Deck({ id }: { id: string }) {
           <aside className="deckpreview"><FlipCard front={img} back={preview?.card?.back_image} alt={preview?.name || ""} /></aside>
         </div>
       ) : tab === "stats" ? <DeckStats rows={rows} />
-        : tab === "hand" ? <TestHand rows={rows} lang={lang} size={d.game === "berserk" ? 15 : 7} berserk={d.game === "berserk"} />
+        : tab === "hand" ? (d.game === "berserk" ? <SquadBuilder rows={rows} lang={lang} /> : <TestHand rows={rows} lang={lang} />)
         : <ExportBox rows={rows} name={d.name} />}
     </>
   );
