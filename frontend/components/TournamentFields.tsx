@@ -1,15 +1,17 @@
 "use client";
 
+import { useAuth } from "@/lib/auth";
+import { ADMIN_TIERS, TIERS } from "@/lib/rating";
 import { DECK_POLICY } from "@/lib/tournamentKinds";
 
 export type Fields = {
   name: string; starts_at: string; description: string; rounds: string;
-  deck_policy: string; self_registration: boolean; max_players: string; league_id: string; silent: boolean;
+  deck_policy: string; self_registration: boolean; max_players: string; league_id: string; silent: boolean; tier: string;
 };
 
 export const EMPTY: Fields = {
   name: "", starts_at: "", description: "", rounds: "", deck_policy: "optional",
-  self_registration: true, max_players: "", league_id: "", silent: false,
+  self_registration: true, max_players: "", league_id: "", silent: false, tier: "club",
 };
 
 /** Тело запроса к API из полей формы (пустое -> не задано). */
@@ -17,7 +19,7 @@ export function toBody(f: Fields, format: string) {
   const b: any = {
     name: f.name.trim(), description: f.description.trim(), deck_policy: f.deck_policy,
     self_registration: f.self_registration, max_players: f.max_players ? +f.max_players : null,
-    league_id: f.league_id ? +f.league_id : null, silent: f.silent,
+    league_id: f.league_id ? +f.league_id : null, silent: f.silent, tier: f.tier || "club",
   };
   if (f.starts_at) b.starts_at = f.starts_at;
   if (format !== "edh" && f.rounds) b.rounds = +f.rounds;
@@ -28,6 +30,9 @@ export function toBody(f: Fields, format: string) {
 export default function TournamentFields({ f, set, format, seasons }: {
   f: Fields; set: (patch: Partial<Fields>) => void; format: string; seasons: any[] | null;
 }) {
+  const { me } = useAuth();
+  const admin = me?.role === "admin";
+  const locked = ADMIN_TIERS.has(f.tier) && !admin;
   const on = (k: keyof Fields) => (e: { target: { value: string } }) => set({ [k]: e.target.value } as Partial<Fields>);
   return (
     <>
@@ -65,6 +70,21 @@ export default function TournamentFields({ f, set, format, seasons }: {
           ) : <p className="hint">Подходящих сезонов в клубе нет. Сезон создаётся в «Управлении клубом».</p>}
         </fieldset>
       ) : null}
+
+      <fieldset>
+        <legend>Уровень турнира</legend>
+        <div className="choice-list">
+          {TIERS.map(([k, name, hint]) => (
+            <label key={k} className="choice">
+              <input type="radio" name="tier" checked={f.tier === k} disabled={locked || (ADMIN_TIERS.has(k) && !admin)}
+                onChange={() => set({ tier: k })} />
+              <span>{name} <span className="muted small">{hint}</span></span>
+            </label>
+          ))}
+        </div>
+        <p className="hint">Все турниры с результатами идут в рейтинг силы по дисциплине. На открытые турниры, региональные чемпионаты и про-туры
+          игроки других городов записываются со своим номером и не вступают в ваш клуб.</p>
+      </fieldset>
 
       <fieldset>
         <legend>Участники и деклисты</legend>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import ConfirmButton from "@/components/ConfirmButton";
 import { Status, useAction } from "@/components/Form";
+import CitySetting from "@/components/CitySetting";
 import CreatorRequest from "@/components/CreatorRequest";
 import Guard from "@/components/Guard";
 import TelegramLogin from "@/components/TelegramLogin";
@@ -45,7 +46,7 @@ function Cabinet() {
       {me.player_no ? (
         <p className="lead" style={{ marginTop: 0 }}>
           Ваш номер игрока <b className="num">{me.player_no}</b>. Назовите его организатору, чтобы он записал вас на турнир;
-          по нему же другие игроки видят вашу <Link href={`/players/${me.player_no}`}>репутацию на аукционе</Link>.
+          по нему же другие игроки видят ваш <Link href={`/players/${me.player_no}`}>рейтинг силы и репутацию на аукционе</Link>.
         </p>
       ) : null}
       <div className="split">
@@ -56,6 +57,7 @@ function Cabinet() {
         <aside className="stack">
           <MyBookings />
           <MyClubs />
+          {me.player_no ? <CitySetting playerNo={me.player_no} /> : null}
           <CreatorRequest />
           <div className="panel">
             <h3>Аккаунт</h3>

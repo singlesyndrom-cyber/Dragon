@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 
 const LINKS = [
   ["/tournaments", "Турниры"],
+  ["/ratings", "Рейтинг"],
   ["/leagues", "Лиги"],
   ["/clubs", "Клубы"],
   ["/news", "Новости"],

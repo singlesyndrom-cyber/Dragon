@@ -41,6 +41,7 @@ class User(Base):
     tg_username: Mapped[str | None] = mapped_column(String(64))  # для связи сторон сделки
     # гость: игрок, которого организатор добавил по имени, без аккаунта; позже сливается с настоящим
     is_guest: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    city: Mapped[str | None] = mapped_column(String(64))   # город игрока для рейтинга; пусто - город его основного клуба
     guest_club_id: Mapped[int | None] = mapped_column(Integer)   # клуб, где гость был добавлен
     # статус «Создатель Клуба»: право создавать клубы. Выдаёт только админ/модератор через заявку
     is_club_creator: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
@@ -298,6 +299,11 @@ class Tournament(Base):
     round_minutes: Mapped[int | None] = mapped_column(Integer)                 # лимит тура (драфт - 50 минут)
     round_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     series_id: Mapped[int | None] = mapped_column(Integer, index=True)   # серия еженедельных турниров: id первого
+    # уровень: club | city | open | regional | pro (региональный и про-тур назначает только администратор)
+    tier: Mapped[str] = mapped_column(String(16), default="club", server_default="club")
+    # учитывать в рейтинге силы; администратор может исключить турнир с указанием причины
+    rated: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
+    rating_note: Mapped[str] = mapped_column(String(200), default="", server_default="")
 
     players: Mapped[list["TournamentPlayer"]] = relationship(cascade="all, delete-orphan")
     matches: Mapped[list["Match"]] = relationship(cascade="all, delete-orphan")
@@ -762,3 +768,39 @@ class WaitlistEntry(Base):
     bracket: Mapped[int] = mapped_column(Integer, default=2, server_default=text("2"))
     deck_id: Mapped[int | None] = mapped_column(ForeignKey("decks.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PlayerRating(Base):
+    """Рейтинг силы (Glicko-2) игрока в дисциплине. Пересчитывается целиком по истории турниров (app/rating.py)."""
+    __tablename__ = "player_ratings"
+    __table_args__ = (UniqueConstraint("user_id", "discipline"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    discipline: Mapped[str] = mapped_column(String(32), index=True)
+    rating: Mapped[float] = mapped_column(Float)
+    rd: Mapped[float] = mapped_column(Float)              # отклонение на момент последнего турнира
+    volatility: Mapped[float] = mapped_column(Float)
+    games: Mapped[int] = mapped_column(Integer)
+    wins: Mapped[int] = mapped_column(Integer)
+    draws: Mapped[int] = mapped_column(Integer)
+    losses: Mapped[int] = mapped_column(Integer)
+    events: Mapped[int] = mapped_column(Integer)
+    peak: Mapped[float] = mapped_column(Float)
+    last_played: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RatingChange(Base):
+    """Изменение рейтинга игрока за турнир: история для графика и проверки."""
+    __tablename__ = "rating_changes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tournament_id: Mapped[int] = mapped_column(ForeignKey("tournaments.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    discipline: Mapped[str] = mapped_column(String(32))
+    before: Mapped[float] = mapped_column(Float)
+    after: Mapped[float] = mapped_column(Float)
+    rd_after: Mapped[float] = mapped_column(Float)
+    games: Mapped[int] = mapped_column(Integer)
+    ignored: Mapped[int] = mapped_column(Integer, default=0)   # партии, не засчитанные защитой от накрутки
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

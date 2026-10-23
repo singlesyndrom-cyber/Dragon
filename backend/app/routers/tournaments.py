@@ -11,10 +11,11 @@ from sqlalchemy import delete, exists, func, null, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .. import leagues, notify, waitlist
+from .. import leagues, notify, rating, waitlist
 from ..config import settings
 from ..db import get_session
 from ..deps import can_judge, current_user, is_club_organizer
+from ..models import GlobalRole
 from ..models import (Club, ClubMember, ClubStats, Deck, EdhSeat, WaitlistEntry, EdhTable, EdhTableStatus, League, Match, MatchResult,
                       ResultEdit, Tournament, TournamentFormat, TournamentPlayer, TournamentStatus, User)
 from .. import draft as draft_logic
@@ -26,6 +27,7 @@ log = logging.getLogger("tournaments")
 
 
 DeckPolicy = Literal["none", "optional", "required"]
+Tier = Literal["club", "city", "open", "regional", "pro"]
 
 
 class TournamentIn(BaseModel):
@@ -43,6 +45,7 @@ class TournamentIn(BaseModel):
     silent: bool = False                 # тестовый турнир без оповещений
     draft: bool = False                  # бустерный драфт перед турами (рассадка, таймеры пиков, сборка колоды)
     draft_config: dict | None = None     # настройки драфта (см. app/draft.py); пусто - по умолчанию для игры
+    tier: Tier = "club"                  # уровень; региональный чемпионат и про-тур - только администратор
 
 
 class TournamentPatch(BaseModel):
@@ -56,6 +59,7 @@ class TournamentPatch(BaseModel):
     max_players: int | None = Field(default=None, ge=2, le=512)
     league_id: int | None = None
     silent: bool | None = None
+    tier: Tier | None = None
 
 
 class PlayerAdd(BaseModel):
@@ -69,6 +73,17 @@ class PlayerAdd(BaseModel):
 
 class DropIn(BaseModel):
     dropped: bool = True
+
+
+def _check_tier(tier: str | None, user: User) -> None:
+    if tier in rating.ADMIN_TIERS and user.role != GlobalRole.admin:
+        raise HTTPException(403, f"Уровень «{rating.TIERS[tier]}» назначает администратор сайта")
+
+
+def _visitors_welcome(t: Tournament) -> bool:
+    """Открытые турниры, региональные чемпионаты и про-туры: игроки других клубов и городов
+    записываются по своему номеру и не вступают в клуб-организатор."""
+    return (t.tier or "club") in rating.OPEN_TIERS
 
 
 def _aware(dt: datetime) -> datetime:
@@ -161,6 +176,7 @@ async def create_tournament(data: TournamentIn, user: User = Depends(current_use
                             session: AsyncSession = Depends(get_session)):
     if not await is_club_organizer(session, data.club_id, user):
         raise HTTPException(403, "Нужны права организатора клуба")
+    _check_tier(data.tier, user)
     await _check_league(session, data.league_id, data.club_id, data.game, data.format,
                         _aware(data.starts_at) if data.starts_at else None)
     t = _new_tournament(data, user, _aware(data.starts_at) if data.starts_at else datetime.now(timezone.utc))
@@ -184,7 +200,7 @@ def _new_tournament(data: TournamentIn, user: User, starts_at: datetime, name: s
                       rounds_total=rounds, created_by=user.id, description=data.description.strip(),
                       deck_policy=data.deck_policy, self_registration=data.self_registration,
                       max_players=data.max_players, league_id=data.league_id, starts_at=starts_at, announced=False,
-                      silent=data.silent)
+                      silent=data.silent, tier=data.tier)
 
 
 class SeriesIn(BaseModel):
@@ -234,7 +250,7 @@ def _t_out(t: Tournament, club: Club | None, players: int | None = None) -> dict
             "league_id": t.league_id, "deck_policy": t.deck_policy, "self_registration": t.self_registration, "silent": t.silent,
             "draft": bool(t.draft), "draft_sets": (t.draft or {}).get("config", {}).get("sets") or None,
             "round_minutes": t.round_minutes, "round_started_at": t.round_started_at,
-            "max_players": t.max_players}
+            "max_players": t.max_players, "tier": t.tier or "club", "rated": t.rated, "rating_note": t.rating_note}
 
 
 @router.get("")
@@ -292,7 +308,11 @@ async def update_tournament(tid: int, data: TournamentPatch, user: User = Depend
         when = _aware(f["starts_at"]) if f.get("starts_at") else t.starts_at
         await _check_league(session, league_id, t.club_id, t.game, t.format, when)
         t.league_id = league_id
-    for k in ("name", "description", "deck_policy", "self_registration", "max_players", "silent"):
+    if f.get("tier") and f["tier"] != t.tier:          # без изменения уровня права не проверяются
+        _check_tier(f["tier"], user)
+        if t.tier in rating.ADMIN_TIERS and user.role != GlobalRole.admin:
+            raise HTTPException(403, "Уровень турнира назначил администратор: менять его может только он")
+    for k in ("name", "description", "deck_policy", "self_registration", "max_players", "silent", "tier"):
         if k in f and (f[k] is not None or k == "max_players"):
             setattr(t, k, f[k].strip() if isinstance(f[k], str) and k in ("name", "description") else f[k])
     if "rounds" in f and t.format != TournamentFormat.edh:
@@ -358,7 +378,8 @@ async def add_player(tid: int, data: PlayerAdd, user: User = Depends(current_use
         if not deck or deck.user_id != user.id or deck.game != t.game:
             raise HTTPException(400, "Укажите свою колоду той же игры, что и турнир")
         deck_id = deck.id
-    await _ensure_member(session, t.club_id, player.id)
+    if player.is_guest or not _visitors_welcome(t):
+        await _ensure_member(session, t.club_id, player.id)
     session.add(TournamentPlayer(tournament_id=tid, user_id=player.id, seed=random.randint(0, 10**9),
                                  bracket=data.bracket, checked_in=late_edh, deck_id=deck_id))
     await session.commit()
@@ -455,7 +476,8 @@ async def self_register(session: AsyncSession, t: Tournament, user: User, bracke
     deck = None
     if deck_id is not None:
         deck = check_deck_for(await session.get(Deck, deck_id), t, user)
-    await _ensure_member(session, t.club_id, user.id)                # автовступление в клуб
+    if not _visitors_welcome(t):
+        await _ensure_member(session, t.club_id, user.id)            # автовступление в клуб
     await session.execute(delete(WaitlistEntry).where(WaitlistEntry.tournament_id == t.id,
                                                       WaitlistEntry.user_id == user.id))
     tp = TournamentPlayer(tournament_id=t.id, user_id=user.id, seed=random.randint(0, 10**9), bracket=bracket,
@@ -666,6 +688,7 @@ async def finish(tid: int, user: User = Depends(current_user), session: AsyncSes
     t.status = TournamentStatus.finished
     await session.flush()
     await _recompute_club_stats(session, t.club_id)
+    await rating.recompute(session)
     await notify.on_tournament_finished(session, t, table)
     await session.commit()
     return {"winner_id": table[0].player_id, "standings": [{"rank": r.rank, "user_id": r.player_id,
@@ -761,6 +784,7 @@ async def delete_tournament(tid: int, user: User = Depends(current_user), sessio
     await session.flush()
     guests_removed = await _remove_orphan_guests(session, list(guest_ids))
     await _recompute_club_stats(session, club_id)
+    await rating.recompute(session)
     await session.commit()
     log.warning("турнир %s «%s» (клуб %s) удалён пользователем %s", tid, name, club_id, user.id)
     return {"deleted": tid, "guests_removed": guests_removed}

@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .. import edh, leagues, notify
+from .. import edh, leagues, notify, rating
 from ..db import SessionLocal, get_session
 from ..deps import can_judge, current_user, is_club_organizer
 from ..models import (ClubMember, EdhSeat, League, EdhTable, EdhTableStatus, Tournament,
@@ -268,6 +268,7 @@ async def finish(tid: int, user: User = Depends(current_user), session: AsyncSes
     t.status = TournamentStatus.finished
     await session.flush()
     await _recompute_club_stats(session, t.club_id)
+    await rating.recompute(session)
     await notify.on_tournament_finished(session, t)
     await session.commit()
     return {"ok": True}

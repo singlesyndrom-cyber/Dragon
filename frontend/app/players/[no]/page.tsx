@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import PlayerLookup from "@/components/PlayerLookup";
+import RatingCards from "@/components/RatingCards";
 import { sget } from "@/lib/api";
 import { plural } from "@/lib/format";
 
@@ -15,7 +16,7 @@ const score = (avg: number | null, n: number) =>
 export default async function PlayerPage({ params }: { params: Promise<{ no: string }> }) {
   const { no } = await params;
   if (!/^\d{1,9}$/.test(no)) notFound();
-  const p = await sget<any>(`/players/${no}`);
+  const [p, rt] = await Promise.all([sget<any>(`/players/${no}`), sget<any>(`/ratings/player/${no}`)]);
   if (!p) {
     return (
       <>
@@ -33,6 +34,8 @@ export default async function PlayerPage({ params }: { params: Promise<{ no: str
         Номер игрока <b className="num">{p.player_no}</b> · на платформе с {new Date(p.since).toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}
         {p.banned ? <span className="badge" style={{ marginLeft: 8 }}>заблокирован на аукционе</span> : null}
       </p>
+      <h2 style={{ marginTop: 8 }}>Рейтинг силы{rt?.city ? <span className="muted small" style={{ fontFamily: "var(--font-body)" }}> · город {rt.city}</span> : null}</h2>
+      <RatingCards rows={rt?.ratings || []} city={rt?.city || null} need={rt?.provisional_games || 10} />
       <div className="split">
         <div>
           <h2 style={{ marginTop: 0 }}>Репутация на аукционе</h2>

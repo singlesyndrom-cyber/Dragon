@@ -210,4 +210,7 @@ async def ban(user_id: int, data: BanIn, admin: User = Depends(require_admin),
     if u.id == admin.id:
         raise HTTPException(400, "Нельзя заблокировать себя")
     u.is_banned = data.banned
+    await session.flush()
+    from .. import rating
+    await rating.recompute(session)          # партии заблокированного не учитываются в рейтинге силы
     await session.commit()

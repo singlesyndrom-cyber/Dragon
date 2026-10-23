@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import Markdown from "@/components/Markdown";
+import RatingAdmin from "@/components/RatingAdmin";
 import Standings, { Delta } from "@/components/Standings";
 import TournamentActions from "@/components/TournamentActions";
 import { sget } from "@/lib/api";
 import { dateTime, FORMATS, GAMES, signed, T_STATUS } from "@/lib/format";
+import { DISCIPLINE_NAME, TIER_NAME } from "@/lib/rating";
 
 const RESULT: Record<string, string> = { p1: "победа первого", p2: "победа второго", draw: "ничья" };
 
@@ -13,6 +15,30 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
   const t = await sget<any>(`/tournaments/${id}`);
   if (!t) notFound();
   const isEdh = t.format === "edh";
+  const rt = t.status === "finished" ? await sget<any>(`/ratings/tournaments/${id}`) : null;
+  const ratingBlock = rt ? (
+    <section className="section">
+      <h2>Рейтинг силы · {DISCIPLINE_NAME[rt.discipline] || rt.discipline}</h2>
+      {rt.changes.length ? (
+        <div className="table-wrap">
+          <table className="rating-table">
+            <thead><tr><th>Игрок</th><th className="r">Было</th><th className="r">Стало</th><th className="r">Изменение</th><th className="r">Партий</th></tr></thead>
+            <tbody>
+              {rt.changes.map((c: any) => (
+                <tr key={c.user_id}>
+                  <td>{c.player_no ? <Link href={`/players/${c.player_no}`}>{c.nickname}</Link> : c.nickname}</td>
+                  <td className="r num">{c.before}</td><td className="r num">{c.after}</td>
+                  <td className={`r num ${c.delta > 0 ? "win" : c.delta < 0 ? "loss" : "muted"}`}>{c.delta > 0 ? "+" : ""}{c.delta}</td>
+                  <td className="r num">{c.games}{c.ignored ? <span className="muted small" title="Не засчитаны защитой от накрутки: та же пара слишком часто за 30 дней"> (+{c.ignored} не засч.)</span> : null}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : <p className="muted">Турнир не повлиял на рейтинг: {rt.reason}.</p>}
+      <p className="muted small"><Link href={`/ratings?discipline=${rt.discipline}`}>Таблица рейтинга →</Link></p>
+    </section>
+  ) : null;
 
   let body: React.ReactNode = null;
   if (isEdh) {
@@ -113,6 +139,8 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
           <dl className="facts">
             <dt>Клуб</dt><dd><Link href={`/clubs/${t.club_slug}`}>{t.club}</Link></dd>
             <dt>Формат</dt><dd>{FORMATS[t.format] || t.format}, {GAMES[t.game] || t.game}</dd>
+            {t.tier && t.tier !== "club" ? (<><dt>Уровень</dt><dd>{TIER_NAME[t.tier] || t.tier}{["open", "regional", "pro"].includes(t.tier)
+              ? <span className="muted small"> — игроки других городов записываются со своим номером, без вступления в клуб</span> : null}</dd></>) : null}
             <dt>Начало</dt><dd>{dateTime(t.starts_at)}</dd>
             <dt>Статус</dt><dd>{T_STATUS[t.status]}{t.round ? `, тур ${t.round}${t.rounds_total ? ` из ${t.rounds_total}` : ""}` : ""}</dd>
             <dt>Участники</dt><dd>{t.players}{t.max_players ? ` из ${t.max_players}` : ""}</dd>
@@ -127,6 +155,8 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
             </p>
           ) : null}
           {body}
+          {ratingBlock}
+          {t.status === "finished" ? <RatingAdmin tid={t.id} rated={t.rated !== false} tier={t.tier || "club"} /> : null}
         </div>
         <aside>
           <TournamentActions t={t} />
