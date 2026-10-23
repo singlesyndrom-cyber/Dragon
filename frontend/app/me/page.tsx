@@ -7,6 +7,7 @@ import { Status, useAction } from "@/components/Form";
 import CreatorRequest from "@/components/CreatorRequest";
 import Guard from "@/components/Guard";
 import TelegramLogin from "@/components/TelegramLogin";
+import VkButton from "@/components/VkButton";
 import { api } from "@/lib/api";
 import { VISIBILITY, formatTitle } from "@/lib/decks";
 import { useAuth } from "@/lib/auth";
@@ -57,6 +58,12 @@ function Cabinet() {
                 <TelegramLogin onAuth={onTelegram} />
                 <Status error={link.error} done={link.done} />
               </>
+            ) : null}
+            {!me.providers.includes("vk") ? (
+              <div className="section" style={{ marginTop: 16 }}>
+                <p className="small">Привяжите VK — чтобы входить через VK и получать напоминания от сообщества клуба.</p>
+                <VkButton purpose="link" label="Привязать VK" />
+              </div>
             ) : null}
           </div>
           {me.providers.includes("email") ? <ChangePassword /> : null}

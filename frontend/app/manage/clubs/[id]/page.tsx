@@ -41,6 +41,11 @@ function ManageClub({ clubId }: { clubId: number }) {
             <p style={{ margin: 0 }} className="muted">Столы клуба, часы работы и брони участников. О новых бронях бот пишет организаторам в личку.</p>
             <Link href={`/manage/clubs/${clubId}/tables`} className="btn">Открыть столы</Link>
           </section>
+          <section className="panel actions" style={{ marginTop: 16 }}>
+            <h2 style={{ margin: 0 }}>ВКонтакте</h2>
+            <p style={{ margin: 0 }} className="muted">Беседа клуба с анонсами и записью кнопкой, посты на стене сообщества, напоминания игрокам в личку.</p>
+            <Link href={`/manage/clubs/${clubId}/vk`} className="btn">Настроить VK</Link>
+          </section>
           <ClubTournaments clubId={clubId} />
           <Seasons clubId={clubId} />
           <ArticleForm clubId={clubId} />

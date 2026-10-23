@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { Status, useAction } from "@/components/Form";
 import TelegramLogin from "@/components/TelegramLogin";
+import VkButton from "@/components/VkButton";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -49,6 +50,9 @@ export default function Login() {
           <h3>Через Telegram</h3>
           <p className="muted small">Тот же аккаунт, что у бота: ставки на аукционе и уведомления привяжутся автоматически.</p>
           <TelegramLogin onAuth={onTelegram} />
+          <div className="section" style={{ marginTop: 24 }}>
+            <VkButton purpose="login" label="Войти через VK" />
+          </div>
         </aside>
       </div>
     </>
