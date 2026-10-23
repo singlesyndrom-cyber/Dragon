@@ -24,7 +24,7 @@ log = logging.getLogger("berserk")
 
 SITE = "https://proberserk.ru"
 SOURCE = "proberserk"
-HEADERS = {"User-Agent": "DragonClub/1.0 (+https://dragonclub.games; база клуба, источник указывается)",
+HEADERS = {"User-Agent": "DragonClub/1.0 (+https://dragonclub.games; card base of the club, source credited)",
            "Accept": "text/html"}
 LOCK_ID = 7_420_002
 PAUSE = 3.0                                  # секунд между запросами: нагрузка как у читающего человека

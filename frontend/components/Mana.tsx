@@ -22,8 +22,8 @@ export default function Mana({ text, size = 16 }: { text?: string | null; size?:
         height={size + 2} style={{ verticalAlign: "-0.25em", margin: "0 1px" }} />
     ) : (
       <img key={m.index} src={symbolUrl(m[1])} alt={`{${m[1]}}`} title={`{${m[1]}}`} width={size} height={size}
-        style={{ verticalAlign: "-0.15em", margin: "0 1px" }} />,
-    );
+        style={{ verticalAlign: "-0.15em", margin: "0 1px" }} />
+    ));
     last = m.index + m[0].length;
   }
   if (last < text.length) parts.push(text.slice(last));

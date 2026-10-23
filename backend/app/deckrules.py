@@ -24,6 +24,7 @@ FORMATS: dict[str, dict] = {
 }
 GAME_FORMATS = {"berserk": "berserk"}      # формат по умолчанию для колод не-MTG
 SIDEBOARD_MAX = 15
+COPIES_WORD = {3: "трёх", 4: "четырёх"}
 ANY_NUMBER = re.compile(r"a deck can have any number of cards named", re.I)
 UP_TO = re.compile(r"a deck can have up to (\w+) cards named", re.I)
 WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
@@ -132,7 +133,7 @@ def check(entries: list[Entry], fmt: str) -> list[dict]:
                 too_many.append(f"{name} ×{n}")
         if too_many:
             err(("Singleton — одна копия каждой карты: " if is_cmd
-                 else f"Больше {rules.get('copies', 4)} копий: ")
+                 else f"Больше {COPIES_WORD.get(rules.get('copies', 4))} копий: ")
                 + ", ".join(sorted(too_many)[:12]))
 
     if fmt in FORMATS and fmt != "casual" and "game" not in rules:

@@ -88,7 +88,7 @@ async def test_sync_search_deck_and_images(client, tmp_path, monkeypatch):
     d = (await client.get(f"/decks/{deck['id']}", headers=h)).json()
     assert d["format"] == "berserk"
     texts = " ".join(p["text"] for p in d["problems"])
-    assert "нужно не меньше 30" in texts and "Больше 3 копий: Преторианец ×4" in texts
+    assert "нужно не меньше 30" in texts and "Больше трёх копий: Преторианец ×4" in texts
     card = next(c for c in d["cards"] if c["name"] == "Преторианец")["card"]
     assert card["bk"]["icons"] == {"armor": 1} and card["text"].startswith("Рывок")
     assert (await client.patch(f"/decks/{deck['id']}", json={"format": "commander"}, headers=h)).status_code == 400
