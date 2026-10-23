@@ -1,7 +1,7 @@
 import enum
 from datetime import date, datetime
 
-from sqlalchemy import (BigInteger, Date, DateTime, Enum, Float, ForeignKey, Index, Integer, Sequence, String, text,
+from sqlalchemy import (BigInteger, Date, LargeBinary, DateTime, Enum, Float, ForeignKey, Index, Integer, Sequence, String, text,
                         Text, UniqueConstraint, func)
 from sqlalchemy.dialects.postgresql import JSONB as _JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -144,6 +144,31 @@ class ClubVkChat(Base):
     game: Mapped[str] = mapped_column(String(16))
     peer_id: Mapped[int] = mapped_column(BigInteger)                 # 2000000000 + номер беседы у сообщества
     title: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class NoticeImage(Base):
+    """Картинка для оповещений клуба. purpose: announce - анонсы турниров; other - итоги и новости.
+    game: mtg / berserk / any. Загруженная хранится здесь (уменьшенный JPEG), арт карты - ссылкой на Scryfall."""
+    __tablename__ = "notice_images"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id", ondelete="CASCADE"), index=True)
+    purpose: Mapped[str] = mapped_column(String(16), default="announce")
+    game: Mapped[str] = mapped_column(String(16), default="any")
+    source_url: Mapped[str | None] = mapped_column(String(512))       # арт карты (Scryfall art_crop)
+    data: Mapped[bytes | None] = mapped_column(LargeBinary)           # загруженный файл (JPEG)
+    width: Mapped[int | None] = mapped_column(Integer)
+    height: Mapped[int | None] = mapped_column(Integer)
+    card_id: Mapped[int | None] = mapped_column(ForeignKey("cards.id", ondelete="SET NULL"))
+    card_name: Mapped[str | None] = mapped_column(String(255))
+    credit: Mapped[str | None] = mapped_column(String(255))           # «Арт: художник»
+    enabled: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
+    uses: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    vk_attachment: Mapped[str | None] = mapped_column(String(128))    # загружено в VK: photo<owner>_<id>_<key>
+    vk_group_id: Mapped[int | None] = mapped_column(BigInteger)
+    added_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

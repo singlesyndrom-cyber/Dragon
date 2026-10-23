@@ -97,9 +97,10 @@ async def enable_longpoll(token: str, group_id: int) -> None:
                message_new=1, message_event=1)
 
 
-async def send_message(token: str, peer_id: int, text: str, buttons: list | None = None, random_id: int = 0) -> None:
+async def send_message(token: str, peer_id: int, text: str, buttons: list | None = None, random_id: int = 0,
+                       attachment: str | None = None) -> None:
     await call("messages.send", token, peer_id=peer_id, random_id=random_id, message=text[:4000],
-               keyboard=keyboard(buttons), dont_parse_links=1)
+               keyboard=keyboard(buttons), dont_parse_links=1, attachment=attachment)
 
 
 async def answer_event(token: str, event_id: str, user_id: int, peer_id: int, text: str) -> None:

@@ -31,6 +31,15 @@ async def deliver(bot: Bot, m: OutboxMessage) -> None:
             return
         except TelegramBadRequest:
             pass  # недоступная картинка не должна терять сообщение - шлём без неё
+    elif m.photo_url:
+        # длинный текст (итоги) в подпись к фото не влезает: картинка - крупным превью над текстом
+        try:
+            await bot.send_message(chat, m.text, parse_mode=m.parse_mode, reply_markup=markup,
+                                   link_preview_options=LinkPreviewOptions(url=m.photo_url, prefer_large_media=True,
+                                                                           show_above_text=True))
+            return
+        except TelegramBadRequest:
+            pass
     await bot.send_message(chat, m.text, parse_mode=m.parse_mode, reply_markup=markup,
                            link_preview_options=LinkPreviewOptions(is_disabled=True))
 

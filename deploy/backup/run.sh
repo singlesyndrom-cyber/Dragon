@@ -18,7 +18,7 @@ backup() {
   day=$(date +%F)
   full="kki-$day.sql.gz"; light="kki-light-$day.sql.gz"
   if pg_dump -h db -U kki kki | gzip > "$DIR/$full.tmp" \
-     && pg_dump -h db -U kki --exclude-table-data=cards --exclude-table-data=sync_runs kki | gzip > "$DIR/$light.tmp"; then
+     && pg_dump -h db -U kki --exclude-table-data=cards --exclude-table-data=sync_runs --exclude-table-data=notice_images kki | gzip > "$DIR/$light.tmp"; then
     mv "$DIR/$full.tmp" "$DIR/$full"; mv "$DIR/$light.tmp" "$DIR/$light"
     ls -1t "$DIR"/kki-light-*.sql.gz 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm --
     ls -1t "$DIR"/kki-2*.sql.gz 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm --

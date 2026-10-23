@@ -278,6 +278,7 @@ function MyClubs() {
                     <span>брони в Telegram</span>
                   </label>
                 ) : null}
+                {c.staff ? <Link href={`/manage/clubs/${c.id}/images`}>Картинки оповещений</Link> : null}
                 {c.organizer ? <Link href={`/tournaments/new?club=${c.id}`}>Создать турнир</Link> : (
                   <ConfirmButton className="link-btn" danger disabled={busy}
                     question={`Выйти из клуба «${c.name}»? Очки лиги и банк EDH в нём обнулятся, будущие брони отменятся.`}

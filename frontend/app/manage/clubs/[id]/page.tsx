@@ -46,6 +46,11 @@ function ManageClub({ clubId }: { clubId: number }) {
             <p style={{ margin: 0 }} className="muted">Беседа клуба с анонсами и записью кнопкой, посты на стене сообщества, напоминания игрокам в личку.</p>
             <Link href={`/manage/clubs/${clubId}/vk`} className="btn">Настроить VK</Link>
           </section>
+          <section className="panel actions" style={{ marginTop: 16 }}>
+            <h2 style={{ margin: 0 }}>Картинки оповещений</h2>
+            <p style={{ margin: 0 }} className="muted">Пул картинок и артов карт для анонсов и итогов в Telegram и VK — сменяются по очереди.</p>
+            <Link href={`/manage/clubs/${clubId}/images`} className="btn">Открыть картинки</Link>
+          </section>
           <ClubTournaments clubId={clubId} />
           <Seasons clubId={clubId} />
           <ArticleForm clubId={clubId} />

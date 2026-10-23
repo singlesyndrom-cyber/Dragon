@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from .. import tg_actions, vk, vkclub
+from .. import noticeimages, tg_actions, vk, vkclub
 from ..botutil import MAX_ATTEMPTS, backoff_seconds
 from ..db import SessionLocal
 from ..models import Club, ClubVk, ClubVkChat, OutboxMessage, OutboxStatus, Provider
@@ -23,8 +23,17 @@ async def deliver(session, m: OutboxMessage) -> None:
         token = vkclub.group_token(cfg)
         if not token:
             raise vk.VkError(5, "у клуба не настроен токен сообщества VK")
+        attachment = None
+        if m.photo_url:   # картинка оповещения: загружаем в VK один раз; не вышло - сообщение уходит без неё
+            try:
+                attachment = await noticeimages.vk_attachment(session, int(club_id), cfg.group_id, token, int(peer),
+                                                              m.photo_url)
+            except Exception as e:  # noqa: BLE001
+                log.warning("vk картинка %s: %r", m.photo_url, e)
+                cfg.last_error = f"картинка не загрузилась в VK: {e}"[:500]
         # random_id = номер сообщения в очереди: VK не отправит дубль, если повторим после сбоя
-        await vk.send_message(token, int(peer), vk.html_to_text(m.text), m.buttons, random_id=m.id)
+        await vk.send_message(token, int(peer), vk.html_to_text(m.text), m.buttons, random_id=m.id,
+                              attachment=attachment)
     elif m.channel == "vkwall":
         cfg = await session.get(ClubVk, int(m.chat_id))
         if not cfg or not cfg.group_id:
