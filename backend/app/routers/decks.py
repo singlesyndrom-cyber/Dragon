@@ -7,19 +7,16 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..cardimport import front_face, norm_name
-from .. import deckrules
+from .. import brackets, deckrules
 from ..db import get_session
 from ..decklist import ParsedCard, apply_commander, parse_decklist, resolve_tail, validate_edh
-from ..deps import current_user, is_club_organizer, optional_user
+from ..deps import can_judge, current_user, is_club_organizer, optional_user
 from .cards import _back, bk_fields
 from ..models import (Card, CardPrint, Deck, DeckCard, GlobalRole, Tournament, TournamentPlayer,
                       TournamentStatus, User)
 
 router = APIRouter(prefix="/decks", tags=["decks"])
 
-# Подсказка организатору по официальным брекетам: макс. число Game Changers.
-# Правила брекетов обновляются Wizards - сверяйте значения с актуальными.
-BRACKET_GC_LIMIT = {1: 0, 2: 0, 3: 3}
 
 
 VISIBILITY = ("private", "link", "public")
@@ -258,7 +255,16 @@ async def _detail(session: AsyncSession, deck: Deck, user: User | None) -> dict:
                        "matched": dc.card_id is not None,
                        "image_url": (pr.image_url if pr and pr.image_url else card.image_url) if card else None,
                        "card": card_info(card, pr)} for dc, card, pr in rows],
-            "problems": _problems(deck, rows)}
+            "problems": _problems(deck, rows),
+            "bracket": _bracket(deck, [(dc, card) for dc, card, _ in rows])}
+
+
+def _bracket(deck: Deck, rows) -> dict | None:
+    """Оценка брекета Commander по карточкам (только MTG Commander)."""
+    if deck.game != "mtg" or deck.format != "commander":
+        return None
+    return brackets.assess([(dc.name, card.text if card else None, bool(card and card.is_game_changer))
+                            for dc, card in rows if dc.section != "side"])
 
 
 @router.post("", status_code=201)
@@ -461,34 +467,37 @@ async def attach(deck_id: int, tid: int, user: User = Depends(current_user),
 
 @router.get("/tournament/{tid}")
 async def tournament_decks(tid: int, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
-    """Организатору: деклисты участников, предупреждения и подсказки по брекету."""
+    """Организатору и судье турнира: деклисты участников, предупреждения и оценка брекета
+    (для EDH - сравнение с брекетом, который заявил игрок)."""
     t = await session.get(Tournament, tid)
     if not t:
         raise HTTPException(404, "Турнир не найден")
-    if not await is_club_organizer(session, t.club_id, user):
-        raise HTTPException(403, "Нужны права организатора клуба")
+    if not (await is_club_organizer(session, t.club_id, user) or t.judge_id == user.id
+            or await can_judge(session, t.club_id, t.game, t.format, user)):
+        raise HTTPException(403, "Деклисты видят организатор и судьи турнира")
     tps = (await session.execute(select(TournamentPlayer, User.nickname).join(User, User.id == TournamentPlayer.user_id)
                                  .where(TournamentPlayer.tournament_id == tid))).all()
     deck_ids = [tp.deck_id for tp, _ in tps if tp.deck_id]
     cards_by_deck: dict[int, list] = {}
-    for dc, gc in (await session.execute(select(DeckCard, Card.is_game_changer)
-                   .outerjoin(Card, Card.id == DeckCard.card_id).where(DeckCard.deck_id.in_(deck_ids)))).all():
-        cards_by_deck.setdefault(dc.deck_id, []).append((dc, bool(gc)))
+    for dc, card in (await session.execute(select(DeckCard, Card).outerjoin(Card, Card.id == DeckCard.card_id)
+                                           .where(DeckCard.deck_id.in_(deck_ids)))).all():
+        cards_by_deck.setdefault(dc.deck_id, []).append((dc, card))
+    edh = getattr(t.format, "value", t.format) == "edh"
     out = []
     for tp, nick in tps:
-        item = {"user_id": tp.user_id, "nickname": nick, "bracket": tp.bracket, "deck_id": tp.deck_id}
+        item = {"user_id": tp.user_id, "nickname": nick, "bracket": tp.bracket if edh else None, "deck_id": tp.deck_id}
         if tp.deck_id:
             rows = cards_by_deck.get(tp.deck_id, [])
             parsed = [ParsedCard(dc.qty, dc.name, dc.section, dc.is_commander) for dc, _ in rows]
-            gcs = sorted({dc.name for dc, gc in rows if gc})
-            limit = BRACKET_GC_LIMIT.get(tp.bracket)
             item.update(
                 commanders=[dc.name for dc, _ in rows if dc.is_commander],
                 unmatched=sum(1 for dc, _ in rows if dc.card_id is None),
-                game_changers=gcs,
-                warnings=validate_edh(parsed) if t.game == "mtg" else [],
-                bracket_hint=(f"Game Changers: {len(gcs)}, для брекета {tp.bracket} обычно не больше {limit}"
-                              if limit is not None and len(gcs) > limit else None))
+                warnings=validate_edh(parsed) if t.game == "mtg" and edh else [])
+            if t.game == "mtg" and edh:
+                a = brackets.assess([(dc.name, c.text if c else None, bool(c and c.is_game_changer))
+                                     for dc, c in rows if dc.section != "side"])
+                item.update(game_changers=a["game_changers"], assessment=a,
+                            bracket_hint=brackets.mismatch(tp.bracket, a))
         else:
             item["warnings"] = ["Деклист не подан"]
         out.append(item)

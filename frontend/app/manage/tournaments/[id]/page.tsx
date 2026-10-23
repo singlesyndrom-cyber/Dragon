@@ -240,14 +240,20 @@ function DeckReview({ id, edh, policy }: { id: number; edh: boolean; policy: str
       <h2>Проверка деклистов</h2>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Игрок</th>{edh ? <><th>Командир</th><th>Брекет</th></> : null}<th>Замечания</th></tr></thead>
+          <thead><tr><th>Игрок</th>{edh ? <><th>Командир</th><th title="Заявленный → по карточкам">Брекет</th></> : null}<th>Замечания</th></tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.user_id}>
                 <td>{r.deck_id ? <Link href={`/decks/${r.deck_id}`}>{r.nickname}</Link> : r.nickname}</td>
-                {edh ? <><td>{r.commanders?.join(" / ") || <span className="muted">—</span>}</td><td>{r.bracket}</td></> : null}
+                {edh ? <><td>{r.commanders?.join(" / ") || <span className="muted">—</span>}</td>
+                  <td className="num">
+                    <span className="bracket-pill" title="Заявил игрок">{r.bracket}</span>
+                    {r.assessment ? <> → <span className={`bracket-pill${r.bracket_hint ? " bad" : ""}`} title="По карточкам">{r.assessment.label}</span></> : null}
+                  </td></> : null}
                 <td className="small">
-                  {[...(r.warnings || []), r.bracket_hint].filter(Boolean).join("; ") || <span className="muted">нет</span>}
+                  {r.bracket_hint ? <div className="loss">{r.bracket_hint}</div> : null}
+                  {(r.warnings || []).join("; ") || (!r.bracket_hint ? <span className="muted">нет</span> : null)}
+                  {r.assessment && !r.bracket_hint && r.assessment.reasons.length ? <div className="muted">{r.assessment.reasons.join("; ")}</div> : null}
                   {r.game_changers?.length ? <div className="muted">Game Changers: {r.game_changers.join(", ")}</div> : null}
                 </td>
               </tr>

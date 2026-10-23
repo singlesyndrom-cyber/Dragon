@@ -598,3 +598,7 @@ table.members td { vertical-align: middle; }
 .disc-tabs a { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); text-decoration: none; color: var(--muted); }
 .disc-tabs a.on { border-color: var(--gilt); color: var(--gilt); background: var(--gilt-soft); }
 .disc-tabs a:hover { color: var(--ivory); }
+.bracketinfo.is-bad { border-color: var(--loss); }
+.bracketinfo ul { margin: 6px 0 0; padding-left: 18px; }
+.bracket-pill { display: inline-block; min-width: 28px; text-align: center; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); }
+.bracket-pill.bad { border-color: var(--loss); color: var(--loss); }

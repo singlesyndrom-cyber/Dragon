@@ -7,6 +7,7 @@ import { Status, useAction } from "@/components/Form";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { canRun } from "@/lib/judges";
+import { BRACKETS } from "@/lib/brackets";
 
 export default function TournamentActions({ t }: { t: any }) {
   const { me, ready } = useAuth();
@@ -17,6 +18,7 @@ export default function TournamentActions({ t }: { t: any }) {
   const [deckId, setDeckId] = useState("");
   const [canManage, setCanManage] = useState(false);
   const [member, setMember] = useState(true);
+  const [est, setEst] = useState<{ min_bracket: number; label: string; reasons: string[] } | null>(null);
 
   const mine = me ? t.participants.find((p: any) => p.user_id === me.id) : null;
   const open = t.status === "registration";
@@ -26,6 +28,14 @@ export default function TournamentActions({ t }: { t: any }) {
     api(`/clubs/${t.club_id}/membership`).then((m) => { setCanManage(canRun(m, t)); setMember(!!m.member); }).catch(() => {});
     api<any[]>("/decks/mine").then((d) => setDecks(d.filter((x) => x.game === t.game))).catch(() => {});
   }, [me, t.club_id, t.game, t.format]);
+
+  useEffect(() => {      // EDH: оценка брекета выбранной колоды - подсказка и значение по умолчанию
+    if (t.format !== "edh" || !deckId) { setEst(null); return; }
+    api<any>(`/decks/${deckId}`).then((d) => {
+      setEst(d.bracket || null);
+      if (d.bracket) setBracket((b) => Math.max(b, d.bracket.min_bracket));
+    }).catch(() => setEst(null));
+  }, [deckId, t.format]);
 
   if (!ready) return null;
   if (!me) {
@@ -62,8 +72,14 @@ export default function TournamentActions({ t }: { t: any }) {
             <label>
               <span>Брекет вашей колоды</span>
               <select value={bracket} onChange={(e) => setBracket(+e.target.value)}>
-                {[1, 2, 3, 4, 5].map((b) => <option key={b} value={b}>{b}</option>)}
+                {BRACKETS.map(([b, name]) => <option key={b} value={b}>{b} — {name}</option>)}
               </select>
+              <span className="hint">{BRACKETS[bracket - 1][2]}</span>
+              {est ? (
+                <span className={`hint${est.min_bracket > bracket ? " loss" : ""}`}>
+                  По карточкам колода — брекет {est.label}{est.min_bracket > bracket ? `: выше заявленного, судья это увидит. ${est.reasons.join("; ")}` : "."}
+                </span>
+              ) : null}
             </label>
           ) : null}
           <button className="primary" disabled={busy || (t.deck_policy === "required" && !deckId)} onClick={() =>

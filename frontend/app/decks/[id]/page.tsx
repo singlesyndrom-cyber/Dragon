@@ -16,6 +16,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Row, VISIBILITY, formatTitle, fromApi } from "@/lib/decks";
 import { dateOnly } from "@/lib/format";
+import BracketInfo from "@/components/BracketInfo";
 
 export default function DeckPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -81,6 +82,7 @@ function Deck({ id }: { id: string }) {
       <Status error={error} />
       {d.locked ? <p className="hint">Колода подана на начавшийся турнир — редактирование закрыто до его окончания.</p> : null}
       <Problems problems={d.problems} />
+      {d.bracket ? <BracketInfo a={d.bracket} /> : null}
 
       <div className="tabs section" role="tablist">
         {([["list", "Список"], ["stats", "Статистика"], ["hand", d.game === "berserk" ? "Набор отряда" : "Тестовая рука"], ["export", "Экспорт"]] as const).map(([k, l]) => (
