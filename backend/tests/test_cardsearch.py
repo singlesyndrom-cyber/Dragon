@@ -161,7 +161,7 @@ async def test_fake_russian_names_cleared(client):
     from app.scryfall import clear_fake_russian
     async with SessionLocal() as s:
         s.add(Card(game="mtg", external_id="boom", name="Boom // Bust", name_lower="boom // bust", name_front="boom",
-                   name_ru="Boom // Bust", name_ru_lower="boom // bust", name_ru_front="boom", extra={}))
+                   name_ru="Boom // Bust", name_ru_lower="boom", name_ru_front="boom", extra={}))   # служебные поля могут не совпасть
         await s.commit()
         assert await clear_fake_russian(await s.connection()) == 1
         await s.commit()

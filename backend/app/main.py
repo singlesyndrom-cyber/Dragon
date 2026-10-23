@@ -22,13 +22,19 @@ async def lifespan(app: FastAPI):
             try:
                 async with engine.begin() as conn:
                     await conn.run_sync(sync_schema)   # новые таблицы и колонки без пересоздания базы
-                    await scryfall.clear_fake_russian(conn)
                 break
             except (OSError, InterfaceError, OperationalError) as e:
                 if attempt == 29:
                     raise
                 log.warning("база недоступна (%s), повтор через 2 с", e)
                 await asyncio.sleep(2)
+    try:                                     # «русские» названия, совпадающие с английскими, - не перевод
+        async with engine.begin() as conn:
+            n = await scryfall.clear_fake_russian(conn)
+        if n:
+            log.info("убраны русские названия, совпадающие с английскими: %s", n)
+    except Exception as e:                   # не мешаем запуску сайта
+        log.warning("очистка русских названий не удалась: %s", e)
     tasks = [asyncio.create_task(edh.expire_overdue_loop())]   # авто-закрытие столов по таймеру 70 минут
     if settings.monitor_enabled:
         tasks.append(asyncio.create_task(system.monitor_loop()))   # письмо админам, если бот или копии встали

@@ -188,7 +188,8 @@ async def _apply_russian(session, ru: dict[str, dict]) -> int:
 
 
 CLEAR_FAKE_RU = text("UPDATE cards SET name_ru = NULL, name_ru_lower = NULL, name_ru_front = NULL "
-                     "WHERE game = 'mtg' AND name_ru_lower = name_lower")
+                     "WHERE game = 'mtg' AND name_ru IS NOT NULL "
+                     "AND (lower(btrim(name_ru)) = lower(btrim(name)) OR name_ru_lower = name_lower)")
 
 
 async def clear_fake_russian(conn) -> int:
