@@ -53,7 +53,7 @@ class FakeVk:
                     return httpx.Response(400, json={"error": "invalid_grant", "error_description": "code expired"})
                 return httpx.Response(200, json={"access_token": "at-" + form["code"], "refresh_token": "rt-1",
                                                  "expires_in": 3600, "user_id": 777,
-                                                 "scope": "vkid.personal_info wall groups" if form["code"] == "wall" else "vkid.personal_info"})
+                                                 "scope": "vkid.personal_info,wall,groups" if form["code"] == "wall" else "vkid.personal_info"})
             if path == "/oauth2/auth":
                 return httpx.Response(200, json={"access_token": "at-new", "refresh_token": "rt-2", "expires_in": 3600})
             if path == "/oauth2/user_info":
@@ -212,7 +212,7 @@ async def test_vkid_login_link_and_wall_refresh(ctx):
     # стена через VK ID: без права wall - отказ; с правом - токены с обновлением
     await c.put(f"/clubs/{cid}/vk", json={"group_token": "vk1.a.group"}, headers=org)
     r = await c.post(f"/clubs/{cid}/vk/wall/vkid", json=body, headers=org)
-    assert r.status_code == 400 and "стена" in r.json()["detail"]
+    assert r.status_code == 400 and "выданы: vkid.personal_info" in r.json()["detail"]
     r = await c.post(f"/clubs/{cid}/vk/wall/vkid", json={**body, "code": "wall"}, headers=org)
     assert r.status_code == 200 and r.json()["wall_mode"] == "vkid" and r.json()["wall_user_name"] == "Иван Вк"
     async with SessionLocal() as s:

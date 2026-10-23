@@ -1,4 +1,6 @@
 """Настройки VK клуба (для организаторов): сообщество, беседа, личные сообщения, стена."""
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
@@ -232,9 +234,11 @@ async def wall_vkid(club_id: int, data: VkIn, user: User = Depends(current_user)
         got = await vk.exchange_code(data.code, data.code_verifier, data.device_id, vk_redirect_uri(), data.state)
     except vk.VkError as e:
         raise HTTPException(400, f"VK ID не выдал доступ: {e.message}")
-    if "wall" not in str(got.get("scope", "wall")).split():
-        raise HTTPException(400, "VK ID не выдал право «стена». Проверьте доступы приложения VK ID или вставьте "
-                                 "токен администратора вручную")
+    scopes = [x for x in re.split(r"[\s,]+", str(got.get("scope", "wall"))) if x]
+    if "wall" not in scopes:
+        raise HTTPException(400, "VK ID не выдал право «стена» (выданы: " + (", ".join(scopes) or "нет") + "). "
+                                 "Включите доступ «Стена» во вкладке «Доступы» приложения VK ID "
+                                 "или вставьте токен администратора вручную")
     vkclub.save_wall_tokens(cfg, got)
     cfg.wall_device_id = data.device_id
     try:
