@@ -466,6 +466,8 @@ table.members td { vertical-align: middle; }
 .picktimes label { display: flex; flex-direction: column; margin: 0; }
 
 /* ---------- главная ---------- */
+/* цифры Cormorant по умолчанию «старого стиля» (0 похож на О) - на главной только выровненные */
+.home .h-big, .home .h-place b, .home .h-step, .home .h-season b, .home .h-days b, .home .h-when b { font-variant-numeric: lining-nums tabular-nums; font-feature-settings: "lnum" 1, "tnum" 1; }
 .brand { display: inline-flex; align-items: center; gap: 10px; }
 .brand img { border-radius: 8px; }
 .footer-row { display: flex; flex-wrap: wrap; gap: 12px 32px; justify-content: space-between; }
@@ -531,7 +533,8 @@ table.members td { vertical-align: middle; }
 .h-decks + a { display: inline-block; margin-top: 10px; }
 .h-card .h-label ~ .h-label { margin-top: 18px; }
 
-.h-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 14px; }
+.h-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 14px; }
+@media (max-width: 640px) { .h-tiles .h-card { padding: 14px; } }
 .h-tiles .h-card { display: flex; flex-direction: column; gap: 2px; }
 .h-todo { padding: 4px 20px; }
 .h-todo li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
