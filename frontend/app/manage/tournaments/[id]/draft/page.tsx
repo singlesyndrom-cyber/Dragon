@@ -152,7 +152,6 @@ function DraftScreen({ id }: { id: string }) {
                 <button type="button" className="primary" disabled={busy}
                   onClick={() => run(async () => { await api(`/tournaments/${id}/start?force=true`, { method: "POST" }); await load(); })}>
                   Запустить тур 1</button>
-                <button type="button" disabled={busy} onClick={() => ctl("add", 300)}>+5 минут на сборку</button>
               </div>
             </>
           ) : d.status === "running" && roundLeft != null ? (
