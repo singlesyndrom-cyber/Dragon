@@ -182,7 +182,7 @@ async def test_vk_attachment_uploaded_once(ctx):
         s.add(ClubVkChat(club_id=cid, game="mtg", peer_id=2000000001))
         await s.commit()
     await c.post(f"/clubs/{cid}/notice-images/card", json={"card_id": card_id}, headers=org)
-    for name in ("А", "Б"):
+    for name in ("Турнир А", "Турнир Б"):
         await announce(c, org, cid, name)
     await vk_bot.process_batch()
     sends = fake.of("messages.send")
