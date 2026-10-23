@@ -5,7 +5,7 @@ import { useState } from "react";
 import FlipCard from "@/components/FlipCard";
 import { qv, searchHref } from "@/lib/cards";
 
-const RARITY: Record<string, string> = { common: "обычная", uncommon: "необычная", rare: "редкая", mythic: "мифическая", special: "особая", bonus: "бонусная" };
+const RARITY: Record<string, string> = { common: "обычная", uncommon: "необычная", rare: "редкая", mythic: "мифическая", special: "особая", bonus: "бонусная", ultra: "ультраредкая" };
 
 type Print = { id: number; set: string; set_name?: string; number?: string; rarity?: string; released_at?: string;
   artist?: string; image_url?: string; image_large?: string; back_image?: string; prices: Record<string, number>;

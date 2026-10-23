@@ -15,7 +15,8 @@ import FlipCard from "@/components/FlipCard";
 import Guard from "@/components/Guard";
 import Mana from "@/components/Mana";
 import { api } from "@/lib/api";
-import { COMMANDER_FORMATS, CardInfo, DECK_FORMATS, Row, VISIBILITY, count, fromApi, playing } from "@/lib/decks";
+import { bkCost } from "@/lib/berserk";
+import { BK_FORMATS, COMMANDER_FORMATS, CardInfo, DECK_FORMATS, Row, VISIBILITY, count, fromApi, playing } from "@/lib/decks";
 
 export default function EditPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -87,6 +88,8 @@ function Editor({ id }: { id: string }) {
   }
 
   const isCmd = COMMANDER_FORMATS.has(d.format);
+  const bk = d.game === "berserk";
+  const formats = bk ? BK_FORMATS : DECK_FORMATS;
 
   function add(card: CardInfo, section: Row["section"], qty = 1) {
     setRows((prev) => {
@@ -99,7 +102,7 @@ function Editor({ id }: { id: string }) {
     setPreview({ name: card.name, image: card.image_url, back: card.back_image });
   }
   const ops: Ops = {
-    print: (key) => setPrintKey(key),
+    print: bk ? undefined : (key) => setPrintKey(key),        // издания есть только у карт MTG
     qty: (key, delta) => setRows((prev) => prev.flatMap((r) => r.key !== key ? [r] : r.qty + delta > 0 ? [{ ...r, qty: r.qty + delta }] : [])),
     remove: (key) => setRows((prev) => prev.filter((r) => r.key !== key)),
     move: (key, section) => setRows((prev) => {
@@ -132,7 +135,7 @@ function Editor({ id }: { id: string }) {
       <div className="row">
         <label className="row" style={{ gap: 6 }}><span className="muted small">Формат</span>
           <select value={d.format} onChange={(e) => run(() => patch({ format: e.target.value }))} style={{ width: "auto" }}>
-            {DECK_FORMATS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            {formats.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
         </label>
         <label className="row" style={{ gap: 6 }}><span className="muted small">Доступ</span>
@@ -159,12 +162,12 @@ function Editor({ id }: { id: string }) {
         }} />
       ) : null}
 
-      <CardSearch format={d.format} isCmd={isCmd} lang={lang} onAdd={add} onPreview={setPreview} />
+      <CardSearch game={d.game} format={d.format} isCmd={isCmd} lang={lang} onAdd={add} onPreview={setPreview} />
 
       <div className="builder">
         <div>
           <p className="muted small" style={{ marginTop: 0 }}>
-            В колоде {count(playing(rows))}{isCmd ? " из 100" : ""}{rows.some((r) => r.section === "side") ? `, в сайдборде ${count(rows.filter((r) => r.section === "side"))}` : ""}.
+            В колоде {count(playing(rows))}{isCmd ? " из 100" : bk && d.format === "berserk" ? " (нужно от 30)" : ""}{rows.some((r) => r.section === "side") ? `, в сайдборде ${count(rows.filter((r) => r.section === "side"))}` : ""}.
             Наведите на карту, чтобы увидеть её; «⋯» — выбрать издание, перенести в сайдборд, сделать командиром или удалить.
           </p>
           <DeckList rows={rows} format={d.format} lang={lang} ops={ops}
@@ -186,8 +189,8 @@ function Editor({ id }: { id: string }) {
   );
 }
 
-function CardSearch({ format, isCmd, lang, onAdd, onPreview }: {
-  format: string; isCmd: boolean; lang: "ru" | "en";
+function CardSearch({ game, format, isCmd, lang, onAdd, onPreview }: {
+  game: string; format: string; isCmd: boolean; lang: "ru" | "en";
   onAdd: (c: CardInfo, s: Row["section"], qty?: number) => void; onPreview: (p: { name: string; image?: string | null; back?: string | null }) => void;
 }) {
   const [q, setQ] = useState("");
@@ -201,12 +204,12 @@ function CardSearch({ format, isCmd, lang, onAdd, onPreview }: {
   useEffect(() => {
     if (query.length < 2) { setItems(null); return; }
     const h = setTimeout(() => {
-      const full = legal && format !== "casual" ? `${query} f:${format}` : query;
-      api<any>(`/cards/search?${new URLSearchParams({ q: full, game: "mtg", per_page: "12" })}`)
+      const full = legal && game === "mtg" && format !== "casual" ? `${query} f:${format}` : query;
+      api<any>(`/cards/search?${new URLSearchParams({ q: full, game, per_page: "12" })}`)
         .then((r) => { setItems(r.items); setTotal(r.total); }).catch(() => setItems([]));
     }, 250);
     return () => clearTimeout(h);
-  }, [query, legal, format]);
+  }, [query, legal, format, game]);
 
   function pick(c: CardInfo, s: Row["section"]) {
     onAdd(c, s, qty);
@@ -215,12 +218,13 @@ function CardSearch({ format, isCmd, lang, onAdd, onPreview }: {
     <section className="cardpicker section">
       <form className="cardsearch" onSubmit={(e) => { e.preventDefault(); if (items?.[0]) { pick(items[0], "main"); setQ(""); } }}>
         <input type="search" value={q} onChange={(e) => setQ(e.target.value)} autoFocus
-          placeholder="Добавить карту: название по-русски или по-английски, «4 Lightning Bolt» или запрос t:dragon c:r"
+          placeholder={game === "berserk" ? "Добавить карту: название, «3 Преторианец» или запрос el:горы t:существо"
+            : "Добавить карту: название по-русски или по-английски, «4 Lightning Bolt» или запрос t:dragon c:r"}
           aria-label="Поиск карты для колоды" />
         <button type="submit" disabled={!items?.length}>Добавить</button>
       </form>
       <div className="row small">
-        {format !== "casual" ? (
+        {game === "mtg" && format !== "casual" ? (
           <label className="check" style={{ margin: 0 }}>
             <input type="checkbox" checked={legal} onChange={(e) => setLegal(e.target.checked)} />
             <span>только легальные в формате</span>
@@ -238,10 +242,10 @@ function CardSearch({ format, isCmd, lang, onAdd, onPreview }: {
                   <span className="muted small"> {lang === "ru" && c.name_ru ? c.name : c.name_ru || ""}</span>
                   <span className="muted small" style={{ display: "block" }}>{c.type}</span>
                 </span>
-                <span className="cost"><Mana text={c.mana_cost?.split(" // ")[0]} size={14} /></span>
+                <span className="cost"><Mana text={bkCost(c).split(" // ")[0]} size={14} /></span>
                 <span className="row" style={{ gap: 4 }}>
                   <button type="button" onClick={() => pick(c, "main")} title="В основную колоду">+{qty > 1 ? qty : ""}</button>
-                  <button type="button" onClick={() => pick(c, "side")} title="В сайдборд">сайд</button>
+                  {game === "mtg" ? <button type="button" onClick={() => pick(c, "side")} title="В сайдборд">сайд</button> : null}
                   {isCmd ? <button type="button" onClick={() => onAdd(c, "commander")} title="Сделать командиром">командир</button> : null}
                 </span>
               </li>
@@ -250,7 +254,7 @@ function CardSearch({ format, isCmd, lang, onAdd, onPreview }: {
           </ul>
         ) : (
           <p className="muted small">
-            Ничего не найдено{legal && format !== "casual" ? " среди легальных в формате — снимите галочку, чтобы искать везде" : ""}.
+            Ничего не найдено{legal && game === "mtg" && format !== "casual" ? " среди легальных в формате — снимите галочку, чтобы искать везде" : ""}.
             {/[а-яё]/i.test(query) ? " У части карт в базе нет русского названия — попробуйте по-английски." : ""}
           </p>
         )

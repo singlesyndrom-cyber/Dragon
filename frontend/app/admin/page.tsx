@@ -41,6 +41,7 @@ function AdminContent() {
           <Publishers />
           <StaffRoles />
           <Scryfall />
+          <BerserkSync />
           <Accounts />
           <Categories />
         </aside>
@@ -85,6 +86,37 @@ function SystemHealth() {
       </dl>
       <p className="hint">Если бот молчит больше 5 минут, сообщения висят больше 10 минут или копии нет больше суток, администраторам уходит письмо.</p>
     </section>
+  );
+}
+
+function BerserkSync() {
+  const [st, setSt] = useState<any>(null);
+  const { busy, error, run } = useAction();
+  const load = useCallback(() => api("/admin/cards/sync/berserk").then(setSt).catch(() => {}), []);
+  useEffect(() => {
+    load();
+    const h = setInterval(load, 10000);
+    return () => clearInterval(h);
+  }, [load]);
+  const last = st?.last;
+  return (
+    <div className="panel">
+      <h3>База «Берсерка» с ProBerserk.ru</h3>
+      <p className="small muted">
+        Классические выпуски: по одной странице на выпуск, пауза 3 секунды — около минуты. Картинки сервер берёт
+        по первому просмотру карты и хранит у себя. Повторный запуск обновляет карты, не создавая дублей.
+      </p>
+      {st ? (
+        <p className="small">
+          В базе карт: {(st.cards || 0).toLocaleString("ru-RU")}.{" "}
+          {st.running ? "Идёт загрузка…" : last ? <>Последняя загрузка: {dateTime(last.finished || last.started)}, карт {last.cards.toLocaleString("ru-RU")}.</> : "Ещё не загружалась."}
+          {last?.error ? <span className="loss"> {last.error}</span> : null}
+        </p>
+      ) : null}
+      <button className="primary" disabled={busy || st?.running}
+        onClick={() => run(() => api("/admin/cards/sync/berserk", { method: "POST" })).then(load)}>Загрузить с ProBerserk</button>
+      <Status error={error} />
+    </div>
   );
 }
 

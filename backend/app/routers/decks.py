@@ -10,7 +10,7 @@ from .. import deckrules
 from ..db import get_session
 from ..decklist import ParsedCard, apply_commander, parse_decklist, resolve_tail, validate_edh
 from ..deps import current_user, is_club_organizer, optional_user
-from .cards import _back
+from .cards import _back, bk_fields
 from ..models import (Card, CardPrint, Deck, DeckCard, GlobalRole, Tournament, TournamentPlayer,
                       TournamentStatus, User)
 
@@ -57,6 +57,8 @@ def _settings(deck: Deck, fmt: str | None, visibility: str | None):
     if fmt is not None:
         if fmt not in deckrules.FORMATS:
             raise HTTPException(400, "Неизвестный формат")
+        if deckrules.FORMATS[fmt].get("game", "mtg") != deck.game and fmt != "casual":
+            raise HTTPException(400, "Формат другой игры")
         deck.format = fmt
     if visibility is not None:
         if visibility not in VISIBILITY:
@@ -169,7 +171,8 @@ def card_info(c: Card | None, p: CardPrint | None = None) -> dict | None:
             "color_identity": ex.get("color_identity") or [], "rarity": c.rarity, "set": c.set_code,
             "image_url": c.image_url, "image_large": ex.get("image_large"), "prices": c.prices or {},
             "legalities": c.legalities or {}, "is_game_changer": c.is_game_changer,
-            "back_image": _back(ex), "print": None}
+            "back_image": _back(ex), "print": None,
+            **({"bk": bk_fields(ex), "text": c.text} if c.game == "berserk" else {})}
     if p is not None:                          # выбранное издание: его картинка, сет и цена
         if p.image_url:
             info.update(image_url=p.image_url, image_large=p.image_large or ex.get("image_large"), back_image=p.back_image)
@@ -185,7 +188,7 @@ async def _entries(session: AsyncSession, deck_id: int) -> list[tuple[DeckCard, 
 
 
 def _problems(deck: Deck, rows) -> list[dict]:
-    if deck.game != "mtg":
+    if deck.game != "mtg" and deckrules.FORMATS.get(deck.format, {}).get("game") != deck.game:
         return []
     return deckrules.check([deckrules.Entry(dc.name, dc.qty, dc.section, card) for dc, card, _ in rows], deck.format)
 
@@ -209,7 +212,7 @@ async def _detail(session: AsyncSession, deck: Deck, user: User | None) -> dict:
 @router.post("", status_code=201)
 async def create_deck(data: DeckIn, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
     deck = Deck(user_id=user.id, name=data.name.strip(), game=data.game, in_meta=bool(data.in_meta),
-                format="commander" if data.game == "mtg" else "casual")
+                format="commander" if data.game == "mtg" else deckrules.GAME_FORMATS.get(data.game, "casual"))
     _settings(deck, data.format, data.visibility)
     session.add(deck)
     await session.flush()

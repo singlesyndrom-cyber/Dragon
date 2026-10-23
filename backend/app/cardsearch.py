@@ -47,6 +47,9 @@ KEYS = {
     "a": "artist", "artist": "artist", "художник": "artist",
     "usd": "usd", "цена": "usd", "eur": "eur",
     "game": "game", "игра": "game",
+    "el": "element", "element": "element", "стихия": "element",               # «Берсерк»
+    "class": "class", "класс": "class",
+    "hp": "health", "health": "health", "здоровье": "health", "жизнь": "health",
     "order": "order", "сортировка": "order", "dir": "dir",
 }
 COLOR_WORDS = {
@@ -62,8 +65,11 @@ GUILDS = {  # пары и тройки цветов по названиям, к�
     "bant": "GWU", "abzan": "WBG", "jeskai": "URW", "sultai": "BGU", "mardu": "RWB", "temur": "GUR",
 }
 RARITY = {"common": 0, "c": 0, "обычная": 0, "uncommon": 1, "u": 1, "необычная": 1, "rare": 2, "r": 2, "редкая": 2,
-          "mythic": 3, "m": 3, "мифическая": 3, "special": 4, "особая": 4, "bonus": 5, "бонусная": 5}
-RARITY_NAMES = ["common", "uncommon", "rare", "mythic", "special", "bonus"]
+          "mythic": 3, "m": 3, "мифическая": 3, "special": 4, "особая": 4, "bonus": 5, "бонусная": 5,
+          "ultra": 6, "ультраредкая": 6, "ур": 6}
+RARITY_NAMES = ["common", "uncommon", "rare", "mythic", "special", "bonus", "ultra"]
+ELEMENTS = {"степи": "Степи", "степь": "Степи", "горы": "Горы", "леса": "Леса", "лес": "Леса", "болота": "Болота",
+            "болото": "Болота", "тьма": "Тьма", "нейтральная": "Нейтральная", "нейтрал": "Нейтральная"}
 FORMATS = {"commander": "commander", "edh": "commander", "командир": "commander", "коммандер": "commander",
            "standard": "standard", "стандарт": "standard", "pioneer": "pioneer", "modern": "modern", "модерн": "modern",
            "legacy": "legacy", "легаси": "legacy", "vintage": "vintage", "винтаж": "vintage", "pauper": "pauper",
@@ -208,14 +214,22 @@ def _term(t: _Tok, p: Parsed) -> ColumnElement | None:
         return _color_clause(Card.extra["colors"], op, v, ">=", p.warnings)
     if key == "identity":
         return _color_clause(Card.extra["color_identity"], op, v, "<=", p.warnings)
-    if key in ("mv", "pow", "tou", "loy", "usd", "eur"):
+    if key == "element":
+        el = ELEMENTS.get(v.lower())
+        if not el:
+            p.warnings.append(f"Стихия «{v}»: степи, горы, леса, болота, тьма, нейтральная")
+            return None
+        return Card.extra["elements"].contains([el])
+    if key == "class":
+        return Card.extra["class"].astext.ilike(_like(v))
+    if key in ("mv", "pow", "tou", "loy", "usd", "eur", "health"):
         n = _num(v)
         if n is None:
             p.warnings.append(f"«{t.key}{op}{v}»: нужно число")
             return None
         col = {"mv": Card.cmc, "usd": Card.prices["usd"].as_float(), "eur": Card.prices["eur"].as_float(),
                "pow": _numeric_extra("power"), "tou": _numeric_extra("toughness"),
-               "loy": _numeric_extra("loyalty")}[key]
+               "loy": _numeric_extra("loyalty"), "health": _numeric_extra("health")}[key]
         return _cmp(col, op, n)
     if key == "rarity":
         r = RARITY.get(v.lower())

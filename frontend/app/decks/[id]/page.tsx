@@ -58,7 +58,7 @@ function Deck({ id }: { id: string }) {
       <p className="muted small"><Link href="/decks">← Колоды</Link></p>
       <h1 style={{ marginBottom: 4 }}>{d.name}</h1>
       <p className="muted" style={{ marginTop: 0 }}>
-        {d.game === "mtg" ? formatTitle(d.format) : "Берсерк"}
+        {d.game === "mtg" ? formatTitle(d.format) : `Берсерк · ${formatTitle(d.format)}`}
         {d.owner ? <> · {d.owner.nickname}</> : null}
         {d.updated_at ? <> · обновлена {dateOnly(d.updated_at)}</> : null}
         {d.editable ? <> · {VISIBILITY.find(([k]) => k === d.visibility)?.[1]}</> : null}
@@ -92,7 +92,7 @@ function Deck({ id }: { id: string }) {
           <aside className="deckpreview"><FlipCard front={img} back={preview?.card?.back_image} alt={preview?.name || ""} /></aside>
         </div>
       ) : tab === "stats" ? <DeckStats rows={rows} />
-        : tab === "hand" ? <TestHand rows={rows} lang={lang} />
+        : tab === "hand" ? <TestHand rows={rows} lang={lang} size={d.game === "berserk" ? 15 : 7} berserk={d.game === "berserk"} />
         : <ExportBox rows={rows} name={d.name} />}
     </>
   );

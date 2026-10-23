@@ -2,6 +2,7 @@
 
 import { Fragment } from "react";
 import Mana from "@/components/Mana";
+import { ELEMENTS } from "@/lib/berserk";
 import { GROUPS, Row, count, playing, stats } from "@/lib/decks";
 
 /** Статистика колоды: кривая маны, цвета (символы маны в стоимостях), типы, цена.
@@ -17,11 +18,12 @@ export default function DeckStats({ rows }: { rows: Row[] }) {
       <div className="row stat-tiles">
         <div><b className="num">{count(playing(rows))}</b><span className="muted small">карт</span></div>
         <div><b className="num">{s.avg.toFixed(2)}</b><span className="muted small">средняя стоимость</span></div>
-        <div><b className="num">{s.lands}</b><span className="muted small">земель</span></div>
+        {s.isBk ? <div><b className="num">{s.elite}</b><span className="muted small">элитных</span></div>
+          : <div><b className="num">{s.lands}</b><span className="muted small">земель</span></div>}
         {s.usd ? <div><b className="num">${s.usd.toFixed(0)}</b><span className="muted small">{s.eur ? `€${s.eur.toFixed(0)}` : "цена"}</span></div> : null}
       </div>
 
-      <h3>Кривая маны</h3>
+      <h3>{s.isBk ? "Кривая стоимости" : "Кривая маны"}</h3>
       <div className="curve" role="img" aria-label={`Кривая маны: ${s.curve.map((n, i) => `${i === 7 ? "7+" : i} — ${n}`).join(", ")}`}>
         {s.curve.map((n, i) => (
           <div key={i} className="curve-col" title={`Стоимость ${i === 7 ? "7+" : i}: ${n} карт`}>
@@ -31,7 +33,26 @@ export default function DeckStats({ rows }: { rows: Row[] }) {
           </div>
         ))}
       </div>
-      <p className="muted small" style={{ margin: "4px 0 0" }}>Без земель.</p>
+      {s.isBk ? null : <p className="muted small" style={{ margin: "4px 0 0" }}>Без земель.</p>}
+
+      {s.isBk && Object.keys(s.elements).length ? (
+        <>
+          <h3>Стихии</h3>
+          <div className="pips">
+            {ELEMENTS.filter((el) => s.elements[el]).map((el) => {
+              const n = s.elements[el];
+              const max = Math.max(1, ...Object.values(s.elements));
+              return (
+                <div key={el} className="pip-row" title={`${el}: ${n} карт`} style={{ gridTemplateColumns: "92px 1fr auto" }}>
+                  <span className="small">{el}</span>
+                  <div className="pip-track"><div className="pip-bar" style={{ width: `${(n / max) * 100}%` }} /></div>
+                  <span className="small num">{n}</span>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : null}
 
       {pipTotal ? (
         <>

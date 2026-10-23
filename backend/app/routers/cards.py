@@ -7,7 +7,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import cardsearch, scryfall
+from .. import berserk, cardsearch, scryfall
 from ..cardimport import extract_rows, norm_name, normalize_generic
 from ..db import get_session
 from ..deps import require_admin
@@ -69,8 +69,10 @@ async def card_stats(session: AsyncSession = Depends(get_session)):
     rows = (await session.execute(select(Card.game, func.count(), func.count(Card.name_ru)).group_by(Card.game))).all()
     last = await scryfall.last_run(session)
     prints = (await session.execute(select(func.count()).select_from(CardPrint))).scalar_one()
+    bk = await berserk.last_run(session)
     return {"games": {g: {"cards": n, "russian": ru, **({"prints": prints} if g == "mtg" else {})} for g, n, ru in rows},
-            "scryfall_updated": last.finished_at if last and last.cards else None}
+            "scryfall_updated": last.finished_at if last and last.cards else None,
+            "berserk_updated": bk.finished_at if bk and bk.cards else None}
 
 
 def _back(ex: dict) -> str | None:
@@ -88,7 +90,13 @@ def _row(c: Card) -> dict:
             "loyalty": ex.get("loyalty"), "colors": ex.get("colors"), "prices": c.prices or {},
             "color_identity": ex.get("color_identity") or [], "legalities": c.legalities or {},
             "back_image": _back(ex),
-            "is_game_changer": c.is_game_changer}
+            "is_game_changer": c.is_game_changer, **({"bk": bk_fields(ex)} if c.game == "berserk" else {})}
+
+
+def bk_fields(ex: dict) -> dict:
+    """Свойства карты «Берсерка» для плиток и конструктора."""
+    return {k: ex.get(k) for k in ("number", "elements", "elite", "unique", "class", "kind", "health", "move",
+                                   "strike", "icons")}
 
 
 @router.get("/cards/search")
@@ -137,7 +145,8 @@ async def get_card(card_id: int, session: AsyncSession = Depends(get_session)):
     return {**_brief(c), "set_name": c.set_name, "text": c.text, "type_ru": c.type_ru, "text_ru": c.text_ru,
             "cmc": c.cmc, "commander_legal": c.commander_legal, "is_game_changer": c.is_game_changer,
             "legalities": c.legalities or {}, "prices": c.prices or {}, "scryfall_uri": c.scryfall_uri,
-            "extra": c.extra or {}, "back_image": _back(c.extra or {}), "prints": [_print(p) for p in prints]}
+            "extra": c.extra or {}, "back_image": _back(c.extra or {}), "prints": [_print(p) for p in prints],
+            **({"bk": bk_fields(c.extra or {})} if c.game == "berserk" else {})}
 
 
 # ---------- админка: Scryfall ----------
@@ -164,6 +173,31 @@ async def sync_status(admin: User = Depends(require_admin), session: AsyncSessio
             "last": None if not last else {"started": last.started_at, "finished": last.finished_at,
                                            "trigger": last.trigger, "cards": last.cards,
                                            "russian": last.russian, "prints": last.prints or 0, "error": last.error}}
+
+
+# ---------- админка: «Берсерк» с ProBerserk.ru ----------
+async def _run_berserk():
+    try:
+        await berserk.sync(trigger="admin")
+    except berserk.SyncBusy:
+        pass
+
+
+@router.post("/admin/cards/sync/berserk", status_code=202)
+async def sync_berserk(bg: BackgroundTasks, admin: User = Depends(require_admin),
+                       session: AsyncSession = Depends(get_session)):
+    if await berserk.is_running(session):
+        raise HTTPException(409, "Загрузка уже идёт")
+    bg.add_task(_run_berserk)
+    return {"status": "started"}
+
+
+@router.get("/admin/cards/sync/berserk")
+async def berserk_status(admin: User = Depends(require_admin), session: AsyncSession = Depends(get_session)):
+    last = await berserk.last_run(session)
+    return {"running": await berserk.is_running(session), "cards": await berserk.count(session),
+            "last": None if not last else {"started": last.started_at, "finished": last.finished_at,
+                                           "cards": last.cards, "error": last.error}}
 
 
 # ---------- админка: «Берсерк» и любые другие JSON-базы ----------

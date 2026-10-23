@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useState } from "react";
 import FlipCard from "@/components/FlipCard";
 import Mana from "@/components/Mana";
+import { bkCost } from "@/lib/berserk";
 import WotcNotice from "@/components/WotcNotice";
 import { api } from "@/lib/api";
 import { GAMES, ORDER_LABELS, RARITY_RU, gameInfo, searchHref } from "@/lib/cards";
@@ -117,6 +118,7 @@ function Pager({ page, pages, go }: { page: number; pages: number; go: (p: numbe
 function Pt({ c }: { c: any }) {
   if (c.power != null) return <>{c.power}/{c.toughness}</>;
   if (c.loyalty != null) return <>верн. {c.loyalty}</>;
+  if (c.bk?.health != null) return <>♥{c.bk.health}{c.bk.strike ? ` · ${c.bk.strike}` : ""}</>;
   return null;
 }
 
@@ -182,7 +184,7 @@ function Results({ q, game, order, dir, page }: { q: string; game: string; order
                 <span className="cap">
                   <b>{c.name_ru || c.name}</b>
                   {c.name_ru ? <span className="muted small">{c.name}<br /></span> : null}
-                  <span className="small"><Mana text={c.mana_cost} size={14} /></span>
+                  <span className="small"><Mana text={bkCost(c)} size={14} /></span>
                 </span>
               </Link>
             ))}
@@ -195,7 +197,7 @@ function Results({ q, game, order, dir, page }: { q: string; game: string; order
                 {data.items.map((c: any) => (
                   <tr key={c.id}>
                     <td><Link href={`/cards/${c.id}`}>{c.name_ru || c.name}</Link>{c.name_ru ? <div className="muted small">{c.name}</div> : null}</td>
-                    <td><Mana text={c.mana_cost} size={14} /></td>
+                    <td><Mana text={bkCost(c)} size={14} /></td>
                     <td className="small">{c.type_ru || c.type}</td>
                     <td className="small muted">{(c.set || "").toUpperCase()}</td>
                     <td className="small">{RARITY_RU[c.rarity] || c.rarity || ""}</td>
@@ -211,7 +213,7 @@ function Results({ q, game, order, dir, page }: { q: string; game: string; order
               <article key={c.id} className="panel">
                 <div className="row" style={{ justifyContent: "space-between" }}>
                   <Link href={`/cards/${c.id}`}><b>{c.name_ru || c.name}</b></Link>
-                  <Mana text={c.mana_cost} size={15} />
+                  <Mana text={bkCost(c)} size={15} />
                 </div>
                 {c.name_ru ? <div className="muted small">{c.name}</div> : null}
                 <p className="muted small" style={{ margin: "6px 0" }}>{c.type_ru || c.type}</p>

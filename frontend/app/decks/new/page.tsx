@@ -25,9 +25,9 @@ function NewDeck() {
         e.preventDefault();
         run(async () => {
           const body: any = { name: f.name, game: f.game, text: f.text, in_meta: f.in_meta };
-          if (f.game === "mtg") Object.assign(body, { format: f.format, visibility: f.visibility });
+          Object.assign(body, { format: f.game === "mtg" ? f.format : "berserk", visibility: f.visibility });
           const r = await api<any>("/decks", { body });
-          router.push(f.game === "mtg" ? `/decks/${r.id}/edit` : `/decks/${r.id}`);
+          router.push(`/decks/${r.id}/edit`);
         });
       }}>
         <label><span>Название</span><input required maxLength={128} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })}
@@ -40,37 +40,35 @@ function NewDeck() {
             </select>
           </label>
           {f.game === "mtg" ? (
-            <>
               <label><span>Формат</span>
                 <select value={f.format} onChange={(e) => setF({ ...f, format: e.target.value })}>
                   {DECK_FORMATS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                 </select>
               </label>
-              <label><span>Доступ</span>
-                <select value={f.visibility} onChange={(e) => setF({ ...f, visibility: e.target.value })}>
-                  {VISIBILITY.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                </select>
-              </label>
-            </>
           ) : null}
+          <label><span>Доступ</span>
+            <select value={f.visibility} onChange={(e) => setF({ ...f, visibility: e.target.value })}>
+              {VISIBILITY.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+          </label>
         </div>
-        {f.game === "mtg" ? <p className="hint" style={{ marginTop: 0 }}>{VISIBILITY.find(([k]) => k === f.visibility)?.[2]}.</p> : null}
-        <details open={open || f.game !== "mtg"} onToggle={(e) => setOpen(e.currentTarget.open)}>
-          <summary>Загрузить готовый список {f.game === "mtg" ? "(необязательно)" : ""}</summary>
+        <p className="hint" style={{ marginTop: 0 }}>{VISIBILITY.find(([k]) => k === f.visibility)?.[2]}.</p>
+        <details open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+          <summary>Загрузить готовый список (необязательно)</summary>
           <div className="row" style={{ marginTop: 12 }}>
             <DeckFileInput onText={(text, name) => { setF((x) => ({ ...x, text, name: x.name || name })); setOpen(true); }} />
             <span className="muted small">или вставьте текст ниже</span>
           </div>
-          <label style={{ marginTop: 12 }}><span>Экспорт из Moxfield, MTGGoldfish, Archidekt, Arena или MTGO; строки вида «1 Sol Ring»</span>
-            <textarea value={f.text} required={f.game !== "mtg"} onChange={(e) => setF({ ...f, text: e.target.value })} style={{ minHeight: 200 }}
-              placeholder={"Commander\n1 Atraxa, Praetors' Voice\n\nDeck\n1 Sol Ring\n35 Forest"} />
+          <label style={{ marginTop: 12 }}><span>{f.game === "mtg" ? "Экспорт из Moxfield, MTGGoldfish, Archidekt, Arena или MTGO; строки вида «1 Sol Ring»" : "Строки вида «3 Преторианец»"}</span>
+            <textarea value={f.text} onChange={(e) => setF({ ...f, text: e.target.value })} style={{ minHeight: 200 }}
+              placeholder={f.game === "mtg" ? "Commander\n1 Atraxa, Praetors' Voice\n\nDeck\n1 Sol Ring\n35 Forest" : "3 Преторианец\n2 Изобретатель Братства"} />
           </label>
         </details>
         <label className="check">
           <input type="checkbox" checked={f.in_meta} onChange={(e) => setF({ ...f, in_meta: e.target.checked })} />
           <span>Учитывать в мете — колода анонимно попадёт в «Популярное у игроков»</span>
         </label>
-        <div><button className="primary" disabled={busy}>{f.game === "mtg" ? "Создать и открыть конструктор" : "Сохранить колоду"}</button></div>
+        <div><button className="primary" disabled={busy}>Создать и открыть конструктор</button></div>
         <Status error={error} />
       </form>
     </>

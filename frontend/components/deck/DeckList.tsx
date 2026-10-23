@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Mana from "@/components/Mana";
+import { bkCost } from "@/lib/berserk";
 import { COMMANDER_FORMATS, Row, count, displayName, grouped } from "@/lib/decks";
 
 export type Ops = {
@@ -56,7 +57,7 @@ export default function DeckList({ rows, format, lang, ops, onHover }: {
                     {r.card?.is_game_changer && isCmd ? <span className="gold small" title="Game Changer"> GC</span> : null}
                     {bad ? <span className="loss small"> · {bad}</span> : null}
                   </span>
-                  <span className="cost"><Mana text={r.card?.mana_cost?.split(" // ")[0]} size={14} /></span>
+                  <span className="cost"><Mana text={r.card ? bkCost(r.card).split(" // ")[0] : ""} size={14} /></span>
                   {ops ? (
                     <select className="rowmenu" value="" aria-label={`Действия: ${r.name}`} onChange={(e) => {
                       const v = e.target.value;

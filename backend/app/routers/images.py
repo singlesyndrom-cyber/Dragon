@@ -27,6 +27,7 @@ log = logging.getLogger("images")
 KINDS = {"small", "normal", "large", "png", "art_crop", "border_crop"}
 CARD_PATH = re.compile(r"^(front|back)/[0-9a-f]/[0-9a-f]/[0-9a-f-]{36}\.(jpg|png)$")
 SYMBOL = re.compile(r"^[A-Z0-9½∞]{1,8}$")
+BK_PATH = re.compile(r"^(cards/[A-Za-z0-9]{1,8}/[A-Za-z0-9_-]{1,24}\.jpg|icons/[a-z0-9-]{1,40}\.png)$")
 CACHE_HEADERS = {"Cache-Control": "public, max-age=2592000, immutable"}
 _locks: dict[str, asyncio.Lock] = {}
 transport: httpx.AsyncBaseTransport | None = None     # подмена в тестах
@@ -37,10 +38,10 @@ def _cache_path(*parts: str) -> Path:
     return Path(settings.image_cache_dir).joinpath(*parts)
 
 
-async def _fetch(url: str) -> bytes:
-    """Сначала через прокси Scryfall (если есть), при сбое - напрямую."""
+async def _fetch(url: str, direct_first: bool = False) -> bytes:
+    """Сначала через прокси Scryfall (если есть), при сбое - напрямую. Российские сайты - сразу напрямую."""
     errors = []
-    for prx in dict.fromkeys([scryfall.proxy(), None]):
+    for prx in dict.fromkeys([None] if direct_first else [scryfall.proxy(), None]):
         try:
             net = {"transport": transport} if transport else {"proxy": prx}
             async with httpx.AsyncClient(**net, timeout=httpx.Timeout(10, read=30), follow_redirects=True,
@@ -69,14 +70,14 @@ def _prune() -> None:
             pass
 
 
-async def _serve(key: tuple[str, ...], url: str, media: str) -> FileResponse:
+async def _serve(key: tuple[str, ...], url: str, media: str, direct_first: bool = False) -> FileResponse:
     global _writes
     path = _cache_path(*key)
     if not path.exists():
         lock = _locks.setdefault(str(path), asyncio.Lock())
         async with lock:                               # одну картинку качаем один раз, даже если её просят 20 человек
             if not path.exists():
-                data = await _fetch(url)
+                data = await _fetch(url, direct_first)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 tmp = path.with_suffix(path.suffix + f".{os.getpid()}.tmp")
                 tmp.write_bytes(data)
@@ -91,6 +92,15 @@ async def _serve(key: tuple[str, ...], url: str, media: str) -> FileResponse:
         except OSError:
             pass
     return FileResponse(path, media_type=media, headers=CACHE_HEADERS)
+
+
+@router.get("/img/bk/{path:path}")
+async def berserk_image(path: str):
+    """Картинки карт и значки «Берсерка» с ProBerserk.ru: качаем по первому просмотру, дальше - из кэша."""
+    if not BK_PATH.match(path):
+        raise HTTPException(404, "Нет такой картинки")
+    media = "image/png" if path.endswith(".png") else "image/jpeg"
+    return await _serve(("bk", *path.split("/")), f"https://proberserk.ru/images/{path}", media, direct_first=True)
 
 
 @router.get("/img/symbol/{code}.svg")

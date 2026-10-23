@@ -6,8 +6,11 @@ import { Row, shuffle } from "@/lib/decks";
 
 type C = { uid: number; name: string; image?: string | null; back?: string | null };
 
-/** Тестовая рука: перемешать основную колоду (без командира и сайда), взять 7, муллиган, добор. */
-export default function TestHand({ rows, lang }: { rows: Row[]; lang: "ru" | "en" }) {
+/** Тестовая рука: перемешать основную колоду (без командира и сайда), взять 7, муллиган, добор.
+ *  «Берсерк»: раздача (size карт) для сбора отряда, без муллигана. */
+export default function TestHand({ rows, lang, size: handSize = 7, berserk = false }: {
+  rows: Row[]; lang: "ru" | "en"; size?: number; berserk?: boolean;
+}) {
   const [library, setLibrary] = useState<C[]>([]);
   const [hand, setHand] = useState<C[]>([]);
   const [mulligans, setMulligans] = useState(0);
@@ -24,8 +27,8 @@ export default function TestHand({ rows, lang }: { rows: Row[]; lang: "ru" | "en
   }
   function deal(mull: number) {
     const lib = fresh();
-    setHand(lib.slice(0, 7));
-    setLibrary(lib.slice(7));
+    setHand(lib.slice(0, handSize));
+    setLibrary(lib.slice(handSize));
     setMulligans(mull);
   }
   function draw() {
@@ -35,14 +38,14 @@ export default function TestHand({ rows, lang }: { rows: Row[]; lang: "ru" | "en
   }
 
   const size = rows.filter((x) => x.section === "main").reduce((n, r) => n + r.qty, 0);
-  if (size < 7) return <p className="muted small">Для тестовой руки нужно хотя бы 7 карт в основной колоде.</p>;
+  if (size < handSize) return <p className="muted small">Для тестовой {berserk ? "раздачи" : "руки"} нужно хотя бы {handSize} карт в колоде.</p>;
   return (
     <div>
       <div className="row">
-        <button type="button" className="primary" onClick={() => deal(0)}>{hand.length ? "Новая рука" : "Взять 7 карт"}</button>
+        <button type="button" className="primary" onClick={() => deal(0)}>{hand.length ? (berserk ? "Новая раздача" : "Новая рука") : `Взять ${handSize} карт`}</button>
         {hand.length ? (
           <>
-            <button type="button" onClick={() => deal(mulligans + 1)}>Муллиган</button>
+            {berserk ? null : <button type="button" onClick={() => deal(mulligans + 1)}>Муллиган</button>}
             <button type="button" onClick={draw} disabled={!library.length}>Взять карту</button>
             <span className="muted small">
               {mulligans ? `Муллиганов: ${mulligans} — по лондонскому правилу положите ${mulligans} ${mulligans === 1 ? "карту" : "карты"} вниз. ` : ""}

@@ -5,8 +5,9 @@ export const DECK_FORMATS: [string, string][] = [
   ["pioneer", "Pioneer"], ["modern", "Modern"], ["legacy", "Legacy"], ["vintage", "Vintage"], ["pauper", "Pauper"],
   ["casual", "Свободный"],
 ];
+export const BK_FORMATS: [string, string][] = [["berserk", "Берсерк (классика)"], ["casual", "Свободный"]];
 export const COMMANDER_FORMATS = new Set(["commander", "duel", "brawl"]);
-export const formatTitle = (f: string) => DECK_FORMATS.find(([k]) => k === f)?.[1] || f;
+export const formatTitle = (f: string) => [...DECK_FORMATS, ...BK_FORMATS].find(([k]) => k === f)?.[1] || f;
 
 export const VISIBILITY: [string, string, string][] = [
   ["private", "Личная", "Видите только вы и организатор турнира, если подадите колоду"],
@@ -21,17 +22,23 @@ export type CardInfo = {
   prices?: Record<string, string | null>; legalities?: Record<string, string>; is_game_changer?: boolean;
   back_image?: string | null;
   print?: { id: number; set: string; set_name?: string | null; number?: string | null } | null;
+  bk?: import("./berserk").Bk; text?: string | null;
 };
 export type Row = { key: string; name: string; qty: number; section: "main" | "side" | "commander"; card: CardInfo | null };
 
 export const GROUPS: [string, string][] = [
   ["commander", "Командир"], ["creature", "Существа"], ["planeswalker", "Planeswalker'ы"], ["battle", "Битвы"],
   ["instant", "Мгновенные"], ["sorcery", "Волшебство"], ["artifact", "Артефакты"], ["enchantment", "Чары"],
-  ["land", "Земли"], ["other", "Прочее"], ["side", "Сайдборд"],
+  ["land", "Земли"], ["flyer", "Летающие"], ["bk-artifact", "Артефакты"], ["terrain", "Местности"],
+  ["other", "Прочее"], ["side", "Сайдборд"],
 ];
 
 export function typeGroup(type?: string | null): string {
   const t = (type || "").split("//")[0].toLowerCase();
+  // «Берсерк»: «Существо – Летающее · Класс», «Артефакт», «Местность»
+  if (t.startsWith("существо")) return t.includes("летающ") ? "flyer" : "creature";
+  if (t.startsWith("артефакт")) return "bk-artifact";
+  if (t.startsWith("местность")) return "terrain";
   for (const g of ["creature", "planeswalker", "battle", "land", "instant", "sorcery", "artifact", "enchantment"]) {
     if (t.includes(g)) return g;
   }
@@ -58,8 +65,15 @@ export function stats(rows: Row[]) {
   const curve = Array(8).fill(0) as number[];         // 0..6, 7+ - без земель
   const pips: Record<string, number> = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
   const types: Record<string, number> = {};
-  let mvSum = 0, spells = 0, usd = 0, eur = 0;
+  const elements: Record<string, number> = {};
+  let mvSum = 0, spells = 0, usd = 0, eur = 0, elite = 0, isBk = false;
   for (const r of deck) {
+    const bk = r.card?.bk;
+    if (bk) {
+      isBk = true;
+      if (bk.elite) elite += r.qty;
+      for (const el of bk.elements || []) elements[el] = (elements[el] || 0) + r.qty;
+    }
     const g = typeGroup(r.card?.type);
     types[g] = (types[g] || 0) + r.qty;
     if (g !== "land") {
@@ -77,7 +91,7 @@ export function stats(rows: Row[]) {
     if (p.usd) usd += Number(p.usd) * r.qty;
     if (p.eur) eur += Number(p.eur) * r.qty;
   }
-  return { curve, pips, types, avg: spells ? mvSum / spells : 0, usd, eur, lands: types.land || 0 };
+  return { curve, pips, types, avg: spells ? mvSum / spells : 0, usd, eur, lands: types.land || 0, elements, elite, isBk };
 }
 
 /** Экспорт: «Commander / Deck / Sideboard» понимают Moxfield, MTGGoldfish, Arena; MTGO - основа, пустая строка, сайд.

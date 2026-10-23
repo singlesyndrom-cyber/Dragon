@@ -19,7 +19,10 @@ FORMATS: dict[str, dict] = {
     "vintage": {"title": "Vintage", "size": 60},
     "pauper": {"title": "Pauper", "size": 60},
     "casual": {"title": "Свободный", "size": 0},
+    # классический «Берсерк»: колода от 30 карт, не больше 3 одинаковых
+    "berserk": {"title": "Берсерк", "size": 30, "copies": 3, "game": "berserk", "sideboard": False},
 }
+GAME_FORMATS = {"berserk": "berserk"}      # формат по умолчанию для колод не-MTG
 SIDEBOARD_MAX = 15
 ANY_NUMBER = re.compile(r"a deck can have any number of cards named", re.I)
 UP_TO = re.compile(r"a deck can have up to (\w+) cards named", re.I)
@@ -87,7 +90,7 @@ def check(entries: list[Entry], fmt: str) -> list[dict]:
             err(f"В колоде {total} карт, нужно ровно {rules['size']} (с командиром)")
         elif not is_cmd and total < rules["size"]:
             err(f"В основной колоде {total} карт, нужно не меньше {rules['size']}")
-        if not is_cmd and sum(e.qty for e in side) > SIDEBOARD_MAX:
+        if not is_cmd and rules.get("sideboard", True) and sum(e.qty for e in side) > SIDEBOARD_MAX:
             err(f"В сайдборде {sum(e.qty for e in side)} карт, можно не больше {SIDEBOARD_MAX}")
 
     if is_cmd:
@@ -124,14 +127,15 @@ def check(entries: list[Entry], fmt: str) -> list[dict]:
     if rules["size"]:
         too_many = []
         for name, n in counts.items():
-            limit = _copies_limit(cards_by_name[name], is_cmd)
+            limit = rules["copies"] if "copies" in rules else _copies_limit(cards_by_name[name], is_cmd)
             if limit is not None and n > limit:
                 too_many.append(f"{name} ×{n}")
         if too_many:
-            err(("Singleton — одна копия каждой карты: " if is_cmd else "Больше четырёх копий: ")
+            err(("Singleton — одна копия каждой карты: " if is_cmd
+                 else f"Больше {rules.get('copies', 4)} копий: ")
                 + ", ".join(sorted(too_many)[:12]))
 
-    if fmt in FORMATS and fmt != "casual":
+    if fmt in FORMATS and fmt != "casual" and "game" not in rules:
         banned, not_legal, restricted = set(), set(), set()
         for e in playing + side:
             if e.card is None:
