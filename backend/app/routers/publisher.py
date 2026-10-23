@@ -175,7 +175,7 @@ async def _berserk_meta(session, entries, games_) -> dict:
     """Связки стихий, архетипы и профиль колод: по турнирам (с результатами) и по колодам «в мете» игроков."""
     from .. import bkmeta
     deck_of = dict((await session.execute(select(TournamentPlayer.id, TournamentPlayer.deck_id)
-                                          .where(TournamentPlayer.id.in_([e.id for e in entries]))).all()) if entries else {}
+                                          .where(TournamentPlayer.id.in_([e.id for e in entries])))).all()) if entries else {}
     prof = await bkmeta.deck_profiles(session, deck_of.values())
     tournaments = bkmeta.summarize({e: prof[d] for e, d in deck_of.items() if d in prof}, games_, 3)
     pool_ids = (await session.execute(select(Deck.id).join(User, User.id == Deck.user_id).where(
