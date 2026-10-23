@@ -37,6 +37,9 @@ async def register(session: AsyncSession, tg_id: int, username: str | None, name
     t = await session.get(Tournament, tid)
     if not t:
         return "Турнир не найден"
+    if (await session.execute(select(TournamentPlayer.id).where(
+            TournamentPlayer.tournament_id == tid, TournamentPlayer.user_id == user.id))).first():
+        return f"Вы уже записаны на «{t.name}» ({_when(t.starts_at)})."
     try:
         await self_register(session, t, user)
         await session.commit()

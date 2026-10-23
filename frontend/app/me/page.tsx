@@ -27,6 +27,12 @@ function Cabinet() {
   const [rating, setRating] = useState<any>(null);
   useEffect(() => { if (me) api(`/auctions/users/${me.id}/rating`).then(setRating).catch(() => {}); }, [me]);
   const link = useAction();
+  useEffect(() => {   // вернулись с VK ID после привязки - обновить способы входа
+    if (window.location.search.includes("vk=linked")) {
+      reload();
+      window.history.replaceState(null, "", "/me");
+    }
+  }, [reload]);
   const onTelegram = useCallback((data: Record<string, unknown>) => {
     link.run(() => api("/auth/telegram/link", { body: data }), "Telegram привязан").then((ok) => { if (ok) reload(); });
   }, [link, reload]);

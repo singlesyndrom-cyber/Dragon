@@ -55,7 +55,7 @@ async def test_register_from_announcement_and_waitlist(client):
     assert text.startswith("✅ masha, вы записаны на «Командир»") and "Записано 2 из 2" in text
     async with SessionLocal() as s:
         # повторное нажатие
-        assert await tg_actions.register(s, 111, "masha", "Маша", tid) == "Вы уже зарегистрированы"
+        assert (await tg_actions.register(s, 111, "masha", "Маша", tid)).startswith("Вы уже записаны на «Командир»")
         # второй игрок - мест нет, встаёт в очередь
         assert "листе ожидания (1-й)" in await tg_actions.register(s, 222, None, "Петя", tid)
         user = (await s.execute(select(User).join(AuthAccount, AuthAccount.user_id == User.id).where(
