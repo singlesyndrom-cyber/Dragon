@@ -108,4 +108,4 @@ async def test_sync_search_deck_and_images(client, tmp_path, monkeypatch):
         assert r.status_code == 200 and r.content == b"JPEG"
     assert calls == ["https://proberserk.ru/images/cards/7/1.jpg"]
     assert (await client.get("/img/bk/icons/icon-tap.png")).status_code == 200
-    assert (await client.get("/img/bk/../secret.jpg")).status_code == 404
+    assert (await client.get("/img/bk/other/1.jpg")).status_code == 404 and (await client.get("/img/bk/cards/7/1.exe")).status_code == 404
