@@ -134,7 +134,8 @@ def skip(cfg: dict, state: dict, now: datetime) -> dict:
     cur = current(cfg, state, now)
     if cur["stage"] in ("seating", "done"):
         return state
-    return {**state, "offset": float(state.get("offset", 0)) + cur["left"]}
+    end = cur["step_started"] + cur["step"]["seconds"]          # точный конец этапа (left округлён)
+    return {**state, "offset": float(state.get("offset", 0)) + (end - elapsed(state, now)) + 0.001}
 
 
 def steps_with_extra(cfg: dict, state: dict) -> list[dict]:
