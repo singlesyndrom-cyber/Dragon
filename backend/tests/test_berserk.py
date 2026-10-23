@@ -25,6 +25,7 @@ def test_parse_edition_page():
     land = cards["Бернхольм"]
     assert land["extra"]["elite"] and land["extra"]["health"] is None and land["extra"]["move"] is None
     assert land["rarity"] == "rare"
+    assert cards["Бешеный карлик"]["extra"]["proberserk_id"] == "1607e8a5-6983-45c4-8611-49eeaaacfaf6"   # id с дефисами
     assert cards["Бешеный карлик"]["extra"]["elements"] == ["Нейтральная"] and cards["Бешеный карлик"]["extra"]["class"] is None
 
 
