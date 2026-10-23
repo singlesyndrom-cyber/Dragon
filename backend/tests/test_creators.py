@@ -183,3 +183,23 @@ async def test_existing_organizers_get_status_on_upgrade(client):
     async with SessionLocal() as s:
         flags = dict((await s.execute(select(User.id, User.is_club_creator))).all())
     assert flags[org["id"]] is True and flags[other["id"]] is False
+
+
+async def test_admin_deletes_club(client, mails):
+    ah, admin = await reg(client, 0)
+    await make_admin(admin["id"])
+    ph, player = await reg(client, 1)
+    rid = (await client.post("/creator-requests", json=REQ, headers=ph)).json()["id"]
+    club_id = (await client.post(f"/admin/creator-requests/{rid}/approve", headers=ah)).json()["club_id"]
+    tid = (await client.post("/tournaments", json={"club_id": club_id, "name": "Кубок", "game": "berserk",
+                                                   "format": "swiss", "silent": True}, headers=ph)).json()["id"]
+    await client.post(f"/tournaments/{tid}/players", json={"nickname": "Гость клуба"}, headers=ph)
+    assert (await client.request("DELETE", f"/clubs/{club_id}", json={"confirm": "Драконье логово"},
+                                 headers=ph)).status_code == 403          # только администратор
+    assert (await client.request("DELETE", f"/clubs/{club_id}", json={"confirm": "Другое"},
+                                 headers=ah)).status_code == 400          # название не совпало
+    r = await client.request("DELETE", f"/clubs/{club_id}", json={"confirm": "драконье  логово"}, headers=ah)
+    assert r.status_code == 200 and r.json()["tournaments"] == 1 and r.json()["guests_removed"] == 1
+    assert club_id not in [c["id"] for c in (await client.get("/clubs")).json()]
+    assert (await client.get(f"/tournaments/{tid}")).status_code == 404
+    assert (await client.get("/auth/me", headers=ph)).status_code == 200   # аккаунт игрока остался

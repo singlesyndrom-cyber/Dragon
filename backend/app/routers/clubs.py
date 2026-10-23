@@ -413,3 +413,49 @@ async def merge_guest(club_id: int, guest_id: int, data: MergeIn, user: User = D
     await session.execute(delete(User).where(User.id == guest_id))   # без ленивой загрузки связей
     await session.commit()
     return {"merged_into": target}
+
+
+# ---------- администратор: удаление клуба ----------
+class ClubDeleteIn(BaseModel):
+    confirm: str = Field(min_length=1, max_length=128)      # точное название клуба - защита от удаления не того клуба
+
+
+@router.delete("/{club_id}")
+async def delete_club(club_id: int, data: ClubDeleteIn, admin: User = Depends(require_admin),
+                      session: AsyncSession = Depends(get_session)):
+    """Удалить клуб целиком: турниры с результатами, сезоны лиг, участники, столы и брони, новости клуба,
+    подключения Telegram/VK, картинки оповещений - каскадом в БД. Гости клуба без другой истории удаляются.
+    Аккаунты игроков и их колоды остаются."""
+    from sqlalchemy import delete as sql_delete, exists, or_
+    import logging
+    from ..models import EdhSeat, Match, Tournament, TournamentPlayer
+    club = await session.get(Club, club_id)
+    if not club:
+        raise HTTPException(404, "Клуб не найден")
+    if " ".join(data.confirm.split()).lower() != " ".join(club.name.split()).lower():
+        raise HTTPException(400, "Для подтверждения введите точное название клуба")
+    name = club.name
+    tournaments = (await session.execute(select(func.count()).select_from(Tournament)
+                                         .where(Tournament.club_id == club_id))).scalar_one()
+    members = (await session.execute(select(func.count()).select_from(ClubMember)
+                                     .where(ClubMember.club_id == club_id))).scalar_one()
+    guests = (await session.execute(select(User.id).where(User.is_guest.is_(True), User.guest_club_id == club_id))).scalars().all()
+    session.expunge(club)
+    await session.execute(sql_delete(Club).where(Club.id == club_id))
+    await session.flush()
+    removed = 0
+    for uid in guests:                                   # гости этого клуба, которые больше нигде не играли
+        played = (await session.execute(select(
+            exists().where(TournamentPlayer.user_id == uid) | exists().where(EdhSeat.user_id == uid)
+            | exists().where(or_(Match.p1_user_id == uid, Match.p2_user_id == uid))))).scalar()
+        if played:
+            continue
+        try:
+            async with session.begin_nested():
+                await session.execute(sql_delete(User).where(User.id == uid, User.is_guest.is_(True)))
+            removed += 1
+        except Exception:  # noqa: BLE001  на гостя ещё что-то ссылается - оставляем
+            pass
+    await session.commit()
+    logging.getLogger("clubs").warning("клуб %s «%s» удалён администратором %s", club_id, name, admin.id)
+    return {"deleted": club_id, "name": name, "tournaments": tournaments, "members": members, "guests_removed": removed}

@@ -43,6 +43,7 @@ function AdminContent() {
           <Scryfall />
           <BerserkSync />
           <Accounts />
+          <ClubsAdmin />
           <Categories />
         </aside>
       </div>
@@ -444,6 +445,52 @@ function Publishers() {
           <button disabled={busy || !f.games.length}>Назначить</button>
         </div>
       </form>
+      <Status error={error} done={done} />
+    </div>
+  );
+}
+
+
+/** Удаление клуба целиком. Подтверждение - вводом точного названия: действие необратимо. */
+function ClubsAdmin() {
+  const [clubs, setClubs] = useState<any[]>([]);
+  const [sel, setSel] = useState<any>(null);
+  const [confirm, setConfirm] = useState("");
+  const { busy, error, done, run } = useAction();
+  const load = useCallback(() => api<any[]>("/clubs").then(setClubs).catch(() => {}), []);
+  useEffect(() => { load(); }, [load]);
+  const ok = sel && confirm.trim().toLowerCase() === sel.name.trim().toLowerCase();
+  return (
+    <div className="panel">
+      <h3>Клубы</h3>
+      <ul className="news-list">
+        {clubs.map((c) => (
+          <li key={c.id} className="row" style={{ justifyContent: "space-between", padding: "6px 0" }}>
+            <span><Link href={`/clubs/${c.slug}`}>{c.name}</Link>{c.city ? <span className="muted small"> · {c.city}</span> : null}</span>
+            <button type="button" className="link-btn small danger" onClick={() => { setSel(c); setConfirm(""); }}>Удалить</button>
+          </li>
+        ))}
+      </ul>
+      {sel ? (
+        <div className="stack section" style={{ gap: 8 }}>
+          <p className="small" style={{ margin: 0 }}>
+            <b className="loss">Удалить клуб «{sel.name}» навсегда?</b> Вместе с ним удалятся его турниры и результаты, сезоны
+            лиг, участники клуба, столы и брони, новости клуба, подключения Telegram и VK. Аккаунты игроков и их колоды
+            останутся. Отменить нельзя.
+          </p>
+          <label><span className="small">Введите название клуба для подтверждения</span>
+            <input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={sel.name} autoComplete="off" />
+          </label>
+          <div className="row">
+            <button type="button" className="danger" disabled={busy || !ok} onClick={() => run(async () => {
+              const r = await api<any>(`/clubs/${sel.id}`, { method: "DELETE", body: { confirm } });
+              setSel(null); setConfirm(""); await load();
+              return r;
+            }, `Клуб «${sel.name}» удалён`)}>Удалить клуб</button>
+            <button type="button" className="link-btn" onClick={() => setSel(null)}>Отмена</button>
+          </div>
+        </div>
+      ) : null}
       <Status error={error} done={done} />
     </div>
   );
