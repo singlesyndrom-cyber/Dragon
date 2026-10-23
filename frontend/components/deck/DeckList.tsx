@@ -8,6 +8,7 @@ export type Ops = {
   qty: (key: string, delta: number) => void;
   move: (key: string, section: Row["section"]) => void;
   remove: (key: string) => void;
+  print?: (key: string) => void;          // открыть выбор издания
 };
 
 function issue(r: Row, format: string, identity: Set<string> | null): string | null {
@@ -51,6 +52,7 @@ export default function DeckList({ rows, format, lang, ops, onHover }: {
                   <span className="cname">
                     {r.card && !ops ? <Link href={`/cards/${r.card.id}`}>{displayName(r, lang)}</Link>
                       : <button type="button" className="linkish" onClick={() => onHover?.(r)}>{displayName(r, lang)}</button>}
+                    {r.card?.print ? <span className="muted small pset" title={`${r.card.print.set_name || ""}${r.card.print.number ? ` №${r.card.print.number}` : ""}`}> {r.card.print.set.toUpperCase()}</span> : null}
                     {r.card?.is_game_changer && isCmd ? <span className="gold small" title="Game Changer"> GC</span> : null}
                     {bad ? <span className="loss small"> · {bad}</span> : null}
                   </span>
@@ -59,9 +61,11 @@ export default function DeckList({ rows, format, lang, ops, onHover }: {
                     <select className="rowmenu" value="" aria-label={`Действия: ${r.name}`} onChange={(e) => {
                       const v = e.target.value;
                       if (v === "remove") ops.remove(r.key);
+                      else if (v === "print") ops.print?.(r.key);
                       else if (v) ops.move(r.key, v as Row["section"]);
                     }}>
                       <option value="">⋯</option>
+                      {r.card && ops.print ? <option value="print">Выбрать издание…</option> : null}
                       {r.section !== "main" ? <option value="main">В основную колоду</option> : null}
                       {r.section !== "side" ? <option value="side">В сайдборд</option> : null}
                       {isCmd && r.section !== "commander" ? <option value="commander">Сделать командиром</option> : null}

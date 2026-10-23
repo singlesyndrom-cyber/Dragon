@@ -137,7 +137,7 @@ async def get_card(card_id: int, session: AsyncSession = Depends(get_session)):
     return {**_brief(c), "set_name": c.set_name, "text": c.text, "type_ru": c.type_ru, "text_ru": c.text_ru,
             "cmc": c.cmc, "commander_legal": c.commander_legal, "is_game_changer": c.is_game_changer,
             "legalities": c.legalities or {}, "prices": c.prices or {}, "scryfall_uri": c.scryfall_uri,
-            "extra": c.extra or {}, "prints": [_print(p) for p in prints]}
+            "extra": c.extra or {}, "back_image": _back(c.extra or {}), "prints": [_print(p) for p in prints]}
 
 
 # ---------- админка: Scryfall ----------

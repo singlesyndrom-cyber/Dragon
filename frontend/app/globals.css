@@ -423,3 +423,15 @@ table.members td { vertical-align: middle; }
 .prints button.on { background: var(--gilt-soft); border-color: var(--gilt); }
 .prints .pset { font-family: monospace; font-size: 0.8rem; color: var(--muted); }
 .prints .pname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.875rem; }
+
+/* выбор издания карты в конструкторе */
+.printdlg { width: min(920px, calc(100vw - 32px)); max-height: calc(100vh - 48px); border: 1px solid var(--line);
+  border-radius: 10px; background: var(--vellum); color: var(--ivory); padding: 16px; }
+.printdlg::backdrop { background: rgba(0, 0, 0, 0.6); }
+.printgrid { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+.printgrid button { width: 100%; padding: 4px; display: flex; flex-direction: column; gap: 2px; text-align: left; }
+.printgrid button.on { border-color: var(--gilt); background: var(--gilt-soft); }
+.printgrid img { width: 100%; aspect-ratio: 488 / 680; object-fit: cover; border-radius: 5px; display: block; }
+.printgrid .noimg { aspect-ratio: 488 / 680; display: grid; place-items: center; }
+.decklist .pset { font-family: monospace; }

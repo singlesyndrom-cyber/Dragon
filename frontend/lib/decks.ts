@@ -20,6 +20,7 @@ export type CardInfo = {
   rarity?: string | null; set?: string | null; image_url?: string | null; image_large?: string | null;
   prices?: Record<string, string | null>; legalities?: Record<string, string>; is_game_changer?: boolean;
   back_image?: string | null;
+  print?: { id: number; set: string; set_name?: string | null; number?: string | null } | null;
 };
 export type Row = { key: string; name: string; qty: number; section: "main" | "side" | "commander"; card: CardInfo | null };
 
@@ -79,9 +80,12 @@ export function stats(rows: Row[]) {
   return { curve, pips, types, avg: spells ? mvSum / spells : 0, usd, eur, lands: types.land || 0 };
 }
 
-/** Экспорт: «Commander / Deck / Sideboard» понимают Moxfield, MTGGoldfish, Arena; MTGO - основа, пустая строка, сайд. */
-export function exportText(rows: Row[], style: "text" | "mtgo"): string {
-  const line = (r: Row) => `${r.qty} ${r.card?.name || r.name}`;
+/** Экспорт: «Commander / Deck / Sideboard» понимают Moxfield, MTGGoldfish, Arena; MTGO - основа, пустая строка, сайд.
+ *  withPrints: выбранные издания как в Moxfield - «1 Sol Ring (CMM) 410». */
+export function exportText(rows: Row[], style: "text" | "mtgo", withPrints = false): string {
+  const ed = (r: Row) => withPrints && style === "text" && r.card?.print
+    ? ` (${r.card.print.set.toUpperCase()})${r.card.print.number ? ` ${r.card.print.number}` : ""}` : "";
+  const line = (r: Row) => `${r.qty} ${r.card?.name || r.name}${ed(r)}`;
   const by = (s: string) => rows.filter((r) => r.section === s).map(line);
   if (style === "mtgo") {
     return [...by("commander"), ...by("main")].join("\n") + (by("side").length ? "\n\n" + by("side").join("\n") : "") + "\n";

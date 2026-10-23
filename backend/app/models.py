@@ -428,6 +428,8 @@ class DeckCard(Base):
     qty: Mapped[int] = mapped_column(Integer, default=1)
     is_commander: Mapped[bool] = mapped_column(default=False)
     section: Mapped[str] = mapped_column(String(16), default="main")  # main | side | commander
+    # выбранное издание (картинка, сет, цена); None - издание по умолчанию из карты
+    print_id: Mapped[int | None] = mapped_column(ForeignKey("card_prints.id", ondelete="SET NULL"))
 
 
 # ---------------- Блок 6: новости ----------------

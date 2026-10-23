@@ -144,6 +144,28 @@ async def test_sync_search_and_decks(client):
     names = [c["name"] for c in (await client.get(f"/decks/{deck['id']}", headers=h)).json()["cards"]]
     assert "Sol Ring" in names and "Delver of Secrets // Insectile Aberration" in names
 
+    # издание из строки Moxfield «(C21) 263 *F*» попадает в колоду; в конструкторе его можно сменить
+    deck = (await client.post("/decks", json={"name": "Изд", "format": "casual",
+                                              "text": "1 Sol Ring (C21) 263 *F*\n1 Delver of Secrets (XXX) 1"}, headers=h)).json()
+    assert deck["unmatched"] == []
+    rows = {c["name"]: c for c in (await client.get(f"/decks/{deck['id']}", headers=h)).json()["cards"]}
+    sol = rows["Sol Ring"]["card"]
+    assert sol["print"]["set"] == "c21" and sol["print"]["number"] == "263" and sol["set"] == "c21"
+    assert sol["prices"] == {"usd": 2.5}
+    assert rows["Delver of Secrets // Insectile Aberration"]["card"]["print"] is None     # нет такого издания - по умолчанию
+    cmm = next(p for p in card["prints"] if p["set"] == "cmm")
+    dlv = rows["Delver of Secrets // Insectile Aberration"]["card"]["id"]
+    r = await client.put(f"/decks/{deck['id']}/cards", headers=h, json={"cards": [
+        {"card_id": sol["id"], "qty": 1, "print_id": cmm["id"]},
+        {"card_id": dlv, "qty": 1, "print_id": cmm["id"]}]})          # издание другой карты - игнорируется
+    assert r.status_code == 200
+    rows = {c["name"]: c for c in (await client.get(f"/decks/{deck['id']}", headers=h)).json()["cards"]}
+    assert rows["Sol Ring"]["card"]["print"]["set"] == "cmm" and rows["Sol Ring"]["image_url"].endswith(f"{SOL1}.jpg")
+    assert rows["Delver of Secrets // Insectile Aberration"]["card"]["print"] is None
+    copy = (await client.post(f"/decks/{deck['id']}/copy", headers=h)).json()
+    got = (await client.get(f"/decks/{copy['id']}", headers=h)).json()["cards"]
+    assert next(c for c in got if c["name"] == "Sol Ring")["card"]["print"]["set"] == "cmm"
+
 
 async def test_legacy_json_array_format(client):
     def handler(request: httpx.Request) -> httpx.Response:

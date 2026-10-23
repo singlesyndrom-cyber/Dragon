@@ -7,7 +7,9 @@ import { Row, exportText } from "@/lib/decks";
 export default function ExportBox({ rows, name }: { rows: Row[]; name: string }) {
   const [style, setStyle] = useState<"text" | "mtgo">("text");
   const [copied, setCopied] = useState(false);
-  const text = exportText(rows, style);
+  const [prints, setPrints] = useState(true);
+  const hasPrints = rows.some((r) => r.card?.print);
+  const text = exportText(rows, style, prints);
   async function copy() {
     try {
       await navigator.clipboard.writeText(text);
@@ -30,6 +32,12 @@ export default function ExportBox({ rows, name }: { rows: Row[]; name: string })
           <option value="text">Moxfield, MTGGoldfish, Arena</option>
           <option value="mtgo">MTGO</option>
         </select>
+        {style === "text" && hasPrints ? (
+          <label className="check" style={{ margin: 0 }}>
+            <input type="checkbox" checked={prints} onChange={(e) => setPrints(e.target.checked)} />
+            <span>с изданиями</span>
+          </label>
+        ) : null}
         <button type="button" onClick={copy}>{copied ? "Скопировано" : "Копировать"}</button>
         <button type="button" onClick={download}>Скачать .txt</button>
       </div>

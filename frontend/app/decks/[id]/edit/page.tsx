@@ -7,6 +7,7 @@ import ConfirmButton from "@/components/ConfirmButton";
 import DeckFileInput from "@/components/deck/DeckFileInput";
 import DeckList, { Ops } from "@/components/deck/DeckList";
 import DeckStats from "@/components/deck/DeckStats";
+import PrintPicker from "@/components/deck/PrintPicker";
 import Problems from "@/components/deck/Problems";
 import { useLang } from "@/components/deck/useLang";
 import { Status, useAction } from "@/components/Form";
@@ -35,6 +36,7 @@ function Editor({ id }: { id: string }) {
   const [preview, setPreview] = useState<{ name: string; image?: string | null; back?: string | null } | null>(null);
   const [lang, setLang] = useLang();
   const [importing, setImporting] = useState(false);
+  const [printKey, setPrintKey] = useState<string | null>(null);
   const loaded = useRef(false);
   const version = useRef(0);
   const { busy, error, run } = useAction();
@@ -61,7 +63,8 @@ function Editor({ id }: { id: string }) {
       setSave("saving");
       try {
         const r = await api<any>(`/decks/${id}/cards`, { method: "PUT", body: {
-          cards: rows.map((x) => ({ card_id: x.card?.id ?? null, name: x.card ? null : x.name, qty: x.qty, section: x.section })) } });
+          cards: rows.map((x) => ({ card_id: x.card?.id ?? null, name: x.card ? null : x.name, qty: x.qty, section: x.section,
+            print_id: x.card?.print?.id ?? null })) } });
         if (v === version.current) { setProblems(r.problems); setSave("saved"); setSaveErr(""); }
       } catch (e: any) {
         if (v === version.current) { setSave("error"); setSaveErr(e.message); }
@@ -96,6 +99,7 @@ function Editor({ id }: { id: string }) {
     setPreview({ name: card.name, image: card.image_url, back: card.back_image });
   }
   const ops: Ops = {
+    print: (key) => setPrintKey(key),
     qty: (key, delta) => setRows((prev) => prev.flatMap((r) => r.key !== key ? [r] : r.qty + delta > 0 ? [{ ...r, qty: r.qty + delta }] : [])),
     remove: (key) => setRows((prev) => prev.filter((r) => r.key !== key)),
     move: (key, section) => setRows((prev) => {
@@ -104,7 +108,7 @@ function Editor({ id }: { id: string }) {
       const rest = prev.filter((x) => x.key !== key);
       const moved = section === "commander" ? 1 : r.qty;
       const back = section === "commander" && r.qty > 1 ? [{ ...r, qty: r.qty - 1 }] : [];   // лишние копии остаются в колоде
-      const i = rest.findIndex((x) => x.section === section && (x.card ? x.card.id === r.card?.id : x.name === r.name));
+      const i = rest.findIndex((x) => x.section === section && (x.card ? x.card.id === r.card?.id : x.name === r.name));   // издание - у той строки, куда переносим
       if (i >= 0) return [...back, ...rest.map((x, j) => j === i ? { ...x, qty: section === "commander" ? 1 : x.qty + moved } : x)];
       return [...back, ...rest, { ...r, key: newKey(), section, qty: moved }];
     }),
@@ -148,13 +152,20 @@ function Editor({ id }: { id: string }) {
       <Status error={error} />
       {importing ? <ImportBox id={id} deck={d} hasCards={rows.length > 0} onDone={() => { setImporting(false); load(); }} /> : null}
 
+      {printKey && rows.find((r) => r.key === printKey)?.card ? (
+        <PrintPicker row={rows.find((r) => r.key === printKey)!} onClose={() => setPrintKey(null)} onPick={(card) => {
+          setRows((prev) => prev.map((r) => r.key === printKey ? { ...r, card } : r));
+          setPreview({ name: card.name, image: card.image_large || card.image_url, back: card.back_image });
+        }} />
+      ) : null}
+
       <CardSearch format={d.format} isCmd={isCmd} lang={lang} onAdd={add} onPreview={setPreview} />
 
       <div className="builder">
         <div>
           <p className="muted small" style={{ marginTop: 0 }}>
             В колоде {count(playing(rows))}{isCmd ? " из 100" : ""}{rows.some((r) => r.section === "side") ? `, в сайдборде ${count(rows.filter((r) => r.section === "side"))}` : ""}.
-            Наведите на карту, чтобы увидеть её; «⋯» — перенести в сайдборд, сделать командиром или удалить.
+            Наведите на карту, чтобы увидеть её; «⋯» — выбрать издание, перенести в сайдборд, сделать командиром или удалить.
           </p>
           <DeckList rows={rows} format={d.format} lang={lang} ops={ops}
             onHover={(r) => setPreview({ name: r.name, image: r.card?.image_url, back: r.card?.back_image })} />
@@ -260,7 +271,7 @@ function ImportBox({ id, deck, hasCards, onDone }: { id: string; deck: any; hasC
   return (
     <div className="panel section">
       <h3 style={{ marginTop: 0 }}>Импорт списка</h3>
-      <p className="muted small">Вставьте экспорт из Moxfield, MTGGoldfish, Archidekt, Arena или MTGO. Разделы «Commander», «Deck», «Sideboard» и строки «SB:» распознаются; командир последней строкой после пустой — тоже. Русские названия понимаются.</p>
+      <p className="muted small">Вставьте экспорт из Moxfield, MTGGoldfish, Archidekt, Arena или MTGO. Разделы «Commander», «Deck», «Sideboard» и строки «SB:» распознаются; командир последней строкой после пустой — тоже. Русские названия понимаются; издание вида «(CMM) 410» сохраняется.</p>
       <div className="row" style={{ marginBottom: 10 }}>
         <DeckFileInput onText={(t) => setText(t)} />
         <span className="muted small">или вставьте текст</span>

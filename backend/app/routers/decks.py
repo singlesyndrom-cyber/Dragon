@@ -11,7 +11,7 @@ from ..db import get_session
 from ..decklist import ParsedCard, apply_commander, parse_decklist, resolve_tail, validate_edh
 from ..deps import current_user, is_club_organizer, optional_user
 from .cards import _back
-from ..models import (Card, Deck, DeckCard, GlobalRole, Tournament, TournamentPlayer,
+from ..models import (Card, CardPrint, Deck, DeckCard, GlobalRole, Tournament, TournamentPlayer,
                       TournamentStatus, User)
 
 router = APIRouter(prefix="/decks", tags=["decks"])
@@ -46,6 +46,7 @@ class CardRow(BaseModel):
     name: str | None = Field(default=None, max_length=255)   # для карт, которых нет в базе
     qty: int = Field(ge=1, le=250)
     section: str = "main"
+    print_id: int | None = None          # выбранное издание карты
 
 
 class CardsIn(BaseModel):
@@ -93,6 +94,16 @@ async def _fill(session: AsyncSession, deck: Deck, data: DeckIn) -> dict:
     parsed = resolve_tail(parsed, deck.format in ("commander", "duel", "brawl"),
                           lambda name: (card := lookup(name)) is not None and deckrules.can_be_commander(card, deck.format))
 
+    # издания из строк «1 Sol Ring (CMM) 410»: точное по номеру, иначе первое в этом сете
+    wanted = {(card.id, c.set_code) for c in parsed if c.set_code and (card := lookup(c.name))}
+    prints: dict[tuple, CardPrint] = {}
+    if wanted:
+        for p in (await session.execute(select(CardPrint).where(
+                CardPrint.card_id.in_({cid for cid, _ in wanted}), CardPrint.set_code.in_({sc for _, sc in wanted}))
+                .order_by(CardPrint.collector_number))).scalars():
+            prints.setdefault((p.card_id, p.set_code, (p.collector_number or "").lower()), p)
+            prints.setdefault((p.card_id, p.set_code, None), p)
+
     await session.execute(delete(DeckCard).where(DeckCard.deck_id == deck.id))
     unmatched = []
     merged: dict[tuple, DeckCard] = {}              # одна строка на карту в разделе, даже если в тексте повторы
@@ -104,9 +115,12 @@ async def _fill(session: AsyncSession, deck: Deck, data: DeckIn) -> dict:
         if key in merged:
             merged[key].qty += c.qty
             continue
+        pr = None
+        if card and c.set_code:
+            pr = prints.get((card.id, c.set_code, (c.number or "").lower())) or prints.get((card.id, c.set_code, None))
         merged[key] = DeckCard(deck_id=deck.id, card_id=card.id if card else None,
                                name=card.name if card else c.name, qty=c.qty,
-                               is_commander=c.is_commander, section=c.section)
+                               is_commander=c.is_commander, section=c.section, print_id=pr.id if pr else None)
         session.add(merged[key])
     deck.updated_at = func.now()
     warnings = validate_edh(parsed) if deck.game == "mtg" and deck.format in ("commander", "duel", "brawl") and parsed else []
@@ -146,27 +160,34 @@ async def _own(session: AsyncSession, deck_id: int, user: User, edit: bool = Fal
     return deck
 
 
-def card_info(c: Card | None) -> dict | None:
+def card_info(c: Card | None, p: CardPrint | None = None) -> dict | None:
     if c is None:
         return None
     ex = c.extra or {}
-    return {"id": c.id, "name": c.name, "name_ru": c.name_ru, "type": c.type_line, "type_ru": c.type_ru,
+    info = {"id": c.id, "name": c.name, "name_ru": c.name_ru, "type": c.type_line, "type_ru": c.type_ru,
             "mana_cost": c.mana_cost, "cmc": c.cmc, "colors": ex.get("colors") or [],
             "color_identity": ex.get("color_identity") or [], "rarity": c.rarity, "set": c.set_code,
             "image_url": c.image_url, "image_large": ex.get("image_large"), "prices": c.prices or {},
             "legalities": c.legalities or {}, "is_game_changer": c.is_game_changer,
-            "back_image": _back(ex)}
+            "back_image": _back(ex), "print": None}
+    if p is not None:                          # выбранное издание: его картинка, сет и цена
+        if p.image_url:
+            info.update(image_url=p.image_url, image_large=p.image_large or ex.get("image_large"), back_image=p.back_image)
+        info.update(set=p.set_code, prices=p.prices or info["prices"], rarity=p.rarity or c.rarity,
+                    print={"id": p.id, "set": p.set_code, "set_name": p.set_name, "number": p.collector_number})
+    return info
 
 
-async def _entries(session: AsyncSession, deck_id: int) -> list[tuple[DeckCard, Card | None]]:
-    return (await session.execute(select(DeckCard, Card).outerjoin(Card, Card.id == DeckCard.card_id)
+async def _entries(session: AsyncSession, deck_id: int) -> list[tuple[DeckCard, Card | None, CardPrint | None]]:
+    return (await session.execute(select(DeckCard, Card, CardPrint).outerjoin(Card, Card.id == DeckCard.card_id)
+                                  .outerjoin(CardPrint, CardPrint.id == DeckCard.print_id)
                                   .where(DeckCard.deck_id == deck_id).order_by(DeckCard.name))).all()
 
 
 def _problems(deck: Deck, rows) -> list[dict]:
     if deck.game != "mtg":
         return []
-    return deckrules.check([deckrules.Entry(dc.name, dc.qty, dc.section, card) for dc, card in rows], deck.format)
+    return deckrules.check([deckrules.Entry(dc.name, dc.qty, dc.section, card) for dc, card, _ in rows], deck.format)
 
 
 async def _detail(session: AsyncSession, deck: Deck, user: User | None) -> dict:
@@ -179,8 +200,9 @@ async def _detail(session: AsyncSession, deck: Deck, user: User | None) -> dict:
             "editable": mine, "locked": mine and await _locked(session, deck.id),
             "updated_at": deck.updated_at,
             "cards": [{"name": dc.name, "qty": dc.qty, "section": dc.section, "is_commander": dc.is_commander,
-                       "matched": dc.card_id is not None, "image_url": card.image_url if card else None,
-                       "card": card_info(card)} for dc, card in rows],
+                       "matched": dc.card_id is not None,
+                       "image_url": (pr.image_url if pr and pr.image_url else card.image_url) if card else None,
+                       "card": card_info(card, pr)} for dc, card, pr in rows],
             "problems": _problems(deck, rows)}
 
 
@@ -217,6 +239,8 @@ async def save_cards(deck_id: int, data: CardsIn, user: User = Depends(current_u
     deck = await _own(session, deck_id, user, edit=True)
     ids = {r.card_id for r in data.cards if r.card_id}
     cards = {c.id: c for c in (await session.execute(select(Card).where(Card.id.in_(ids), Card.game == deck.game))).scalars()} if ids else {}
+    pids = {r.print_id for r in data.cards if r.print_id}
+    print_card = dict((await session.execute(select(CardPrint.id, CardPrint.card_id).where(CardPrint.id.in_(pids)))).all()) if pids else {}
     merged: dict[tuple, DeckCard] = {}
     for r in data.cards:
         if r.section not in ("main", "side", "commander"):
@@ -231,8 +255,9 @@ async def save_cards(deck_id: int, data: CardsIn, user: User = Depends(current_u
         if key in merged:
             merged[key].qty += r.qty
         else:
+            pid = r.print_id if card and r.print_id and print_card.get(r.print_id) == card.id else None   # чужое издание - игнорируем
             merged[key] = DeckCard(deck_id=deck.id, card_id=card.id if card else None, name=name, qty=r.qty,
-                                   section=r.section, is_commander=r.section == "commander")
+                                   section=r.section, is_commander=r.section == "commander", print_id=pid)
     if sum(dc.qty for dc in merged.values()) > 1000:
         raise HTTPException(400, "Слишком много карт")
     await session.execute(delete(DeckCard).where(DeckCard.deck_id == deck.id))
@@ -275,13 +300,14 @@ async def public_decks(format: str | None = None, q: str = "", page: int = 1, se
     sizes: dict[int, int] = {}
     price: dict[int, float] = {}
     if ids:
-        for dc, card in (await session.execute(select(DeckCard, Card).outerjoin(Card, Card.id == DeckCard.card_id)
-                                               .where(DeckCard.deck_id.in_(ids)))).all():
+        for dc, card, pr in (await session.execute(select(DeckCard, Card, CardPrint).outerjoin(Card, Card.id == DeckCard.card_id)
+                                                   .outerjoin(CardPrint, CardPrint.id == DeckCard.print_id)
+                                                   .where(DeckCard.deck_id.in_(ids)))).all():
             if dc.section != "side":
                 sizes[dc.deck_id] = sizes.get(dc.deck_id, 0) + dc.qty
             if dc.section == "commander":
                 cmd.setdefault(dc.deck_id, []).append({"name": dc.name, "name_ru": card.name_ru if card else None,
-                                                       "image_url": card.image_url if card else None,
+                                                       "image_url": (pr.image_url if pr and pr.image_url else card.image_url) if card else None,
                                                        "color_identity": ((card.extra or {}).get("color_identity") if card else None) or []})
             usd = ((card.prices or {}).get("usd") if card else None)
             if usd:
@@ -330,9 +356,9 @@ async def copy_deck(deck_id: int, key: str | None = None, user: User = Depends(c
     deck = Deck(user_id=user.id, name=f"{src.name} (копия)"[:128], game=src.game, format=src.format)
     session.add(deck)
     await session.flush()
-    for dc, _ in await _entries(session, src.id):
+    for dc, *_ in await _entries(session, src.id):
         session.add(DeckCard(deck_id=deck.id, card_id=dc.card_id, name=dc.name, qty=dc.qty, section=dc.section,
-                             is_commander=dc.is_commander))
+                             is_commander=dc.is_commander, print_id=dc.print_id))
     await session.commit()
     return {"id": deck.id}
 

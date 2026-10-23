@@ -19,14 +19,22 @@ class ParsedCard:
     section: str = "main"        # main | side | commander
     is_commander: bool = False
     tail: bool = False           # последний блок после пустой строки в списке без заголовков (Moxfield/MTGO)
+    set_code: str | None = None  # издание из строки «1 Sol Ring (CMM) 410»
+    number: str | None = None
 
 
-def _clean_name(name: str) -> str:
+PRINT_RE = re.compile(r"\s+\(([A-Za-z0-9]{2,6})\)(?:\s+([\w★-]+))?$")
+
+
+def _clean_name(name: str) -> tuple[str, str | None, str | None]:
+    """Название без пометок Archidekt/Moxfield и издание, если указано: (имя, сет, номер)."""
     name = name.strip()
     name = re.sub(r"(\s*\[[^\]]*\])+$", "", name)               # [Ramp] - категории Archidekt
-    name = re.sub(r"\s+\*\w+\*$", "", name)                      # *F* - фойл
-    name = re.sub(r"\s+\([A-Za-z0-9]{2,6}\)(\s+[\w★-]+)?$", "", name)  # (CMM) 400
-    return name.strip()
+    name = re.sub(r"(\s+\*\w+\*)+$", "", name)                   # *F* - фойл
+    m = PRINT_RE.search(name)                                    # (CMM) 400
+    if not m:
+        return name.strip(), None, None
+    return name[:m.start()].strip(), m.group(1).lower(), m.group(2)
 
 
 def parse_decklist(text: str) -> tuple[list[ParsedCard], list[str]]:
@@ -52,12 +60,12 @@ def parse_decklist(text: str) -> tuple[list[ParsedCard], list[str]]:
         sb = line.upper().startswith("SB:")
         m = LINE_RE.match(line)
         qty, name = (int(m.group(1)), m.group(2)) if m else (1, line)
-        name = _clean_name(name)
+        name, set_code, number = _clean_name(name)
         if not name:
             errors.append(raw)
             continue
         sec = "side" if sb else section
-        cards.append(ParsedCard(qty, name, sec, is_commander=sec == "commander"))
+        cards.append(ParsedCard(qty, name, sec, is_commander=sec == "commander", set_code=set_code, number=number))
         blocks.append(block)
         block_cards += 1
     # Moxfield и MTGO без заголовков: последний блок после пустой строки - командир или сайдборд
