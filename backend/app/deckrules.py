@@ -50,7 +50,7 @@ def _copies_limit(card, singleton: bool) -> int | None:
     return 1 if singleton else 4
 
 
-def _can_be_commander(card, fmt: str) -> bool:
+def can_be_commander(card, fmt: str) -> bool:
     t = (card.type_line or "").lower()
     if "legendary" in t and ("creature" in t or (fmt == "brawl" and "planeswalker" in t)):
         return True
@@ -98,7 +98,7 @@ def check(entries: list[Entry], fmt: str) -> list[dict]:
         elif sum(e.qty for e in cmd) > 2:
             err("Командиров больше двух")
         else:
-            bad = [c.name for c in cards if not _can_be_commander(c, fmt)]
+            bad = [c.name for c in cards if not can_be_commander(c, fmt)]
             if bad:
                 err("Не может быть командиром: " + ", ".join(bad))
             if len(cards) == 2 and not _pairs(cards):

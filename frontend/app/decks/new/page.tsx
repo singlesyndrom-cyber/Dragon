@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Status, useAction } from "@/components/Form";
+import DeckFileInput from "@/components/deck/DeckFileInput";
 import Guard from "@/components/Guard";
 import { api } from "@/lib/api";
 import { DECK_FORMATS, VISIBILITY } from "@/lib/decks";
@@ -14,6 +15,7 @@ export default function NewDeckPage() {
 function NewDeck() {
   const router = useRouter();
   const [f, setF] = useState({ name: "", game: "mtg", format: "commander", visibility: "private", text: "", in_meta: false });
+  const [open, setOpen] = useState(false);
   const { busy, error, run } = useAction();
   return (
     <>
@@ -53,8 +55,12 @@ function NewDeck() {
           ) : null}
         </div>
         {f.game === "mtg" ? <p className="hint" style={{ marginTop: 0 }}>{VISIBILITY.find(([k]) => k === f.visibility)?.[2]}.</p> : null}
-        <details open={f.game !== "mtg"}>
-          <summary>Вставить готовый список {f.game === "mtg" ? "(необязательно)" : ""}</summary>
+        <details open={open || f.game !== "mtg"} onToggle={(e) => setOpen(e.currentTarget.open)}>
+          <summary>Загрузить готовый список {f.game === "mtg" ? "(необязательно)" : ""}</summary>
+          <div className="row" style={{ marginTop: 12 }}>
+            <DeckFileInput onText={(text, name) => { setF((x) => ({ ...x, text, name: x.name || name })); setOpen(true); }} />
+            <span className="muted small">или вставьте текст ниже</span>
+          </div>
           <label style={{ marginTop: 12 }}><span>Экспорт из Moxfield, MTGGoldfish, Archidekt, Arena или MTGO; строки вида «1 Sol Ring»</span>
             <textarea value={f.text} required={f.game !== "mtg"} onChange={(e) => setF({ ...f, text: e.target.value })} style={{ minHeight: 200 }}
               placeholder={"Commander\n1 Atraxa, Praetors' Voice\n\nDeck\n1 Sol Ring\n35 Forest"} />

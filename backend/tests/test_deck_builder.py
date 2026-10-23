@@ -141,3 +141,24 @@ async def test_builder_api(client):
     assert r.status_code == 200 and r.json()["unmatched"] == []
     d = (await c.get(f"/decks/{cid}", headers=b)).json()
     assert d["format"] == "modern" and d["problems"] == [] and {x["section"] for x in d["cards"]} == {"main", "side"}
+
+
+@needs_db
+async def test_import_moxfield_export_without_headers(client):
+    """Экспорт Moxfield: 99 строк, пустая строка, командир. В Modern тот же хвост - сайдборд."""
+    c = client
+    a = await user(c, 3)
+    text = "1 Sol Ring\n97 Forest\n1 Lightning Bolt\n\n1 Atraxa\n"
+    r = (await c.post("/decks", json={"name": "Мокс", "text": text}, headers=a)).json()
+    d = (await c.get(f"/decks/{r['id']}", headers=a)).json()
+    assert [x["name"] for x in d["cards"] if x["section"] == "commander"] == ["Atraxa"]
+    assert sum(x["qty"] for x in d["cards"] if x["section"] != "side") == 100
+    # хвост из не-легендарной карты командиром не становится
+    r = (await c.post("/decks", json={"name": "Без командира", "text": "97 Forest\n\n1 Sol Ring\n"}, headers=a)).json()
+    d = (await c.get(f"/decks/{r['id']}", headers=a)).json()
+    assert {x["section"] for x in d["cards"]} == {"main"} and "Не выбран командир" in texts(d["problems"])
+    # конструктед: блок после пустой строки - сайдборд
+    r = (await c.post("/decks", json={"name": "Модерн", "format": "modern", "text": "4 Lightning Bolt\n56 Forest\n\n2 Grizzly Bears"},
+                      headers=a)).json()
+    d = (await c.get(f"/decks/{r['id']}", headers=a)).json()
+    assert [(x["name"], x["section"]) for x in d["cards"] if x["section"] == "side"] == [("Grizzly Bears", "side")]

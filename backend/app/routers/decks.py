@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..cardimport import front_face, norm_name
 from .. import deckrules
 from ..db import get_session
-from ..decklist import ParsedCard, apply_commander, parse_decklist, validate_edh
+from ..decklist import ParsedCard, apply_commander, parse_decklist, resolve_tail, validate_edh
 from ..deps import current_user, is_club_organizer, optional_user
 from ..models import (Card, Deck, DeckCard, GlobalRole, Tournament, TournamentPlayer,
                       TournamentStatus, User)
@@ -84,12 +84,19 @@ async def _fill(session: AsyncSession, deck: Deck, data: DeckIn) -> dict:
             by_full.setdefault(card.name_ru_lower, card)
             by_front.setdefault(card.name_ru_front or norm_name(front_face(card.name_ru)), card)
 
+    def lookup(name: str):
+        n = norm_name(name)
+        return by_full.get(n) or by_front.get(n) or by_front.get(norm_name(front_face(name)))
+
+    # экспорт Moxfield/MTGO без заголовков: командир (или сайдборд) - последним блоком после пустой строки
+    parsed = resolve_tail(parsed, deck.format in ("commander", "duel", "brawl"),
+                          lambda name: (card := lookup(name)) is not None and deckrules.can_be_commander(card, deck.format))
+
     await session.execute(delete(DeckCard).where(DeckCard.deck_id == deck.id))
     unmatched = []
     merged: dict[tuple, DeckCard] = {}              # одна строка на карту в разделе, даже если в тексте повторы
     for c in parsed:
-        n = norm_name(c.name)
-        card = by_full.get(n) or by_front.get(n) or by_front.get(norm_name(front_face(c.name)))
+        card = lookup(c.name)
         if not card:
             unmatched.append(c.name)
         key = (card.id if card else c.name.lower(), c.section)

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useEffect, useRef, useState } from "react";
 import ConfirmButton from "@/components/ConfirmButton";
+import DeckFileInput from "@/components/deck/DeckFileInput";
 import DeckList, { Ops } from "@/components/deck/DeckList";
 import DeckStats from "@/components/deck/DeckStats";
 import Problems from "@/components/deck/Problems";
@@ -258,7 +259,11 @@ function ImportBox({ id, deck, hasCards, onDone }: { id: string; deck: any; hasC
   return (
     <div className="panel section">
       <h3 style={{ marginTop: 0 }}>Импорт списка</h3>
-      <p className="muted small">Вставьте экспорт из Moxfield, MTGGoldfish, Archidekt, Arena или MTGO. Разделы «Commander», «Deck», «Sideboard» и строки «SB:» распознаются; русские названия тоже.</p>
+      <p className="muted small">Вставьте экспорт из Moxfield, MTGGoldfish, Archidekt, Arena или MTGO. Разделы «Commander», «Deck», «Sideboard» и строки «SB:» распознаются; командир последней строкой после пустой — тоже. Русские названия понимаются.</p>
+      <div className="row" style={{ marginBottom: 10 }}>
+        <DeckFileInput onText={(t) => setText(t)} />
+        <span className="muted small">или вставьте текст</span>
+      </div>
       <textarea value={text} onChange={(e) => setText(e.target.value)} rows={12} aria-label="Список карт"
         placeholder={"Commander\n1 Atraxa, Praetors' Voice\n\nDeck\n1 Sol Ring\n35 Forest"} />
       <div className="row section" style={{ marginTop: 12 }}>

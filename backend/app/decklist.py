@@ -18,6 +18,7 @@ class ParsedCard:
     name: str
     section: str = "main"        # main | side | commander
     is_commander: bool = False
+    tail: bool = False           # последний блок после пустой строки в списке без заголовков (Moxfield/MTGO)
 
 
 def _clean_name(name: str) -> str:
@@ -32,13 +33,21 @@ def parse_decklist(text: str) -> tuple[list[ParsedCard], list[str]]:
     cards: list[ParsedCard] = []
     errors: list[str] = []
     section = "main"
+    headers = False
+    block, block_cards = 0, 0         # блоки разделены пустыми строками
+    blocks: list[int] = []
     for raw in text.splitlines():
         line = raw.strip()
-        if not line or line.startswith("//") or line.startswith("#"):
+        if not line:
+            if block_cards:
+                block, block_cards = block + 1, 0
+            continue
+        if line.startswith("//") or line.startswith("#"):
             continue
         header = re.sub(r"\s*\(\d+\)\s*:?\s*$|:\s*$", "", line).lower()
         if header in HEADERS and not LINE_RE.match(line):
             section = HEADERS[header]
+            headers = True
             continue
         sb = line.upper().startswith("SB:")
         m = LINE_RE.match(line)
@@ -49,7 +58,31 @@ def parse_decklist(text: str) -> tuple[list[ParsedCard], list[str]]:
             continue
         sec = "side" if sb else section
         cards.append(ParsedCard(qty, name, sec, is_commander=sec == "commander"))
+        blocks.append(block)
+        block_cards += 1
+    # Moxfield и MTGO без заголовков: последний блок после пустой строки - командир или сайдборд
+    last = max(blocks, default=0)
+    if not headers and last > 0:
+        for c, b in zip(cards, blocks):
+            if b == last and c.section == "main":
+                c.tail = True
     return cards, errors
+
+
+def resolve_tail(cards: list[ParsedCard], commander_format: bool, can_command) -> list[ParsedCard]:
+    """Хвостовой блок без заголовков: в командирском формате 1-2 легендарные карты - командиры, иначе - сайдборд.
+    can_command(name) -> bool проверяет по базе карт, может ли карта быть командиром."""
+    tail = [c for c in cards if c.tail]
+    if not tail or any(c.is_commander for c in cards):
+        return cards
+    if commander_format:
+        if sum(c.qty for c in tail) <= 2 and all(can_command(c.name) for c in tail):
+            for c in tail:
+                c.section, c.is_commander = "commander", True
+        return cards
+    for c in tail:
+        c.section = "side"
+    return cards
 
 
 def apply_commander(cards: list[ParsedCard], commander: str | None) -> list[ParsedCard]:
