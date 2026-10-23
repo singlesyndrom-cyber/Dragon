@@ -131,6 +131,7 @@ async def test_exact_name_first(client):
                    name_lower="aemeritus of conflict // lightning bolt", name_front="aemeritus of conflict", extra={}))
         await s.commit()
     assert await names(c, "lightning bolt") == ["Lightning Bolt", "Aemeritus of Conflict // Lightning Bolt"]
+    assert await names(c, '!"aemeritus of conflict"') == ["Aemeritus of Conflict // Lightning Bolt"]
     assert await names(c, "light") == ["Lightning Bolt", "Aemeritus of Conflict // Lightning Bolt"]   # «начинается с»
     assert (await names(c, "lightning bolt", order="name"))[0] == "Aemeritus of Conflict // Lightning Bolt"
 

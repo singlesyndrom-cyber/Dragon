@@ -283,7 +283,8 @@ def parse(q: str) -> Parsed:
         if t.kind == "term":
             c = _term(t, p)
         elif t.kind == "exact":
-            c = or_(Card.name_lower == norm_name(t.value), Card.name_ru_lower == norm_name(t.value))
+            v = norm_name(t.value)     # двусторонние - и по лицевой стороне: !"Malakir Rebirth"
+            c = or_(Card.name_lower == v, Card.name_ru_lower == v, Card.name_front == v, Card.name_ru_front == v)
         else:
             c = _word(t.value)
             if not t.neg and t.value != "*":
