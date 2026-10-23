@@ -100,6 +100,9 @@ async def test_publisher_cabinet(client):
     bk = meta["berserk"]["tournaments"]          # карт в базе нет - стихий нет: «Нейтральные»
     assert bk["decks"] == 2 and bk["combos"][0]["key"] == "Нейтральные" and bk["combos"][0]["games"] == 2
     assert bk["archetypes"][0]["key"] == "Колода" and bk["archetypes"][0]["wins"] == 1
+    pub_meta = (await c.get("/meta/berserk")).json()            # публичная страница меты: «Берсерк» отдельно
+    assert pub_meta["entries"] == 2 and pub_meta["tournaments"]["decks"] == 2
+    assert (await c.get("/meta/commanders", params={"game": "mtg"})).json()["entries"] == 0
 
     # отзыв согласия и снятие роли
     await c.put("/me/publisher-consent", json={"enabled": False}, headers=a[0])

@@ -1,3 +1,5 @@
+import Link from "next/link";
+import BerserkMeta from "@/components/BerserkMeta";
 import { sget } from "@/lib/api";
 import { pct, signed } from "@/lib/format";
 
@@ -5,8 +7,66 @@ export const metadata = { title: "Мета" };
 
 export default async function Meta({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
-  const qs = new URLSearchParams();
-  for (const k of ["club_id", "game", "format", "since_days", "commander"]) if (sp[k]) qs.set(k, sp[k] as string);
+  const game = sp.game === "berserk" ? "berserk" : "mtg";      // у каждой игры своя мета, без смешивания
+  const qs = new URLSearchParams({ game });
+  for (const k of ["club_id", "format", "since_days", "commander"]) if (sp[k]) qs.set(k, sp[k] as string);
+  const tabs = (
+    <div className="tabs" role="tablist">
+      {([["mtg", "Magic: The Gathering"], ["berserk", "Берсерк"]] as const).map(([g, l]) => {
+        const q = new URLSearchParams({ game: g });
+        for (const k of ["club_id", "since_days"]) if (sp[k]) q.set(k, sp[k] as string);
+        return <Link key={g} href={`/meta?${q}`} role="tab" aria-selected={game === g} className={game === g ? "on" : ""}>{l}</Link>;
+      })}
+    </div>
+  );
+  const filters = (clubs: any[] | null) => (
+    <form className="row inline" action="/meta">
+      <input type="hidden" name="game" value={game} />
+      <select name="club_id" defaultValue={sp.club_id || ""} aria-label="Клуб">
+        <option value="">Все клубы</option>
+        {(clubs || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+      <select name="format" defaultValue={sp.format || ""} aria-label="Формат">
+        <option value="">Все форматы</option>
+        {game === "mtg" ? <option value="edh">EDH</option> : null}
+        <option value="swiss">Швейцарка</option>
+        <option value="fast_swiss">Быстрый швейцарец</option>
+      </select>
+      <select name="since_days" defaultValue={sp.since_days || "90"} aria-label="Период">
+        <option value="30">30 дней</option>
+        <option value="90">90 дней</option>
+        <option value="365">Год</option>
+      </select>
+      <button>Показать</button>
+    </form>
+  );
+  if (game === "berserk") {
+    const [bk, clubs] = await Promise.all([sget<any>(`/meta/berserk?${qs}`), sget<any[]>("/clubs")]);
+    return (
+      <>
+        <h1>Мета</h1>
+        {tabs}
+        <p className="lead">
+          «Берсерк»: связки стихий и архетипы по колодам с завершённых турниров клубов. Перевес — насколько винрейт
+          выше ожидаемых 50% в матче один на один.
+        </p>
+        {filters(clubs)}
+        {bk ? <BerserkMeta bk={bk} /> : <p className="muted">Данных пока нет.</p>}
+        <h2>Мета-стейплы</h2>
+        <p className="muted small">Доля турнирных колод, в которых встречается карта.</p>
+        {bk?.cards?.cards?.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Карта</th><th className="r">Колод</th><th className="r">Доля колод</th></tr></thead>
+              <tbody>{bk.cards.cards.map((c: any) => (
+                <tr key={c.card}><td>{c.card}</td><td className="r">{c.decks}</td><td className="r">{c.usage_pct.toLocaleString("ru-RU")}%</td></tr>
+              ))}</tbody>
+            </table>
+          </div>
+        ) : <p className="muted">Данных пока нет.</p>}
+      </>
+    );
+  }
   const poolQs = new URLSearchParams({ game: "mtg", limit: "20" });
   if (sp.club_id) poolQs.set("club_id", sp.club_id);
   const [cmd, cards, clubs, pool] = await Promise.all([
@@ -18,28 +78,12 @@ export default async function Meta({ searchParams }: { searchParams: Promise<Rec
   return (
     <>
       <h1>Мета</h1>
+      {tabs}
       <p className="lead">
         Считается по колодам, поданным на завершённые турниры. Перевес показывает, насколько винрейт выше
         ожидаемого: 25% за столом на четверых, 50% в матче один на один.
       </p>
-      <form className="row inline" action="/meta">
-        <select name="club_id" defaultValue={sp.club_id || ""} aria-label="Клуб">
-          <option value="">Все клубы</option>
-          {(clubs || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <select name="format" defaultValue={sp.format || ""} aria-label="Формат">
-          <option value="">Все форматы</option>
-          <option value="edh">EDH</option>
-          <option value="swiss">Швейцарка</option>
-          <option value="fast_swiss">Быстрый швейцарец</option>
-        </select>
-        <select name="since_days" defaultValue={sp.since_days || "90"} aria-label="Период">
-          <option value="30">30 дней</option>
-          <option value="90">90 дней</option>
-          <option value="365">Год</option>
-        </select>
-        <button>Показать</button>
-      </form>
+      {filters(clubs)}
 
       <h2>Командиры</h2>
       <p className="muted small">Колод в выборке: {cmd?.entries ?? 0}. Строки с малым числом партий приглушены: выводы по ним делать рано.</p>

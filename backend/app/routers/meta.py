@@ -126,3 +126,28 @@ async def pool(game: str = Query("mtg", pattern="^(mtg|berserk)$"), club_id: int
            for c in commander_stats(entries, [], 0)] if game == "mtg" else []
     return {"game": game, "club_id": club_id, "decks": len(entries), "commanders": cmd[:limit],
             **card_usage(entries, commander, 1, limit)}
+
+
+async def berserk_meta(session: AsyncSession, entries, games_, club_id: int | None = None) -> dict:
+    """«Берсерк»: связки стихий, архетипы и профиль колод - по турнирам (с результатами)
+    и по колодам «в мете» игроков (club_id - участники клуба)."""
+    from .. import bkmeta
+    deck_of = dict((await session.execute(select(TournamentPlayer.id, TournamentPlayer.deck_id)
+                                          .where(TournamentPlayer.id.in_([e.id for e in entries])))).all()) if entries else {}
+    prof = await bkmeta.deck_profiles(session, deck_of.values())
+    tournaments = bkmeta.summarize({e: prof[d] for e, d in deck_of.items() if d in prof}, games_, 3)
+    q = (select(Deck.id).join(User, User.id == Deck.user_id)
+         .where(Deck.in_meta.is_(True), Deck.game == "berserk", User.is_banned.is_(False)))
+    if club_id:
+        q = q.where(Deck.user_id.in_(select(ClubMember.user_id).where(ClubMember.club_id == club_id)))
+    pool_prof = await bkmeta.deck_profiles(session, (await session.execute(q)).scalars().all())
+    return {"tournaments": tournaments, "pool": bkmeta.summarize(pool_prof, [], 0)}
+
+
+@router.get("/berserk")
+async def berserk(club_id: int | None = None, format: TournamentFormat | None = None,
+                  since_days: int = Query(90, ge=1, le=3650), session: AsyncSession = Depends(get_session)):
+    """Мета «Берсерка» для всех: связки стихий, архетипы, профиль колод, стейплы."""
+    entries, games_ = await load_scope(session, club_id, "berserk", format, since_days)
+    return {"scope": _scope(club_id, "berserk", format, since_days), "entries": len(entries),
+            **await berserk_meta(session, entries, games_, club_id), "cards": card_usage(entries, None, 2, 40)}

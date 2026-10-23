@@ -167,21 +167,9 @@ async def meta(game: str, since_days: int = Query(90, ge=1, le=3650), user: User
            "commanders": commander_stats(entries, games_, 3)[:40] if game == "mtg" else [],
            "cards": card_usage(entries, None, 2, 60), "players_pool": opt_in}
     if game == "berserk":
-        out["berserk"] = await _berserk_meta(session, entries, games_)
+        from .meta import berserk_meta
+        out["berserk"] = await berserk_meta(session, entries, games_)
     return out
-
-
-async def _berserk_meta(session, entries, games_) -> dict:
-    """Связки стихий, архетипы и профиль колод: по турнирам (с результатами) и по колодам «в мете» игроков."""
-    from .. import bkmeta
-    deck_of = dict((await session.execute(select(TournamentPlayer.id, TournamentPlayer.deck_id)
-                                          .where(TournamentPlayer.id.in_([e.id for e in entries])))).all()) if entries else {}
-    prof = await bkmeta.deck_profiles(session, deck_of.values())
-    tournaments = bkmeta.summarize({e: prof[d] for e, d in deck_of.items() if d in prof}, games_, 3)
-    pool_ids = (await session.execute(select(Deck.id).join(User, User.id == Deck.user_id).where(
-        Deck.in_meta.is_(True), Deck.game == "berserk", User.is_banned.is_(False)))).scalars().all()
-    pool_prof = await bkmeta.deck_profiles(session, pool_ids)
-    return {"tournaments": tournaments, "pool": bkmeta.summarize(pool_prof, [], 0)}
 
 
 async def _decklists(session, game, frm, to) -> list[dict]:
