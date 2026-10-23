@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import rating as R
 from ..db import get_session
 from ..deps import current_user, require_admin
-from ..models import Club, ClubMember, PlayerRating, RatingChange, Tournament, TournamentPlayer, User
+from ..models import Club, ClubMember, PlayerRating, RatingChange, Tournament, TournamentPlayer, TournamentStatus, User
 
 router = APIRouter(prefix="/ratings", tags=["ratings"])
 
@@ -26,24 +26,34 @@ def city_key(city: str | None) -> str:
 
 
 async def cities_of(session: AsyncSession, user_ids: list[int]) -> dict[int, str | None]:
-    """Город игрока: указанный в профиле, иначе город клуба, где он сыграл больше всего турниров."""
+    """Город игрока: указанный в профиле, иначе город клуба, где он сыграл больше всего завершённых
+    клубных и городских турниров (выезды на открытые турниры и чемпионаты город не меняют),
+    иначе город клуба, где он состоит."""
     if not user_ids:
         return {}
     own = dict((await session.execute(select(User.id, User.city).where(User.id.in_(user_ids)))).all())
-    need = [u for u in user_ids if not (own.get(u) or "").strip()]
     out = {u: (own.get(u) or "").strip() or None for u in user_ids}
+    need = [u for u in user_ids if not out[u]]
     if need:
         rows = (await session.execute(
-            select(TournamentPlayer.user_id, Club.city, func.count())
+            select(TournamentPlayer.user_id, Club.city, func.count(), func.max(Tournament.starts_at))
             .join(Tournament, Tournament.id == TournamentPlayer.tournament_id).join(Club, Club.id == Tournament.club_id)
-            .where(TournamentPlayer.user_id.in_(need), Club.city.is_not(None), Club.city != "")
+            .where(TournamentPlayer.user_id.in_(need), Club.city.is_not(None), Club.city != "",
+                   Tournament.status == TournamentStatus.finished, Tournament.tier.in_(["club", "city"]))
             .group_by(TournamentPlayer.user_id, Club.city))).all()
-        best: dict[int, tuple[int, str]] = {}
-        for uid, city, n in rows:
-            if uid not in best or n > best[uid][0]:
-                best[uid] = (n, city.strip())
-        for uid, (_, city) in best.items():
+        best: dict[int, tuple] = {}
+        for uid, city, n, last in rows:
+            if uid not in best or (n, last) > best[uid][:2]:
+                best[uid] = (n, last, city.strip())
+        for uid, (*_, city) in best.items():
             out[uid] = city
+        rest = [u for u in need if not out[u]]
+        if rest:
+            for uid, city in (await session.execute(
+                    select(ClubMember.user_id, Club.city).join(Club, Club.id == ClubMember.club_id)
+                    .where(ClubMember.user_id.in_(rest), Club.city.is_not(None), Club.city != "")
+                    .order_by(ClubMember.events_played.desc(), Club.id))).all():
+                out[uid] = out[uid] or city.strip()
     return out
 
 

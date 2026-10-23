@@ -29,7 +29,7 @@ export default function CitySetting({ playerNo }: { playerNo: number }) {
         По нему считается ваше место в городе и рейтинг городов. <Link href="/ratings">Рейтинг →</Link>
       </p>
       <form className="row inline" onSubmit={(e) => { e.preventDefault(); save(city); }}>
-        <input value={city} onChange={(e) => setCity(e.target.value)} maxLength={64} placeholder="например, Севастополь" aria-label="Город" />
+        <input value={city} onChange={(e) => setCity(e.target.value)} maxLength={64} placeholder="например, Севастополь" aria-label="Ваш город для рейтинга" />
         <button type="submit" disabled={busy}>Сохранить</button>
         {current?.own ? <button type="button" className="link-btn" disabled={busy} onClick={() => save("")}>Брать по клубу</button> : null}
       </form>
