@@ -8,6 +8,7 @@ import CreatorRequest from "@/components/CreatorRequest";
 import Guard from "@/components/Guard";
 import TelegramLogin from "@/components/TelegramLogin";
 import { api } from "@/lib/api";
+import { VISIBILITY, formatTitle } from "@/lib/decks";
 import { useAuth } from "@/lib/auth";
 import { rub } from "@/lib/format";
 import { JUDGE_GAMES } from "@/lib/judges";
@@ -115,71 +116,43 @@ function ChangePassword() {
 
 function Decks() {
   const [decks, setDecks] = useState<any[]>([]);
-  const [f, setF] = useState({ name: "", game: "mtg", commander: "", text: "", in_meta: true });
-  const [report, setReport] = useState<any>(null);
   const { busy, error, run } = useAction();
   const load = () => api<any[]>("/decks/mine").then(setDecks).catch(() => {});
   useEffect(() => { load(); }, []);
   return (
     <section id="decks">
-      <h2 style={{ marginTop: 0 }}>Колоды</h2>
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <h2 style={{ margin: 0 }}>Колоды</h2>
+        <span className="row" style={{ gap: 8 }}>
+          <Link href="/decks" className="btn">Каталог колод</Link>
+          <Link href="/decks/new" className="btn primary">Новая колода</Link>
+        </span>
+      </div>
       {decks.length ? (
         <ul className="news-list">
           {decks.map((d) => (
             <li key={d.id} className="row" style={{ justifyContent: "space-between", padding: "10px 0" }}>
-              <span>{d.name} <span className="muted small">{d.game === "mtg" ? "MTG" : "Берсерк"}</span></span>
+              <span>
+                <Link href={`/decks/${d.id}`}>{d.name}</Link>{" "}
+                <span className="muted small">
+                  {d.game === "mtg" ? formatTitle(d.format) : "Берсерк"} · {d.cards} карт · {VISIBILITY.find(([k]) => k === d.visibility)?.[1]}
+                </span>
+              </span>
               <span className="row" style={{ gap: 14 }}>
+                <Link href={`/decks/${d.id}/edit`} className="small">Редактировать</Link>
                 <label className="check small" style={{ margin: 0 }} title="Колода анонимно попадёт в блок «Популярное у игроков» в разделе Мета">
                   <input type="checkbox" checked={d.in_meta} disabled={busy}
                     onChange={(e) => run(() => api(`/decks/${d.id}`, { method: "PATCH", body: { in_meta: e.target.checked } })).then(load)} />
                   <span>в мете</span>
                 </label>
-                <button className="link-btn" onClick={() =>
-                  run(() => api(`/decks/${d.id}`, { method: "DELETE" })).then(load)}>Удалить</button>
+                <ConfirmButton className="link-btn" question={`Удалить «${d.name}»?`} confirmLabel="Удалить" danger disabled={busy}
+                  onConfirm={() => run(() => api(`/decks/${d.id}`, { method: "DELETE" })).then(load)}>Удалить</ConfirmButton>
               </span>
             </li>
           ))}
         </ul>
-      ) : <p className="muted">Колод пока нет. Добавьте список, чтобы подавать его на турниры.</p>}
-
-      <form className="section" onSubmit={(e) => {
-        e.preventDefault();
-        run(async () => {
-          const body: any = { name: f.name, game: f.game, text: f.text, in_meta: f.in_meta };
-          if (f.commander.trim()) body.commander = f.commander.trim();
-          setReport(await api("/decks", { body }));
-          setF({ ...f, name: "", commander: "", text: "" });
-          load();
-        });
-      }}>
-        <h3>Новая колода</h3>
-        <div className="row inline">
-          <label><span>Название</span><input required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
-          <label><span>Игра</span>
-            <select value={f.game} onChange={(e) => setF({ ...f, game: e.target.value })}>
-              <option value="mtg">Magic: The Gathering</option>
-              <option value="berserk">Берсерк</option>
-            </select>
-          </label>
-        </div>
-        <label><span>Командир, если его нет в списке</span><input value={f.commander} onChange={(e) => setF({ ...f, commander: e.target.value })} /></label>
-        <label><span>Список карт: экспорт из Moxfield, Archidekt или строки вида «1 Sol Ring»</span>
-          <textarea required value={f.text} onChange={(e) => setF({ ...f, text: e.target.value })} style={{ minHeight: 200 }} />
-        </label>
-        <label className="check">
-          <input type="checkbox" checked={f.in_meta} onChange={(e) => setF({ ...f, in_meta: e.target.checked })} />
-          <span>Учитывать в мете — колода анонимно попадёт в «Популярное у игроков» (без вашего имени)</span>
-        </label>
-        <button className="primary" disabled={busy}>Сохранить колоду</button>
-        <Status error={error} />
-      </form>
-      {report ? (
-        <div className="panel">
-          <p style={{ margin: 0 }}>Сохранено, карт в основной колоде: {report.cards}.</p>
-          {report.warnings.map((w: string) => <p key={w} className="small" style={{ margin: "6px 0 0" }}>{w}</p>)}
-          {report.unmatched.length ? <p className="muted small">Не найдены в базе: {report.unmatched.slice(0, 20).join(", ")}</p> : null}
-        </div>
-      ) : null}
+      ) : <p className="muted">Колод пока нет. Соберите колоду в конструкторе или вставьте готовый список из Moxfield, MTGGoldfish или Arena.</p>}
+      <Status error={error} />
     </section>
   );
 }
