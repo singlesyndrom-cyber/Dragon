@@ -38,23 +38,44 @@ function locate(timeline: Step[], raw: any, nowMs: number) {
 }
 
 let audio: AudioContext | null = null;
-function beep(ms = 180, freq = 880) {
+const VOLUME: Record<string, number> = { off: 0, low: 0.07, mid: 0.16, high: 0.32 };
+
+/** Мягкий колокольчик: синус с тихим обертоном, плавное нарастание и затухание - без щелчков. */
+function chime(notes: number[], volume: number, gap = 0.28, decay = 1.1) {
+  if (!volume) return;
   try {
     audio = audio || new AudioContext();
-    const o = audio.createOscillator(), g = audio.createGain();
-    o.frequency.value = freq;
-    o.connect(g); g.connect(audio.destination);
-    g.gain.setValueAtTime(0.25, audio.currentTime);
-    o.start(); o.stop(audio.currentTime + ms / 1000);
+    const t0 = audio.currentTime + 0.02;
+    notes.forEach((freq, i) => {
+      const at = t0 + i * gap;
+      for (const [mult, part] of [[1, 1], [2, 0.18], [3, 0.06]] as const) {     // основной тон и обертоны
+        const o = audio!.createOscillator(), g = audio!.createGain();
+        o.type = "sine";
+        o.frequency.value = freq * mult;
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.exponentialRampToValueAtTime(volume * part, at + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.0001, at + decay / mult);
+        o.connect(g); g.connect(audio!.destination);
+        o.start(at); o.stop(at + decay + 0.05);
+      }
+    });
   } catch {}
 }
+const SOUNDS = {
+  pick: (v: number) => chime([784], v * 0.6, 0, 0.45),                 // новый пик: короткий тихий «динь»
+  stage: (v: number) => chime([659, 880], v),                          // смена этапа: два тона вверх
+  end: (v: number) => chime([880, 659, 523], v, 0.35, 1.6),            // конец сборки или тура: три тона вниз
+};
 
 function DraftScreen({ id }: { id: string }) {
   const [d, setD] = useState<any>(null);
   const [err, setErr] = useState("");
   const [skew, setSkew] = useState(0);                 // время сервера минус время этого устройства, мс
   const [now, setNow] = useState(Date.now());
-  const [sound, setSound] = useState(true);
+  const [sound, setSound] = useState<string>(() => {
+    try { return localStorage.getItem("draft-sound") || "mid"; } catch { return "mid"; }
+  });
+  const vol = VOLUME[sound] ?? VOLUME.mid;
   const { busy, error, run } = useAction();
   const lastIndex = useRef<number | string | null>(null);
 
@@ -76,10 +97,13 @@ function DraftScreen({ id }: { id: string }) {
   const marker = cur ? (cur.stage === "done" && d.round ? `round-${d.round}-${roundLeft != null && roundLeft <= 0}` : cur.index ?? cur.stage) : null;
   useEffect(() => {
     if (marker === null || lastIndex.current === null) { lastIndex.current = marker; return; }
-    if (marker !== lastIndex.current && sound && !cur?.paused) {
+    if (marker !== lastIndex.current && vol && !cur?.paused) {
       const kind = cur?.step?.kind;
-      if (kind === "pick" && cur.step.pick > 1) beep(120);
-      else { beep(500, 660); setTimeout(() => beep(500, 880), 600); }
+      if (kind === "pick" && cur.step.pick > 1) SOUNDS.pick(vol);
+      else if (typeof marker === "string" && marker.startsWith("round-")) {
+        if (marker.endsWith("-true")) SOUNDS.end(vol); else SOUNDS.stage(vol);   // конец тура / начало тура
+      } else if (cur?.stage === "done") SOUNDS.end(vol);                          // сборка колоды окончена
+      else SOUNDS.stage(vol);
     }
     lastIndex.current = marker;
   }, [marker]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -99,7 +123,18 @@ function DraftScreen({ id }: { id: string }) {
       <div className="row" style={{ justifyContent: "space-between" }}>
         <p className="muted small" style={{ margin: 0 }}><Link href={`/manage/tournaments/${id}`}>← Управление турниром</Link></p>
         <span className="row small" style={{ gap: 10 }}>
-          <label className="check" style={{ margin: 0 }}><input type="checkbox" checked={sound} onChange={(e) => setSound(e.target.checked)} /><span>звук</span></label>
+          <label className="row" style={{ margin: 0, gap: 6 }}><span className="muted">Звук</span>
+            <select value={sound} style={{ width: "auto" }} onChange={(e) => {
+              setSound(e.target.value);
+              try { localStorage.setItem("draft-sound", e.target.value); } catch {}
+              SOUNDS.stage(VOLUME[e.target.value]);
+            }}>
+              <option value="off">выключен</option><option value="low">тихо</option>
+              <option value="mid">средне</option><option value="high">громко</option>
+            </select>
+          </label>
+          <button type="button" onClick={() => { SOUNDS.pick(vol); setTimeout(() => SOUNDS.stage(vol), 700); setTimeout(() => SOUNDS.end(vol), 1900); }}>
+            Проверить звук</button>
           <button type="button" onClick={() => document.documentElement.requestFullscreen?.().catch(() => {})}>На весь экран</button>
         </span>
       </div>
