@@ -310,12 +310,15 @@ async def my_decks(user: User = Depends(current_user), session: AsyncSession = D
 
 
 @router.get("/public")
-async def public_decks(format: str | None = None, q: str = "", page: int = 1, session: AsyncSession = Depends(get_session)):
+async def public_decks(format: str | None = None, q: str = "", page: int = 1, game: str | None = None,
+                       session: AsyncSession = Depends(get_session)):
     """Каталог публичных колод: новые сверху, фильтр по формату и названию/командиру."""
     per = 30
     page = max(1, min(page, 200))
     stmt = (select(Deck, User.nickname).join(User, User.id == Deck.user_id)
             .where(Deck.visibility == "public", User.is_banned.is_(False)))
+    if game:
+        stmt = stmt.where(Deck.game == game)
     if format:
         stmt = stmt.where(Deck.format == format)
     if q.strip():

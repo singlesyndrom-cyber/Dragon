@@ -7,7 +7,7 @@ import Mana from "@/components/Mana";
 import { api } from "@/lib/api";
 import { viaSite } from "@/lib/img";
 import { useAuth } from "@/lib/auth";
-import { DECK_FORMATS, formatTitle } from "@/lib/decks";
+import { BK_FORMATS, DECK_FORMATS, formatTitle } from "@/lib/decks";
 import { dateOnly } from "@/lib/format";
 
 export default function DecksPage() {
@@ -19,6 +19,7 @@ function Catalogue() {
   const router = useRouter();
   const path = usePathname();
   const { me } = useAuth();
+  const game = p.get("game") === "berserk" ? "berserk" : "mtg";
   const format = p.get("format") || "";
   const q = p.get("q") || "";
   const page = Math.max(1, Number(p.get("page")) || 1);
@@ -26,11 +27,11 @@ function Catalogue() {
   const [data, setData] = useState<any>(null);
 
   useEffect(() => {
-    const qs = new URLSearchParams({ page: String(page) });
+    const qs = new URLSearchParams({ page: String(page), game });
     if (format) qs.set("format", format);
     if (q) qs.set("q", q);
     api(`/decks/public?${qs}`).then(setData).catch(() => setData({ items: [], total: 0, per_page: 30 }));
-  }, [format, q, page]);
+  }, [format, q, page, game]);
 
   function go(ch: Record<string, string>) {
     const n = new URLSearchParams(p.toString());
@@ -44,15 +45,21 @@ function Catalogue() {
       <div className="row" style={{ justifyContent: "space-between" }}>
         <h1 style={{ margin: 0 }}>Колоды</h1>
         {me ? <span className="row" style={{ gap: 8 }}><Link href="/me#decks" className="btn">Мои колоды</Link>
-          <Link href="/decks/new" className="btn primary">Новая колода</Link></span> : null}
+          <Link href={`/decks/new?game=${game}`} className="btn primary">Новая колода</Link></span> : null}
       </div>
       <p className="lead">Публичные колоды игроков. Откройте любую, чтобы посмотреть статистику, разыграть тестовую руку или скопировать себе.</p>
+      <div className="tabs section" role="tablist" aria-label="Игра">
+        {([["mtg", "Magic: The Gathering"], ["berserk", "Берсерк"]] as const).map(([g, l]) => (
+          <button key={g} type="button" role="tab" aria-selected={game === g} className={game === g ? "on" : ""}
+            onClick={() => go({ game: g === "mtg" ? "" : g, format: "" })}>{l}</button>
+        ))}
+      </div>
       <form className="row" onSubmit={(e) => { e.preventDefault(); go({ q: text.trim() }); }}>
-        <input type="search" value={text} onChange={(e) => setText(e.target.value)} placeholder="Название колоды или командир"
+        <input type="search" value={text} onChange={(e) => setText(e.target.value)} placeholder={game === "berserk" ? "Название колоды" : "Название колоды или командир"}
           aria-label="Поиск колод" style={{ flex: 1, minWidth: 200 }} />
         <select value={format} onChange={(e) => go({ format: e.target.value })} aria-label="Формат" style={{ width: "auto" }}>
           <option value="">Все форматы</option>
-          {DECK_FORMATS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          {(game === "berserk" ? BK_FORMATS : DECK_FORMATS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </select>
         <button type="submit">Найти</button>
       </form>

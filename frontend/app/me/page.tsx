@@ -10,6 +10,8 @@ import TelegramLogin from "@/components/TelegramLogin";
 import VkButton from "@/components/VkButton";
 import { api } from "@/lib/api";
 import { VISIBILITY, formatTitle } from "@/lib/decks";
+
+const DECK_GAMES: [string, string][] = [["mtg", "Magic: The Gathering"], ["berserk", "Берсерк"]];
 import { useAuth } from "@/lib/auth";
 import { rub } from "@/lib/format";
 import { JUDGE_GAMES } from "@/lib/judges";
@@ -130,26 +132,46 @@ function ChangePassword() {
 
 function Decks() {
   const [decks, setDecks] = useState<any[]>([]);
+  const [game, setGame] = useState<string>("");
   const { busy, error, run } = useAction();
   const load = () => api<any[]>("/decks/mine").then(setDecks).catch(() => {});
   useEffect(() => { load(); }, []);
+  // выбранная игра запоминается в этом браузере; по умолчанию - игра, в которой больше колод
+  useEffect(() => {
+    if (game || !decks.length) return;
+    let saved = "";
+    try { saved = localStorage.getItem("decks-game") || ""; } catch {}
+    const counts = DECK_GAMES.map(([g]) => [g, decks.filter((d) => d.game === g).length] as const);
+    setGame(counts.find(([g, n]) => g === saved && n) ? saved : [...counts].sort((a, b) => b[1] - a[1])[0][0]);
+  }, [decks, game]);
+  const choose = (g: string) => { setGame(g); try { localStorage.setItem("decks-game", g); } catch {} };
+  const shown = decks.filter((d) => d.game === game);
   return (
     <section id="decks">
       <div className="row" style={{ justifyContent: "space-between" }}>
         <h2 style={{ margin: 0 }}>Колоды</h2>
         <span className="row" style={{ gap: 8 }}>
           <Link href="/decks" className="btn">Каталог колод</Link>
-          <Link href="/decks/new" className="btn primary">Новая колода</Link>
+          <Link href={`/decks/new${game ? `?game=${game}` : ""}`} className="btn primary">Новая колода</Link>
         </span>
       </div>
       {decks.length ? (
+        <div className="tabs section" role="tablist" aria-label="Игра">
+          {DECK_GAMES.map(([g, l]) => (
+            <button key={g} type="button" role="tab" aria-selected={game === g} className={game === g ? "on" : ""} onClick={() => choose(g)}>
+              {l} <span className="muted small">{decks.filter((d) => d.game === g).length}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {shown.length ? (
         <ul className="news-list">
-          {decks.map((d) => (
+          {shown.map((d) => (
             <li key={d.id} className="row" style={{ justifyContent: "space-between", padding: "10px 0" }}>
               <span>
                 <Link href={`/decks/${d.id}`}>{d.name}</Link>{" "}
                 <span className="muted small">
-                  {d.game === "mtg" ? formatTitle(d.format) : "Берсерк"} · {d.cards} карт · {VISIBILITY.find(([k]) => k === d.visibility)?.[1]}
+                  {formatTitle(d.format)} · {d.cards} карт · {VISIBILITY.find(([k]) => k === d.visibility)?.[1]}
                 </span>
               </span>
               <span className="row" style={{ gap: 14 }}>
@@ -165,6 +187,8 @@ function Decks() {
             </li>
           ))}
         </ul>
+      ) : decks.length ? (
+        <p className="muted">Колод {game === "berserk" ? "«Берсерка»" : "Magic"} пока нет. <Link href={`/decks/new?game=${game}`}>Создать колоду</Link></p>
       ) : <p className="muted">Колод пока нет. Соберите колоду в конструкторе или вставьте готовый список из Moxfield, MTGGoldfish или Arena.</p>}
       <Status error={error} />
     </section>

@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import { Status, useAction } from "@/components/Form";
 import DeckFileInput from "@/components/deck/DeckFileInput";
 import Guard from "@/components/Guard";
@@ -9,12 +9,12 @@ import { api } from "@/lib/api";
 import { DECK_FORMATS, VISIBILITY } from "@/lib/decks";
 
 export default function NewDeckPage() {
-  return <Guard><NewDeck /></Guard>;
+  return <Guard><Suspense fallback={<h1>Новая колода</h1>}><NewDeck /></Suspense></Guard>;
 }
 
 function NewDeck() {
   const router = useRouter();
-  const [f, setF] = useState({ name: "", game: "mtg", format: "commander", visibility: "private", text: "", in_meta: false });
+  const [f, setF] = useState({ name: "", game: useSearchParams().get("game") === "berserk" ? "berserk" : "mtg", format: "commander", visibility: "private", text: "", in_meta: false });
   const [open, setOpen] = useState(false);
   const { busy, error, run } = useAction();
   return (
