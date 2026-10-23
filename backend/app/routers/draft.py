@@ -44,7 +44,7 @@ async def get_draft(tid: int, session: AsyncSession = Depends(get_session)):
     raw = d.get("state") or {}
     return {"config": d["config"], "state": dl.current(d["config"], raw, now), "raw": raw,
             "timeline": dl.steps_with_extra(d["config"], raw), "seating": await _seating(session, tid),
-            "status": t.status.value, "round": t.current_round, "rounds_total": t.rounds_total,
+            "status": t.status.value, "game": t.game, "round": t.current_round, "rounds_total": t.rounds_total,
             "round_minutes": t.round_minutes, "round_started_at": t.round_started_at, "server_now": now}
 
 
@@ -77,11 +77,16 @@ async def seat_players(tid: int, user: User = Depends(current_user), session: As
         raise HTTPException(400, "Нужно хотя бы 2 участника")
     await session.execute(update(TournamentPlayer).where(TournamentPlayer.tournament_id == tid)
                           .values(pod=None, seat=None))
-    for uid, pod, seat in dl.seat(ids):
+    c = d["config"]
+    plan = dl.seat(ids, pod_max=c.get("pod_max", dl.POD_MAX), pow2=c.get("pods_pow2", False))
+    sizes = dl.pods(len(ids), c.get("pod_max", dl.POD_MAX), c.get("pods_pow2", False))
+    if t.game == "berserk" and not t.rounds_total:      # 601.3.4: 4 тура, если за столами 8 и больше игроков
+        t.rounds_total = 4 if sum(1 for n in sizes if n >= 8) * 2 > len(sizes) else 3
+    for uid, pod, seat in plan:
         await session.execute(update(TournamentPlayer).where(TournamentPlayer.tournament_id == tid,
                                                              TournamentPlayer.user_id == uid).values(pod=pod, seat=seat))
     await session.commit()
-    return {"pods": dl.pods(len(ids)), "seating": await _seating(session, tid)}
+    return {"pods": sizes, "rounds_total": t.rounds_total, "seating": await _seating(session, tid)}
 
 
 @router.post("/{tid}/draft/control")

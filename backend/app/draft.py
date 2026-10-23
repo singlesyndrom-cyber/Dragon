@@ -9,8 +9,14 @@
   5. Сборка колоды и регистрация деклиста - 25 минут.
   6. Туры по швейцарке; первый - по рассадке: игрок играет с сидящим напротив (место i против i + n/2).
 
-Для «Берсерка» точные цифры берутся из его Турнирных правил: число карт в бустере, таймеры и время на сборку
-судья задаёт в настройках драфта (по умолчанию - как в MTG).
+«Берсерк» - Турнирные правила ККИ «Берсерк» (базовая редакция от 26.10.2023), п. 601, 704, 705:
+  - столы по 8-16 игроков, число столов - степень двойки (1, 2, 4…), распределение жеребьёвкой (601.3);
+  - бустер 12 карт; на пик 60, 55, 50 … 10 секунд (таблица №1), передача налево в нечётных бустерах,
+    направо в чётных (601.7); просмотр взятых карт - 1 минута после каждого бустера (601.8);
+  - три бустера - колода 30-36 карт, раздача 15 (601.10);
+  - тур - 45 минут рекомендованно, организатор может изменить (704.3); первый тур - простая жеребьёвка (705);
+  - туров: 3, если за столами меньше 8 игроков, 4 - если 8 и больше (601.3.4).
+  Время на сборку колоды правила не задают - по умолчанию 25 минут, как в MTG.
 
 Таймер не тикает на сервере: хранится момент старта, пауза и поправки судьи, а текущий этап вычисляется по
 времени. Так экран судьи можно перезагрузить или открыть на другом устройстве - таймер не собьётся.
@@ -25,16 +31,31 @@ DIRECTIONS = ["left", "right", "left", "right", "left"]
 POD_MAX = 8
 
 
+# «Берсерк», таблица №1: 12-карточный бустер, пики 1-11 (в бустере 12…2 карты)
+BERSERK_PICK_SECONDS = {12: 60, 11: 55, 10: 50, 9: 45, 8: 40, 7: 35, 6: 30, 5: 25, 4: 20, 3: 15, 2: 10}
+
+
 def default_config(game: str) -> dict:
+    if game == "berserk":
+        return {
+            "boosters": 3, "cards": 12,
+            "pick_seconds": {str(k): v for k, v in BERSERK_PICK_SECONDS.items()},
+            "review_first": 60, "review_step": 0,           # 1 минута после каждого бустера (601.8)
+            "build_minutes": 25,                            # в Турнирных правилах не задано
+            "round_minutes": 50,                            # рекомендовано 45 (704.3), в клубе - 50
+            "sets": "", "first_round": "random",            # 705: первый тур - жеребьёвка
+            "pod_max": 16, "pods_pow2": True,               # 601.3: столы 8-16, число столов - степень 2
+        }
     return {
         "boosters": 3,
-        "cards": 14 if game == "mtg" else 15,            # MTG Play Booster - 14 карт; «Берсерк» уточняет судья
+        "cards": 14,                                        # MTG Play Booster - 14 карт
         "pick_seconds": {str(k): v for k, v in MTG_PICK_SECONDS.items()},
         "review_first": 60, "review_step": 30,             # 60, 90, 120 с
         "build_minutes": 25,
         "round_minutes": 50,
         "sets": "",                                         # «7-8-8» - выпуски бустеров, для подписи
         "first_round": "seats",                             # seats - по рассадке | random
+        "pod_max": 8, "pods_pow2": False,
     }
 
 
@@ -46,7 +67,8 @@ def clean_config(cfg: dict, game: str) -> dict:
     out["cards"] = max(2, min(int(out["cards"]), 30))
     secs = {}
     for n in range(2, out["cards"] + 1):
-        v = (out.get("pick_seconds") or {}).get(str(n), MTG_PICK_SECONDS.get(min(n, 15), 40))
+        fallback = BERSERK_PICK_SECONDS if game == "berserk" else MTG_PICK_SECONDS
+        v = (out.get("pick_seconds") or {}).get(str(n), fallback.get(n, max(fallback.values())))
         secs[str(n)] = max(1, min(int(v), 600))
     out["pick_seconds"] = secs
     out["review_first"] = max(0, min(int(out["review_first"]), 900))
@@ -55,6 +77,8 @@ def clean_config(cfg: dict, game: str) -> dict:
     out["round_minutes"] = max(10, min(int(out["round_minutes"]), 180))
     out["sets"] = str(out.get("sets") or "")[:40]
     out["first_round"] = "random" if out.get("first_round") == "random" else "seats"
+    out["pod_max"] = max(2, min(int(out["pod_max"]), 32))
+    out["pods_pow2"] = bool(out["pods_pow2"])
     return out
 
 
@@ -129,21 +153,25 @@ def add_time(cfg: dict, state: dict, now: datetime, seconds: float) -> dict:
     return {**state, "extra": extra}
 
 
-def pods(n: int) -> list[int]:
-    """Размеры столов: не больше 8, как можно ровнее (10 -> 5+5, 17 -> 6+6+5)."""
+def pods(n: int, pod_max: int = POD_MAX, pow2: bool = False) -> list[int]:
+    """Размеры столов: не больше pod_max, как можно ровнее (MTG: 10 -> 5+5, 17 -> 6+6+5).
+    pow2 («Берсерк»): число столов - степень двойки (40 при 16 на стол -> 4 стола по 10)."""
     if n <= 0:
         return []
-    k = -(-n // POD_MAX)
+    k = -(-n // pod_max)
+    if pow2:
+        k = 1 << (k - 1).bit_length()
     base, extra = divmod(n, k)
     return [base + 1] * extra + [base] * (k - extra)
 
 
-def seat(user_ids: list[int], rng: random.Random | None = None) -> list[tuple[int, int, int]]:
+def seat(user_ids: list[int], rng: random.Random | None = None, pod_max: int = POD_MAX,
+         pow2: bool = False) -> list[tuple[int, int, int]]:
     """Случайная рассадка: [(user_id, стол, место)], места с 1 по часовой стрелке."""
     ids = list(user_ids)
     (rng or random).shuffle(ids)
     out, i = [], 0
-    for pod_no, size in enumerate(pods(len(ids)), 1):
+    for pod_no, size in enumerate(pods(len(ids), pod_max, pow2), 1):
         for s in range(1, size + 1):
             out.append((ids[i], pod_no, s))
             i += 1

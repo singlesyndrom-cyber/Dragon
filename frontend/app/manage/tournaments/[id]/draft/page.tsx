@@ -159,7 +159,9 @@ function DraftScreen({ id }: { id: string }) {
             <>
               <p className="dlabel">Тур {d.round} из {d.rounds_total}</p>
               <p className={`dtime ${roundLeft <= 0 ? "over" : roundLeft <= 5 * 60000 ? "hot" : ""}`}>{roundLeft > 0 ? mmss(roundLeft / 1000) : "Время!"}</p>
-              <p className="dlabel">{roundLeft > 0 ? `Лимит тура ${d.round_minutes} минут` : "Время тура вышло: доигрываются дополнительные ходы"}</p>
+              <p className="dlabel">{roundLeft > 0 ? `Лимит тура ${d.round_minutes} минут`
+                : d.game === "berserk" ? "Время! Второй игрок завершает ход, судья может добавить до 5 минут (Турнирные правила, 704.4)"
+                : "Время! Дополнительные ходы по правилам турнира"}</p>
               <div className="row dctl">
                 <Link href={`/manage/tournaments/${id}`} className="btn primary">Пары и результаты</Link>
               </div>
@@ -229,6 +231,7 @@ function Config({ id, c, reload }: { id: string; c: any; reload: () => Promise<v
         <label><span>Тур, мин</span><input type="number" min={10} max={180} value={f.round_minutes} onChange={num("round_minutes")} style={{ width: 80 }} /></label>
         <label><span>Просмотр, с</span><input type="number" min={0} max={900} value={f.review_first} onChange={num("review_first")} style={{ width: 80 }} /></label>
         <label><span>+ за бустер, с</span><input type="number" min={0} max={900} value={f.review_step} onChange={num("review_step")} style={{ width: 80 }} /></label>
+        <label><span>Игроков за столом, макс.</span><input type="number" min={2} max={32} value={f.pod_max} onChange={num("pod_max")} style={{ width: 80 }} /></label>
         <label><span>Первый тур</span>
           <select value={f.first_round} onChange={num("first_round")}>
             <option value="seats">По рассадке (напротив)</option>
@@ -245,11 +248,12 @@ function Config({ id, c, reload }: { id: string; c: any; reload: () => Promise<v
           </label>
         ))}
       </div>
-      <p className="muted small">По умолчанию — таблица MTR (приложение B): 40 с при 15–14 картах … 5 с при 4–2. Для «Берсерка»
-        выставьте значения по его Турнирным правилам.</p>
+      <p className="muted small">По умолчанию: Magic — таблица MTR (приложение B), 40 с при 15–14 картах … 5 с при 4–2, просмотр
+        60/90/120 с, столы до 8 игроков. «Берсерк» — Турнирные правила (п. 601): бустер 12 карт, 60…10 с на пик, просмотр 1 минута,
+        столы 8–16 игроков, число столов — степень двойки, первый тур — жеребьёвка (п. 705), тур 45 минут рекомендовано (п. 704.3).</p>
       <button type="button" className="primary" disabled={busy}
         onClick={() => run(async () => {
-          const body = { ...f, boosters: +f.boosters, cards: +f.cards, build_minutes: +f.build_minutes, round_minutes: +f.round_minutes,
+          const body = { ...f, pod_max: +f.pod_max, boosters: +f.boosters, cards: +f.cards, build_minutes: +f.build_minutes, round_minutes: +f.round_minutes,
             review_first: +f.review_first, review_step: +f.review_step,
             pick_seconds: Object.fromEntries(Object.entries(f.pick_seconds || {}).map(([k, v]) => [k, +(v as any)])) };
           await api(`/tournaments/${id}/draft/config`, { method: "PUT", body });

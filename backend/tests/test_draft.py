@@ -21,6 +21,14 @@ def test_timeline_mtg_play_booster():
     assert [s["seconds"] for s in dl.timeline(cfg15)[:2]] == [40, 40]
 
 
+def test_berserk_rules_defaults():
+    cfg = dl.clean_config({}, "berserk")                       # Турнирные правила «Берсерка», 601.7-601.8, 705
+    steps = dl.timeline(cfg)
+    assert [s["seconds"] for s in steps if s["kind"] == "pick"][:11] == [60, 55, 50, 45, 40, 35, 30, 25, 20, 15, 10]
+    assert [s["seconds"] for s in steps if s["kind"] == "review"] == [60, 60, 60] and cfg["first_round"] == "random"
+    assert dl.pods(40, 16, True) == [10, 10, 10, 10] and dl.pods(33, 16, True) == [9, 8, 8, 8] and dl.pods(12, 16, True) == [12]
+
+
 def test_current_pause_skip_add():
     cfg = dl.clean_config({}, "mtg")
     t0 = datetime(2026, 10, 23, 12, tzinfo=timezone.utc)
@@ -78,14 +86,14 @@ async def test_draft_tournament_flow(client):
     cid = (await c.post("/clubs", json={"name": "Дракон"}, headers=org)).json()["id"]
     tid = (await c.post("/tournaments", json={"club_id": cid, "name": "Драфт 7-8-8", "game": "berserk", "format": "swiss",
                                               "rounds": 3, "silent": True, "draft": True,
-                                              "draft_config": {"sets": "7-8-8", "cards": 11}}, headers=org)).json()["id"]
+                                              "draft_config": {"sets": "7-8-8", "cards": 11, "first_round": "seats"}}, headers=org)).json()["id"]
     t = (await c.get(f"/tournaments/{tid}")).json()
     assert t["draft"] is True and t["round_minutes"] == 50 and t["draft_sets"] == "7-8-8"
     for i in range(10):
         await c.post(f"/tournaments/{tid}/players", json={"nickname": f"Игрок {i}"}, headers=org)
     assert (await c.post(f"/tournaments/{tid}/draft/control", json={"action": "start"}, headers=org)).status_code == 400
     seat = (await c.post(f"/tournaments/{tid}/draft/seat", headers=org)).json()
-    assert seat["pods"] == [5, 5] and all(s["seat"] for s in seat["seating"])
+    assert seat["pods"] == [10] and all(s["seat"] for s in seat["seating"])      # «Берсерк»: стол до 16 игроков
     cfg = (await c.put(f"/tournaments/{tid}/draft/config", json={"pick_seconds": {"11": 60}}, headers=org)).json()
     assert cfg["cards"] == 11 and cfg["pick_seconds"]["11"] == 60
     d = (await c.get(f"/tournaments/{tid}/draft")).json()
@@ -97,11 +105,11 @@ async def test_draft_tournament_flow(client):
     assert cur["step"]["pick"] == 2
     paused = (await c.post(f"/tournaments/{tid}/draft/control", json={"action": "pause"}, headers=org)).json()
     assert paused["paused"] is True
-    # туры: первый - по рассадке (за каждым столом из 5: места 1-3, 2-4; пятые места играют между собой)
+    # туры: первый - по рассадке (стол из 10: место i против i+5)
     assert (await c.post(f"/tournaments/{tid}/start", headers=org)).status_code == 200
     seats = {s["user_id"]: (s["pod"], s["seat"]) for s in (await c.get(f"/tournaments/{tid}/draft")).json()["seating"]}
     for m in (await c.get(f"/tournaments/{tid}/round/1")).json():
         (pa, sa), (pb, sb) = seats[m["p1_id"]], seats[m["p2_id"]]
-        assert (pa == pb and abs(sa - sb) == 2) or (sa == sb == 5)
+        assert pa == pb and abs(sa - sb) == 5
     t = (await c.get(f"/tournaments/{tid}")).json()
     assert t["round_started_at"] and t["round"] == 1
