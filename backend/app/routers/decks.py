@@ -10,6 +10,7 @@ from .. import deckrules
 from ..db import get_session
 from ..decklist import ParsedCard, apply_commander, parse_decklist, resolve_tail, validate_edh
 from ..deps import current_user, is_club_organizer, optional_user
+from .cards import _back
 from ..models import (Card, Deck, DeckCard, GlobalRole, Tournament, TournamentPlayer,
                       TournamentStatus, User)
 
@@ -149,13 +150,12 @@ def card_info(c: Card | None) -> dict | None:
     if c is None:
         return None
     ex = c.extra or {}
-    faces = ex.get("faces") or []
     return {"id": c.id, "name": c.name, "name_ru": c.name_ru, "type": c.type_line, "type_ru": c.type_ru,
             "mana_cost": c.mana_cost, "cmc": c.cmc, "colors": ex.get("colors") or [],
             "color_identity": ex.get("color_identity") or [], "rarity": c.rarity, "set": c.set_code,
             "image_url": c.image_url, "image_large": ex.get("image_large"), "prices": c.prices or {},
             "legalities": c.legalities or {}, "is_game_changer": c.is_game_changer,
-            "back_image": faces[1].get("image") if len(faces) > 1 else None}
+            "back_image": _back(ex)}
 
 
 async def _entries(session: AsyncSession, deck_id: int) -> list[tuple[DeckCard, Card | None]]:

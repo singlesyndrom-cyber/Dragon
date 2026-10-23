@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import FlipCard from "@/components/FlipCard";
 import Mana from "@/components/Mana";
 import WotcNotice from "@/components/WotcNotice";
 import { sget } from "@/lib/api";
@@ -80,10 +81,8 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
           ) : null}
         </div>
         <aside className="stack">
-          {c.image_url ? (
-            <a href={x.image_large || c.image_url}><img src={c.image_url} alt={c.name} style={{ width: "100%", borderRadius: 14 }} /></a>
-          ) : null}
-          {faces[1]?.image ? <img src={faces[1].image} alt={faces[1].name} style={{ width: "100%", borderRadius: 14 }} /> : null}
+          <FlipCard front={c.image_url} back={faces[1]?.image && faces[1].image !== faces[0]?.image ? faces[1].image : null}
+            alt={c.name} className="cardimg" />
           <dl className="facts">
             {c.set_name ? (<><dt>Сет</dt><dd><Link href={searchHref(`s:${c.set}`, c.game)}>{c.set_name}</Link></dd></>) : null}
             {c.rarity ? (<><dt>Редкость</dt><dd>{RARITY[c.rarity] || c.rarity}</dd></>) : null}

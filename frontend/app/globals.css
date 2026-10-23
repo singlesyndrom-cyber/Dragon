@@ -377,3 +377,20 @@ table.members td { vertical-align: middle; }
   .deckpreview { display: none; }
   .previewimg { max-width: 260px; }
 }
+
+/* Двусторонние карты: переворот */
+.flipcard { position: relative; display: block; perspective: 1400px; }
+.flip-inner { display: grid; transition: transform 0.5s ease; transform-style: preserve-3d; }
+.flipcard.is-flipped .flip-inner { transform: rotateY(180deg); }
+.flip-face { grid-area: 1 / 1; width: 100%; display: block; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: inherit; }
+.flip-back { transform: rotateY(180deg); }
+.flip-btn { position: absolute; right: 8px; bottom: 8px; z-index: 2; padding: 4px 10px; font-size: 0.8rem; border-radius: 999px;
+  background: rgba(20, 24, 38, 0.88); border-color: var(--gilt); color: var(--ivory); }
+.flip-btn:hover { background: var(--ink); }
+.cardimg, .previewimg, .deckpreview .flipcard { border-radius: 14px; overflow: hidden; }
+.cardimg .flip-face, img.cardimg { width: 100%; border-radius: 14px; }
+.tile .flip-face { aspect-ratio: 488 / 680; object-fit: cover; background: var(--vellum-2); }
+.tile .flip-btn span, .hand .flip-btn span { display: none; }
+.hand .flipcard { border-radius: 8px; overflow: hidden; }
+.hand .flip-btn { right: 4px; bottom: 4px; padding: 2px 8px; }
+@media (prefers-reduced-motion: reduce) { .flip-inner { transition: none; } }

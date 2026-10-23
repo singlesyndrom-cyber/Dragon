@@ -10,6 +10,7 @@ import DeckStats from "@/components/deck/DeckStats";
 import Problems from "@/components/deck/Problems";
 import { useLang } from "@/components/deck/useLang";
 import { Status, useAction } from "@/components/Form";
+import FlipCard from "@/components/FlipCard";
 import Guard from "@/components/Guard";
 import Mana from "@/components/Mana";
 import { api } from "@/lib/api";
@@ -31,7 +32,7 @@ function Editor({ id }: { id: string }) {
   const [problems, setProblems] = useState<any[]>([]);
   const [save, setSave] = useState<Save>("saved");
   const [saveErr, setSaveErr] = useState("");
-  const [preview, setPreview] = useState<{ name: string; image?: string | null } | null>(null);
+  const [preview, setPreview] = useState<{ name: string; image?: string | null; back?: string | null } | null>(null);
   const [lang, setLang] = useLang();
   const [importing, setImporting] = useState(false);
   const loaded = useRef(false);
@@ -45,7 +46,7 @@ function Editor({ id }: { id: string }) {
     setRows(rs);
     setProblems(x.problems);
     const first = rs.find((r) => r.section === "commander" && r.card) || rs.find((r) => r.card);
-    if (first) setPreview({ name: first.name, image: first.card?.image_url });
+    if (first) setPreview({ name: first.name, image: first.card?.image_url, back: first.card?.back_image });
     loaded.current = false;
   }
   useEffect(() => { load().catch(() => setD(null)); }, [id]);
@@ -92,7 +93,7 @@ function Editor({ id }: { id: string }) {
       if (i >= 0) return next.map((r, j) => j === i ? { ...r, qty: section === "commander" ? 1 : r.qty + qty } : r);
       return [...next, { key: newKey(), name: card.name, qty: section === "commander" ? 1 : qty, section, card }];
     });
-    setPreview({ name: card.name, image: card.image_url });
+    setPreview({ name: card.name, image: card.image_url, back: card.back_image });
   }
   const ops: Ops = {
     qty: (key, delta) => setRows((prev) => prev.flatMap((r) => r.key !== key ? [r] : r.qty + delta > 0 ? [{ ...r, qty: r.qty + delta }] : [])),
@@ -156,10 +157,10 @@ function Editor({ id }: { id: string }) {
             Наведите на карту, чтобы увидеть её; «⋯» — перенести в сайдборд, сделать командиром или удалить.
           </p>
           <DeckList rows={rows} format={d.format} lang={lang} ops={ops}
-            onHover={(r) => setPreview({ name: r.name, image: r.card?.image_url })} />
+            onHover={(r) => setPreview({ name: r.name, image: r.card?.image_url, back: r.card?.back_image })} />
         </div>
         <aside className="builder-side">
-          {preview?.image ? <img src={preview.image} alt={preview.name} className="previewimg" /> : null}
+          <FlipCard front={preview?.image} back={preview?.back} alt={preview?.name || ""} className="previewimg" />
           <Problems problems={problems} />
           <DeckStats rows={rows} />
           <div className="section">
@@ -176,7 +177,7 @@ function Editor({ id }: { id: string }) {
 
 function CardSearch({ format, isCmd, lang, onAdd, onPreview }: {
   format: string; isCmd: boolean; lang: "ru" | "en";
-  onAdd: (c: CardInfo, s: Row["section"], qty?: number) => void; onPreview: (p: { name: string; image?: string | null }) => void;
+  onAdd: (c: CardInfo, s: Row["section"], qty?: number) => void; onPreview: (p: { name: string; image?: string | null; back?: string | null }) => void;
 }) {
   const [q, setQ] = useState("");
   const [legal, setLegal] = useState(true);
@@ -220,7 +221,7 @@ function CardSearch({ format, isCmd, lang, onAdd, onPreview }: {
         items.length ? (
           <ul className="pickresults">
             {items.map((c) => (
-              <li key={c.id} onMouseEnter={() => onPreview({ name: c.name, image: c.image_url })}>
+              <li key={c.id} onMouseEnter={() => onPreview({ name: c.name, image: c.image_url, back: c.back_image })}>
                 <span className="cname">
                   <b>{lang === "ru" ? c.name_ru || c.name : c.name}</b>
                   <span className="muted small"> {lang === "ru" && c.name_ru ? c.name : c.name_ru || ""}</span>

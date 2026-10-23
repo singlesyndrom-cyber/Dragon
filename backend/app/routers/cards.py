@@ -65,6 +65,13 @@ async def card_stats(session: AsyncSession = Depends(get_session)):
             "scryfall_updated": last.finished_at if last and last.cards else None}
 
 
+def _back(ex: dict) -> str | None:
+    """Картинка обратной стороны (трансформ, MDFC). У split/adventure второй картинки нет - None."""
+    faces = ex.get("faces") or []
+    back = faces[1].get("image") if len(faces) > 1 else None
+    return back if back and back != (faces[0].get("image") if faces else None) else None
+
+
 def _row(c: Card) -> dict:
     """Карта в выдаче Картотеки: хватает для сетки, списка и текстового вида."""
     ex = c.extra or {}
@@ -72,6 +79,7 @@ def _row(c: Card) -> dict:
             "text_ru": c.text_ru, "power": ex.get("power"), "toughness": ex.get("toughness"),
             "loyalty": ex.get("loyalty"), "colors": ex.get("colors"), "prices": c.prices or {},
             "color_identity": ex.get("color_identity") or [], "legalities": c.legalities or {},
+            "back_image": _back(ex),
             "is_game_changer": c.is_game_changer}
 
 

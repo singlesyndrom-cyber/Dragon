@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import FlipCard from "@/components/FlipCard";
 import { Row, shuffle } from "@/lib/decks";
 
-type C = { uid: number; name: string; image?: string | null };
+type C = { uid: number; name: string; image?: string | null; back?: string | null };
 
 /** Тестовая рука: перемешать основную колоду (без командира и сайда), взять 7, муллиган, добор. */
 export default function TestHand({ rows, lang }: { rows: Row[]; lang: "ru" | "en" }) {
@@ -16,7 +17,7 @@ export default function TestHand({ rows, lang }: { rows: Row[]; lang: "ru" | "en
     let uid = 0;
     for (const r of rows.filter((x) => x.section === "main")) {
       for (let i = 0; i < r.qty; i++) {
-        cards.push({ uid: uid++, name: lang === "ru" ? r.card?.name_ru || r.name : r.name, image: r.card?.image_url });
+        cards.push({ uid: uid++, name: lang === "ru" ? r.card?.name_ru || r.name : r.name, image: r.card?.image_url, back: r.card?.back_image });
       }
     }
     return shuffle(cards);
@@ -53,7 +54,7 @@ export default function TestHand({ rows, lang }: { rows: Row[]; lang: "ru" | "en
       {hand.length ? (
         <div className="hand section">
           {hand.map((c) => c.image
-            ? <img key={c.uid} src={c.image} alt={c.name} title={c.name} />
+            ? <FlipCard key={c.uid} front={c.image} back={c.back} alt={c.name} />
             : <span key={c.uid} className="noimg">{c.name}</span>)}
         </div>
       ) : null}

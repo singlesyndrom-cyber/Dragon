@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, use, useEffect, useState } from "react";
 import DeckList from "@/components/deck/DeckList";
+import FlipCard from "@/components/FlipCard";
 import DeckStats from "@/components/deck/DeckStats";
 import ExportBox from "@/components/deck/ExportBox";
 import Problems from "@/components/deck/Problems";
@@ -88,7 +89,7 @@ function Deck({ id }: { id: string }) {
       {tab === "list" ? (
         <div className="deckview">
           <DeckList rows={rows} format={d.format} lang={lang} onHover={setPreview} />
-          <aside className="deckpreview">{img ? <img src={img} alt={preview?.name} /> : null}</aside>
+          <aside className="deckpreview"><FlipCard front={img} back={preview?.card?.back_image} alt={preview?.name || ""} /></aside>
         </div>
       ) : tab === "stats" ? <DeckStats rows={rows} />
         : tab === "hand" ? <TestHand rows={rows} lang={lang} />

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useState } from "react";
+import FlipCard from "@/components/FlipCard";
 import Mana from "@/components/Mana";
 import WotcNotice from "@/components/WotcNotice";
 import { api } from "@/lib/api";
@@ -177,7 +178,7 @@ function Results({ q, game, order, dir, page }: { q: string; game: string; order
           <div className="grid section">
             {data.items.map((c: any) => (
               <Link key={c.id} href={`/cards/${c.id}`} className="tile">
-                {c.image_url ? <img src={c.image_url} alt={c.name} loading="lazy" decoding="async" /> : <span className="noimg">{c.name_ru || c.name}</span>}
+                {c.image_url ? <FlipCard front={c.image_url} back={c.back_image} alt={c.name} lazy /> : <span className="noimg">{c.name_ru || c.name}</span>}
                 <span className="cap">
                   <b>{c.name_ru || c.name}</b>
                   {c.name_ru ? <span className="muted small">{c.name}<br /></span> : null}
