@@ -30,7 +30,7 @@ async def deliver(session, m: OutboxMessage) -> None:
                                                               m.photo_url)
             except Exception as e:  # noqa: BLE001
                 log.warning("vk картинка %s: %r", m.photo_url, e)
-                cfg.last_error = f"картинка не загрузилась в VK: {e}"[:500]
+                cfg.last_error = f"картинка не загрузилась в VK: {e or repr(e)}"[:500]
         # random_id = номер сообщения в очереди: VK не отправит дубль, если повторим после сбоя
         await vk.send_message(token, int(peer), vk.html_to_text(m.text), m.buttons, random_id=m.id,
                               attachment=attachment)

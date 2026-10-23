@@ -91,15 +91,26 @@ async def find_by_url(session: AsyncSession, club_id: int, url: str) -> NoticeIm
 
 
 async def image_bytes(img: NoticeImage) -> bytes:
+    """Файл картинки: загруженная - из базы; арт карты - со Scryfall. Если напрямую Scryfall недоступен
+    (с некоторых хостингов он не отвечает), пробуем через прокси, настроенный для Telegram."""
     if img.data:
         return img.data
-    async with vk.client() as c:          # тот же клиент, что для VK (в тестах - подменённый транспорт)
-        # Scryfall без осмысленного User-Agent отвечает 400 - те же заголовки, что при загрузке базы карт
-        from .scryfall import HEADERS
-        r = await c.get(img.source_url, follow_redirects=True,
-                        headers={"User-Agent": HEADERS["User-Agent"], "Accept": "image/*"})
-    r.raise_for_status()
-    return r.content
+    from .scryfall import HEADERS
+    headers = {"User-Agent": HEADERS["User-Agent"], "Accept": "image/*"}
+    errors = []
+    for proxy in [None] + ([settings.telegram_proxy] if settings.telegram_proxy else []):
+        try:
+            if proxy is None:
+                async with vk.client() as c:     # в тестах - подменённый транспорт
+                    r = await c.get(img.source_url, follow_redirects=True, headers=headers, timeout=20)
+            else:
+                async with httpx.AsyncClient(proxy=proxy, timeout=30) as c:
+                    r = await c.get(img.source_url, follow_redirects=True, headers=headers)
+            r.raise_for_status()
+            return r.content
+        except httpx.HTTPError as e:
+            errors.append(f"{'через прокси' if proxy else 'напрямую'}: {type(e).__name__} {e}".strip())
+    raise vk.VkError(0, "не удалось скачать арт со Scryfall (" + "; ".join(errors) + ")")
 
 
 async def vk_attachment(session: AsyncSession, club_id: int, group_id: int, token: str, peer_id: int,
