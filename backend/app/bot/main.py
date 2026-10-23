@@ -7,7 +7,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 
 from .. import scryfall
 from ..config import settings
-from . import auctions, club_events, handlers
+from . import auctions, club_events, handlers, vk as vk_bot
 from .system_tasks import backup_sender_loop, heartbeat_loop
 from .worker import run_outbox
 
@@ -27,7 +27,8 @@ async def main() -> None:
     dp.include_router(handlers.router)
     tasks = [asyncio.create_task(run_outbox(bot)), asyncio.create_task(auctions.finish_loop(bot)),
              asyncio.create_task(heartbeat_loop()), asyncio.create_task(backup_sender_loop(bot)),
-             asyncio.create_task(club_events.reminders_loop())]
+             asyncio.create_task(club_events.reminders_loop()),
+             asyncio.create_task(vk_bot.outbox_loop()), asyncio.create_task(vk_bot.longpoll_manager())]  # VK клубов
     if settings.scryfall_auto_sync:
         tasks.append(asyncio.create_task(scryfall.auto_sync_loop()))
     try:

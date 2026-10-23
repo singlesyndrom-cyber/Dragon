@@ -1,7 +1,7 @@
 import enum
 from datetime import date, datetime
 
-from sqlalchemy import (Date, DateTime, Enum, Float, ForeignKey, Index, Integer, Sequence, String, text,
+from sqlalchemy import (BigInteger, Date, DateTime, Enum, Float, ForeignKey, Index, Integer, Sequence, String, text,
                         Text, UniqueConstraint, func)
 from sqlalchemy.dialects.postgresql import JSONB as _JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -106,6 +106,30 @@ class Club(Base):
 
     members: Mapped[list["ClubMember"]] = relationship(back_populates="club", cascade="all, delete-orphan")
     stats: Mapped["ClubStats"] = relationship(back_populates="club", uselist=False, cascade="all, delete-orphan")
+
+
+class ClubVk(Base):
+    """VK клуба: сообщество (токен с правом «сообщения») - беседа и личные сообщения игрокам;
+    стена - токен администратора сообщества с правом «стена» (токеном сообщества VK публиковать не даёт).
+    Токены хранятся зашифрованными (app/secretbox.py) и наружу не отдаются."""
+    __tablename__ = "club_vk"
+
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id", ondelete="CASCADE"), primary_key=True)
+    group_id: Mapped[int | None] = mapped_column(BigInteger)
+    group_name: Mapped[str | None] = mapped_column(String(255))
+    group_token: Mapped[str | None] = mapped_column(Text)            # зашифрован
+    peer_id: Mapped[int | None] = mapped_column(BigInteger)          # беседа: 2000000000 + номер
+    bind_code: Mapped[str | None] = mapped_column(String(16))        # код привязки беседы
+    chat_enabled: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
+    dm_enabled: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
+    wall_enabled: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    wall_token: Mapped[str | None] = mapped_column(Text)             # зашифрован
+    wall_refresh: Mapped[str | None] = mapped_column(Text)           # зашифрован (VK ID)
+    wall_device_id: Mapped[str | None] = mapped_column(String(255))
+    wall_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    wall_user_name: Mapped[str | None] = mapped_column(String(255))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 class ClubMember(Base):
@@ -404,6 +428,8 @@ class OutboxMessage(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     kind: Mapped[str] = mapped_column(String(32))
+    # tg - Telegram (chat_id - чат); vk - сообщение VK (chat_id «клуб:peer_id»); vkwall - пост на стену (chat_id - клуб)
+    channel: Mapped[str] = mapped_column(String(8), default="tg", server_default="tg")
     chat_id: Mapped[str] = mapped_column(String(64))
     text: Mapped[str] = mapped_column(Text)
     photo_url: Mapped[str | None] = mapped_column(String(512))

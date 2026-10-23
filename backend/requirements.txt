@@ -11,3 +11,4 @@ httpx[socks]==0.27.*
 ijson==3.3.*
 python-multipart==0.0.9
 aiogram[proxy]>=3.13,<4
+cryptography>=42

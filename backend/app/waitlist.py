@@ -55,7 +55,7 @@ async def promote(session: AsyncSession, t: Tournament) -> list[int]:
                              f"🎉 Освободилось место — вы записаны на «{esc(t.name)}» ({_when(t)}).\n"
                              "Если не сможете прийти, отмените запись, чтобы место досталось следующему.",
                              buttons=[[{"text": "Отменить запись", "callback_data": f"unreg:{t.id}"}]],
-                             dedup_key=f"wl:{t.id}:{e.user_id}")
+                             dedup_key=f"wl:{t.id}:{e.user_id}", club_id=t.club_id)
         moved.append(e.user_id)
         if free is not None:
             free -= 1

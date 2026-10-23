@@ -255,15 +255,13 @@ def gets_bookings(m: ClubMember) -> bool:
 
 
 async def notify_staff(session: AsyncSession, club: Club, actor: User, text: str, dedup: str):
-    """Сообщение бота в личку тем организаторам и судьям клуба, кто получает брони и привязал Telegram
-    (кроме того, кто действовал)."""
-    rows = (await session.execute(
-        select(ClubMember, AuthAccount.external_id).join(AuthAccount, AuthAccount.user_id == ClubMember.user_id)
-        .where(ClubMember.club_id == club.id, AuthAccount.provider == Provider.telegram,
-               AuthAccount.user_id != actor.id))).all()
-    for m, chat in rows:
+    """Сообщение в личку тем организаторам и судьям клуба, кто получает брони (кроме того, кто действовал):
+    в Telegram и от сообщества VK клуба - кто что привязал."""
+    members = (await session.execute(select(ClubMember).where(
+        ClubMember.club_id == club.id, ClubMember.user_id != actor.id))).scalars().all()
+    for m in members:
         if gets_bookings(m):
-            await notify.enqueue(session, "booking", chat, text, dedup_key=f"{dedup}:{chat}")
+            await notify.to_user(session, m.user_id, "booking", text, dedup_key=dedup, club_id=club.id)
 
 
 class NotifyIn(BaseModel):

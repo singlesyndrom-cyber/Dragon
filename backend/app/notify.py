@@ -17,15 +17,42 @@ def site_url(path: str) -> str | None:
 
 
 async def enqueue(session, kind: str, chat_id: str | int | None, text: str, photo_url: str | None = None,
-                  dedup_key: str | None = None, buttons: list | None = None) -> None:
+                  dedup_key: str | None = None, buttons: list | None = None, channel: str = "tg") -> None:
     if not chat_id:
         return
     stmt = pg_insert(OutboxMessage).values(
-        kind=kind, chat_id=str(chat_id), text=text, photo_url=photo_url, parse_mode="HTML", buttons=buttons,
+        kind=kind, channel=channel, chat_id=str(chat_id), text=text, photo_url=photo_url, parse_mode="HTML", buttons=buttons,
         status=OutboxStatus.pending, attempts=0, next_attempt_at=datetime.now(timezone.utc), dedup_key=dedup_key)
     if dedup_key:
         stmt = stmt.on_conflict_do_nothing(index_elements=[OutboxMessage.dedup_key])
     await session.execute(stmt)
+
+
+async def club_vk(session, club_id: int):
+    from .models import ClubVk
+    cfg = await session.get(ClubVk, club_id)
+    return cfg if cfg and cfg.group_id else None
+
+
+async def broadcast(session, club: Club, kind: str, text: str, dedup: str, buttons: list | None = None,
+                    photo_url: str | None = None, link: str | None = None) -> int:
+    """Сообщение клуба во все его каналы: чат Telegram, беседа VK, стена сообщества VK. Возвращает число каналов."""
+    n = 0
+    if club.telegram_chat_id:
+        await enqueue(session, kind, club.telegram_chat_id, text, photo_url=photo_url, buttons=buttons,
+                      dedup_key=f"{dedup}:{club.telegram_chat_id}")
+        n += 1
+    cfg = await club_vk(session, club.id)
+    if cfg and cfg.group_token and cfg.peer_id and cfg.chat_enabled:
+        await enqueue(session, kind, f"{club.id}:{cfg.peer_id}", text, buttons=buttons, channel="vk",
+                      dedup_key=f"{dedup}:vk:{cfg.peer_id}")
+        n += 1
+    if cfg and cfg.wall_enabled and cfg.wall_token:
+        # на стене кнопок нет: ссылка на сайт - вложением (VK покажет карточку)
+        await enqueue(session, kind, str(club.id), text, photo_url=link, channel="vkwall",
+                      dedup_key=f"{dedup}:vkwall:{cfg.group_id}")
+        n += 1
+    return n
 
 
 ANNOUNCE_AHEAD = timedelta(days=7)   # анонс в чат - не раньше чем за неделю до турнира
@@ -42,12 +69,14 @@ async def on_tournament_created(session, t: Tournament) -> None:
 
 async def announce(session, t: Tournament) -> bool:
     club = await session.get(Club, t.club_id)
-    if not club or not club.telegram_chat_id:
+    if not club:
         return False
+    url = site_url(f"/tournaments/{t.id}")
     text = format_announce(t.name, club.name, t.game, t.format.value, t.starts_at, settings.app_timezone,
-                           site_url(f"/tournaments/{t.id}"), t.rounds_total)
-    await enqueue(session, "tournament_announce", club.telegram_chat_id, text,
-                  dedup_key=f"t-announce:{t.id}:{club.telegram_chat_id}", buttons=announce_buttons(t))
+                           url, t.rounds_total)
+    if not await broadcast(session, club, "tournament_announce", text, f"t-announce:{t.id}",
+                           buttons=announce_buttons(t), link=url):
+        return False
     t.announced = True
     return True
 
@@ -80,11 +109,14 @@ async def announce_due(session) -> int:
 
 async def on_article_published(session, a: Article) -> None:
     club = await session.get(Club, a.club_id) if a.club_id else None
-    chat = club.telegram_chat_id if club else settings.telegram_global_chat_id
-    if not chat:
+    url = site_url(f"/news/{a.slug}")
+    text = format_article(a.title, a.summary, url, club.name if club else None)
+    if club:
+        await broadcast(session, club, "article", text, f"article:{a.id}", photo_url=a.cover_url, link=url)
         return
-    text = format_article(a.title, a.summary, site_url(f"/news/{a.slug}"), club.name if club else None)
-    await enqueue(session, "article", chat, text, photo_url=a.cover_url, dedup_key=f"article:{a.id}:{chat}")
+    chat = settings.telegram_global_chat_id
+    if chat:
+        await enqueue(session, "article", chat, text, photo_url=a.cover_url, dedup_key=f"article:{a.id}:{chat}")
 
 
 async def _nicknames(session, ids) -> dict[int, str]:
@@ -95,7 +127,7 @@ async def on_tournament_finished(session, t: Tournament, swiss_table=None) -> No
     """Автоотчёт: итоги, поздравление, статистика, обновлённая таблица лиги.
     swiss_table - результат compute_standings (для швейцарки), считается ДО обновления лиги."""
     club = await session.get(Club, t.club_id)
-    if not club or not club.telegram_chat_id:
+    if not club or not (club.telegram_chat_id or await club_vk(session, club.id)):
         return
 
     if t.format == TournamentFormat.edh:
@@ -147,18 +179,27 @@ async def on_tournament_finished(session, t: Tournament, swiss_table=None) -> No
                       podium=podium, standings=standings, league_title=league_title,
                       league=league, stats=stats, url=site_url(f"/tournaments/{t.id}"), tz=settings.app_timezone,
                       judge=judge_label)
-    await enqueue(session, "tournament_report", club.telegram_chat_id, format_report(data),
-                  dedup_key=f"t-report:{t.id}:{club.telegram_chat_id}")
+    await broadcast(session, club, "tournament_report", format_report(data), f"t-report:{t.id}", link=data.url)
 
 
 
 async def to_user(session, user_id: int, kind: str, text: str, buttons: list | None = None,
-                  dedup_key: str | None = None) -> bool:
-    """Сообщение бота игроку в личку, если у него привязан Telegram."""
+                  dedup_key: str | None = None, club_id: int | None = None) -> bool:
+    """Сообщение игроку в личку: в Telegram, если привязан, и от сообщества VK клуба (club_id), если у игрока
+    привязан VK. Возвращает True, если хоть один канал есть."""
     from .models import AuthAccount, Provider
-    chat = (await session.execute(select(AuthAccount.external_id).where(
-        AuthAccount.user_id == user_id, AuthAccount.provider == Provider.telegram))).scalars().first()
-    if not chat:
-        return False
-    await enqueue(session, kind, chat, text, buttons=buttons, dedup_key=f"{dedup_key}:{chat}" if dedup_key else None)
-    return True
+    accs = dict((await session.execute(select(AuthAccount.provider, AuthAccount.external_id).where(
+        AuthAccount.user_id == user_id, AuthAccount.provider.in_([Provider.telegram, Provider.vk])))).all())
+    sent = False
+    chat = accs.get(Provider.telegram)
+    if chat:
+        await enqueue(session, kind, chat, text, buttons=buttons, dedup_key=f"{dedup_key}:{chat}" if dedup_key else None)
+        sent = True
+    vk_id = accs.get(Provider.vk)
+    if vk_id and club_id:
+        cfg = await club_vk(session, club_id)
+        if cfg and cfg.group_token and cfg.dm_enabled:
+            await enqueue(session, kind, f"{club_id}:{vk_id}", text, buttons=buttons, channel="vk",
+                          dedup_key=f"{dedup_key}:vk:{club_id}:{vk_id}" if dedup_key else None)
+            sent = True
+    return sent

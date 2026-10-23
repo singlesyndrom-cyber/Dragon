@@ -22,6 +22,24 @@ def utcnow() -> datetime:
 
 
 # ---------- пользователи Telegram ----------
+async def get_or_create_social_user(session: AsyncSession, provider: Provider, ext_id: int | str,
+                                    username: str | None, display_name: str | None) -> User:
+    """Игрок, нажавший кнопку в Telegram или VK, - аккаунт платформы с этим способом входа (создаётся, если нет)."""
+    if provider == Provider.telegram:
+        return await get_or_create_tg_user(session, int(ext_id), username, display_name)
+    acc = (await session.execute(select(AuthAccount).where(
+        AuthAccount.provider == provider, AuthAccount.external_id == str(ext_id)))).scalar_one_or_none()
+    if acc:
+        return await session.get(User, acc.user_id)
+    user = User(nickname=(display_name or username or f"{provider.value}{ext_id}")[:64])
+    session.add(user)
+    await session.flush()
+    session.add(AuthAccount(user_id=user.id, provider=provider, external_id=str(ext_id)))
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
 async def get_or_create_tg_user(session: AsyncSession, tg_id: int, username: str | None,
                                 display_name: str | None) -> User:
     """Пользователь бота = аккаунт платформы с привязанным Telegram (тот же, что при входе на сайт)."""

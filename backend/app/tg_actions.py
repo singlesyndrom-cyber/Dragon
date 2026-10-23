@@ -12,9 +12,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import notify
-from .auction_service import get_or_create_tg_user
+from .auction_service import get_or_create_social_user
 from .config import settings
-from .models import Club, ClubTable, TableBooking, Tournament, TournamentPlayer, TournamentStatus
+from .models import Club, ClubTable, Provider, TableBooking, Tournament, TournamentPlayer, TournamentStatus
 from .reports import esc
 
 TOURNAMENT_REMIND = timedelta(hours=24)   # напоминание о турнире - за сутки
@@ -29,10 +29,11 @@ def _when(dt: datetime) -> str:
     return _local(dt).strftime("%d.%m в %H:%M")
 
 
-async def register(session: AsyncSession, tg_id: int, username: str | None, name: str | None, tid: int) -> str:
+async def register(session: AsyncSession, tg_id: int, username: str | None, name: str | None, tid: int,
+                  provider: Provider = Provider.telegram) -> str:
     """Кнопка «Записаться» под анонсом. Мест нет - ставим в лист ожидания."""
     from .routers.tournaments import FullError, join_waitlist, self_register   # роутер импортирует этот модуль не напрямую
-    user = await get_or_create_tg_user(session, tg_id, username, name)
+    user = await get_or_create_social_user(session, provider, tg_id, username, name)
     t = await session.get(Tournament, tid)
     if not t:
         return "Турнир не найден"
@@ -55,9 +56,10 @@ async def register(session: AsyncSession, tg_id: int, username: str | None, name
     return f"✅ {user.nickname}, вы записаны на «{t.name}» ({_when(t.starts_at)}).{seats}"
 
 
-async def unregister(session: AsyncSession, tg_id: int, username: str | None, name: str | None, tid: int) -> str:
+async def unregister(session: AsyncSession, tg_id: int, username: str | None, name: str | None, tid: int,
+                    provider: Provider = Provider.telegram) -> str:
     from .routers.tournaments import self_unregister
-    user = await get_or_create_tg_user(session, tg_id, username, name)
+    user = await get_or_create_social_user(session, provider, tg_id, username, name)
     t = await session.get(Tournament, tid)
     if not t:
         return "Турнир не найден"
@@ -70,9 +72,10 @@ async def unregister(session: AsyncSession, tg_id: int, username: str | None, na
     return f"Запись на «{t.name}» отменена." if done else "Вы не были записаны на этот турнир."
 
 
-async def cancel_booking(session: AsyncSession, tg_id: int, username: str | None, name: str | None, booking_id: int) -> str:
+async def cancel_booking(session: AsyncSession, tg_id: int, username: str | None, name: str | None, booking_id: int,
+                         provider: Provider = Provider.telegram) -> str:
     from .routers.tables import cancel_booking as cancel
-    user = await get_or_create_tg_user(session, tg_id, username, name)
+    user = await get_or_create_social_user(session, provider, tg_id, username, name)
     try:
         b = await cancel(session, booking_id, user)
         await session.commit()
@@ -99,7 +102,7 @@ async def tournament_reminders(session: AsyncSession, now: datetime | None = Non
             f"⏰ {day} в {_local(t.starts_at):%H:%M} — «{esc(t.name)}» в клубе «{esc(club.name)}». Вы записаны.\n"
             "Если не сможете прийти, отмените запись: место достанется следующему.",
             buttons=[[{"text": "Отменить запись", "callback_data": f"unreg:{t.id}"}]],
-            dedup_key=f"remind-t:{t.id}:{tp.user_id}")
+            dedup_key=f"remind-t:{t.id}:{tp.user_id}", club_id=t.club_id)
     await session.commit()
     return sent
 
@@ -120,6 +123,6 @@ async def booking_reminders(session: AsyncSession, now: datetime | None = None) 
             f"⏰ Скоро ваша бронь: «{esc(club)}», стол «{esc(table)}», "
             f"{_local(b.starts_at):%H:%M}–{_local(b.ends_at):%H:%M}.\nНе получается прийти — отмените, чтобы стол достался другим.",
             buttons=[[{"text": "Отменить бронь", "callback_data": f"bcancel:{b.id}"}]],
-            dedup_key=f"remind-b:{b.id}")
+            dedup_key=f"remind-b:{b.id}", club_id=b.club_id)
     await session.commit()
     return sent

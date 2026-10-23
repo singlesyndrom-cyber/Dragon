@@ -39,7 +39,8 @@ async def process_batch(bot: Bot) -> int:
     now = datetime.now(timezone.utc)
     async with SessionLocal() as s:
         msgs = (await s.execute(select(OutboxMessage).where(
-            OutboxMessage.status == OutboxStatus.pending, OutboxMessage.next_attempt_at <= now)
+            OutboxMessage.status == OutboxStatus.pending, OutboxMessage.next_attempt_at <= now,
+            OutboxMessage.channel == "tg")                      # VK рассылает app/bot/vk.py
             .order_by(OutboxMessage.id).limit(20))).scalars().all()
         for m in msgs:
             try:

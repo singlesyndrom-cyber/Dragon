@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import mailer
 from .. import ratelimit as rl
+from .. import vk
 from ..config import settings
 from ..db import get_session
 from ..deps import current_user
@@ -241,19 +242,63 @@ async def telegram_link(data: TelegramIn, user: User = Depends(current_user),
     await session.commit()
 
 
-# ---------- VK ----------
+# ---------- VK ID ----------
 class VkIn(BaseModel):
-    code: str
-    device_id: str
-    code_verifier: str
+    code: str = Field(min_length=1, max_length=2048)
+    device_id: str = Field(min_length=1, max_length=512)
+    code_verifier: str = Field(min_length=43, max_length=128)
+    state: str | None = Field(default=None, max_length=256)
+
+
+def vk_redirect_uri() -> str:
+    """Адрес возврата VK ID - должен совпадать с «Доверенным redirect URL» в настройках приложения VK ID."""
+    return settings.public_base_url.rstrip("/") + "/auth/vk"
+
+
+@router.get("/vk/config")
+async def vk_config():
+    return {"enabled": vk.vkid_enabled() and bool(settings.public_base_url), "app_id": settings.vk_app_id or None,
+            "redirect_uri": vk_redirect_uri() if settings.public_base_url else None}
+
+
+async def vk_identity(data: VkIn) -> tuple[str, str, dict]:
+    """Код VK ID -> (vk user id, имя, ответ с токенами)."""
+    if not vk.vkid_enabled():
+        raise HTTPException(501, "Вход через VK не настроен: нужен VK_APP_ID")
+    try:
+        got = await vk.exchange_code(data.code, data.code_verifier, data.device_id, vk_redirect_uri(), data.state)
+    except vk.VkError as e:
+        raise HTTPException(401, f"VK ID не подтвердил вход: {e.message}")
+    uid = str(got.get("user_id") or "")
+    name = ""
+    try:
+        info = await vk.user_info(got["access_token"])
+        uid = uid or str(info.get("user_id") or "")
+        name = f"{info.get('first_name', '')} {info.get('last_name', '')}".strip()
+    except (vk.VkError, KeyError):
+        pass
+    if not uid:
+        raise HTTPException(401, "VK ID не вернул пользователя")
+    return uid, name or f"vk{uid}", got
 
 
 @router.post("/vk", response_model=TokenOut)
 async def vk_login(data: VkIn, session: AsyncSession = Depends(get_session)):
-    # TODO: обмен code на токен через VK ID (https://id.vk.com/oauth2/auth),
-    # получение user_id и имени. Нужны VK_APP_ID/VK_APP_SECRET и redirect_uri.
-    # После получения vk_user_id вызвать _login_or_create(session, Provider.vk, vk_user_id, nickname).
-    raise HTTPException(501, "VK-вход: нужна настройка приложения VK ID")
+    uid, name, _ = await vk_identity(data)
+    user = await _login_or_create(session, Provider.vk, uid, name[:64])
+    return TokenOut(access_token=create_token(user.id, user.token_version or 0))
+
+
+@router.post("/vk/link", status_code=204)
+async def vk_link(data: VkIn, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    """Привязать VK к уже существующему аккаунту - для входа и сообщений от сообществ клубов."""
+    uid, _, _ = await vk_identity(data)
+    acc = await _find_account(session, Provider.vk, uid)
+    if acc and acc.user_id != user.id:
+        raise HTTPException(409, "Этот VK уже привязан к другому аккаунту")
+    if not acc:
+        session.add(AuthAccount(user_id=user.id, provider=Provider.vk, external_id=uid))
+        await session.commit()
 
 
 @router.get("/me")
