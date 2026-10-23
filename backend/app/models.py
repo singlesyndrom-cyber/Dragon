@@ -305,7 +305,12 @@ class Deck(Base):
     game: Mapped[str] = mapped_column(String(16), default="mtg")
     # игрок разрешил учитывать колоду в разделе «Мета» (блок «Популярное у игроков», без имён)
     in_meta: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    # конструктор: формат MTG (deckrules.FORMATS) и кто видит колоду
+    format: Mapped[str] = mapped_column(String(16), default="commander", server_default="commander")
+    visibility: Mapped[str] = mapped_column(String(8), default="private", server_default="private")  # private|link|public
+    share_key: Mapped[str | None] = mapped_column(String(24))      # секрет ссылки для visibility=link
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     cards: Mapped[list["DeckCard"]] = relationship(cascade="all, delete-orphan", passive_deletes=True)
 

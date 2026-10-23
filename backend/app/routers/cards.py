@@ -71,6 +71,7 @@ def _row(c: Card) -> dict:
     return {**_brief(c), "set_name": c.set_name, "cmc": c.cmc, "text": c.text, "type_ru": c.type_ru,
             "text_ru": c.text_ru, "power": ex.get("power"), "toughness": ex.get("toughness"),
             "loyalty": ex.get("loyalty"), "colors": ex.get("colors"), "prices": c.prices or {},
+            "color_identity": ex.get("color_identity") or [], "legalities": c.legalities or {},
             "is_game_changer": c.is_game_changer}
 
 

@@ -1,12 +1,15 @@
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..cardimport import front_face, norm_name
+from .. import deckrules
 from ..db import get_session
 from ..decklist import ParsedCard, apply_commander, parse_decklist, validate_edh
-from ..deps import current_user, is_club_organizer
+from ..deps import current_user, is_club_organizer, optional_user
 from ..models import (Card, Deck, DeckCard, GlobalRole, Tournament, TournamentPlayer,
                       TournamentStatus, User)
 
@@ -17,23 +20,54 @@ router = APIRouter(prefix="/decks", tags=["decks"])
 BRACKET_GC_LIMIT = {1: 0, 2: 0, 3: 3}
 
 
+VISIBILITY = ("private", "link", "public")
+
+
 class DeckIn(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     game: str = "mtg"
-    text: str = Field(min_length=1, max_length=20000)
+    text: str = Field(default="", max_length=20000)     # пусто - новая пустая колода для конструктора
     commander: str | None = None
-    in_meta: bool = False
+    in_meta: bool | None = None
+    format: str | None = None
+    visibility: str | None = None
 
 
 class DeckPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     in_meta: bool | None = None
+    format: str | None = None
+    visibility: str | None = None
+
+
+class CardRow(BaseModel):
+    card_id: int | None = None
+    name: str | None = Field(default=None, max_length=255)   # для карт, которых нет в базе
+    qty: int = Field(ge=1, le=250)
+    section: str = "main"
+
+
+class CardsIn(BaseModel):
+    cards: list[CardRow] = Field(max_length=400)
+
+
+def _settings(deck: Deck, fmt: str | None, visibility: str | None):
+    if fmt is not None:
+        if fmt not in deckrules.FORMATS:
+            raise HTTPException(400, "Неизвестный формат")
+        deck.format = fmt
+    if visibility is not None:
+        if visibility not in VISIBILITY:
+            raise HTTPException(400, "Видимость: private, link или public")
+        deck.visibility = visibility
+        if visibility == "link" and not deck.share_key:
+            deck.share_key = secrets.token_urlsafe(12)
 
 
 async def _fill(session: AsyncSession, deck: Deck, data: DeckIn) -> dict:
     parsed, errors = parse_decklist(data.text)
     parsed = apply_commander(parsed, data.commander)
-    if not parsed:
+    if not parsed and data.text.strip():
         raise HTTPException(400, "Не удалось разобрать ни одной карты")
     names = set()
     for c in parsed:
@@ -41,7 +75,7 @@ async def _fill(session: AsyncSession, deck: Deck, data: DeckIn) -> dict:
     found = (await session.execute(select(Card).where(
         Card.game == deck.game,
         or_(Card.name_lower.in_(names), Card.name_front.in_(names), Card.name_ru_lower.in_(names),
-            Card.name_ru_front.in_(names))))).scalars()
+            Card.name_ru_front.in_(names))))).scalars() if names else []
     by_full, by_front = {}, {}
     for card in found:
         by_full[card.name_lower] = card
@@ -52,15 +86,22 @@ async def _fill(session: AsyncSession, deck: Deck, data: DeckIn) -> dict:
 
     await session.execute(delete(DeckCard).where(DeckCard.deck_id == deck.id))
     unmatched = []
+    merged: dict[tuple, DeckCard] = {}              # одна строка на карту в разделе, даже если в тексте повторы
     for c in parsed:
         n = norm_name(c.name)
         card = by_full.get(n) or by_front.get(n) or by_front.get(norm_name(front_face(c.name)))
         if not card:
             unmatched.append(c.name)
-        session.add(DeckCard(deck_id=deck.id, card_id=card.id if card else None,
-                             name=card.name if card else c.name, qty=c.qty,
-                             is_commander=c.is_commander, section=c.section))
-    warnings = validate_edh(parsed) if deck.game == "mtg" else []
+        key = (card.id if card else c.name.lower(), c.section)
+        if key in merged:
+            merged[key].qty += c.qty
+            continue
+        merged[key] = DeckCard(deck_id=deck.id, card_id=card.id if card else None,
+                               name=card.name if card else c.name, qty=c.qty,
+                               is_commander=c.is_commander, section=c.section)
+        session.add(merged[key])
+    deck.updated_at = func.now()
+    warnings = validate_edh(parsed) if deck.game == "mtg" and deck.format in ("commander", "duel", "brawl") and parsed else []
     if unmatched:
         warnings.append(f"Не найдено в базе карт: {len(unmatched)} шт.")
     return {"cards": sum(c.qty for c in parsed if c.section != "side"), "unmatched": unmatched,
@@ -75,7 +116,11 @@ async def _locked(session: AsyncSession, deck_id: int) -> bool:
     return n > 0
 
 
-async def _can_view(session: AsyncSession, deck: Deck, user: User) -> bool:
+async def _can_view(session: AsyncSession, deck: Deck, user: User | None, key: str | None = None) -> bool:
+    if deck.visibility == "public" or (deck.visibility == "link" and key and key == deck.share_key):
+        return True
+    if user is None:
+        return False
     if user.id == deck.user_id or user.role == GlobalRole.admin:
         return True
     clubs = (await session.execute(select(Tournament.club_id).join(
@@ -84,9 +129,59 @@ async def _can_view(session: AsyncSession, deck: Deck, user: User) -> bool:
     return any([await is_club_organizer(session, c, user) for c in clubs])
 
 
+async def _own(session: AsyncSession, deck_id: int, user: User, edit: bool = False) -> Deck:
+    deck = await session.get(Deck, deck_id)
+    if not deck or deck.user_id != user.id:
+        raise HTTPException(404, "Колода не найдена")
+    if edit and await _locked(session, deck_id):
+        raise HTTPException(409, "Турнир уже начался: деклист изменить нельзя")
+    return deck
+
+
+def card_info(c: Card | None) -> dict | None:
+    if c is None:
+        return None
+    ex = c.extra or {}
+    faces = ex.get("faces") or []
+    return {"id": c.id, "name": c.name, "name_ru": c.name_ru, "type": c.type_line, "type_ru": c.type_ru,
+            "mana_cost": c.mana_cost, "cmc": c.cmc, "colors": ex.get("colors") or [],
+            "color_identity": ex.get("color_identity") or [], "rarity": c.rarity, "set": c.set_code,
+            "image_url": c.image_url, "image_large": ex.get("image_large"), "prices": c.prices or {},
+            "legalities": c.legalities or {}, "is_game_changer": c.is_game_changer,
+            "back_image": faces[1].get("image") if len(faces) > 1 else None}
+
+
+async def _entries(session: AsyncSession, deck_id: int) -> list[tuple[DeckCard, Card | None]]:
+    return (await session.execute(select(DeckCard, Card).outerjoin(Card, Card.id == DeckCard.card_id)
+                                  .where(DeckCard.deck_id == deck_id).order_by(DeckCard.name))).all()
+
+
+def _problems(deck: Deck, rows) -> list[dict]:
+    if deck.game != "mtg":
+        return []
+    return deckrules.check([deckrules.Entry(dc.name, dc.qty, dc.section, card) for dc, card in rows], deck.format)
+
+
+async def _detail(session: AsyncSession, deck: Deck, user: User | None) -> dict:
+    rows = await _entries(session, deck.id)
+    owner = await session.get(User, deck.user_id)
+    mine = user is not None and user.id == deck.user_id
+    return {"id": deck.id, "name": deck.name, "game": deck.game, "format": deck.format, "in_meta": deck.in_meta,
+            "visibility": deck.visibility, "share_key": deck.share_key if mine else None,
+            "owner": {"nickname": owner.nickname, "player_no": owner.player_no} if owner else None,
+            "editable": mine, "locked": mine and await _locked(session, deck.id),
+            "updated_at": deck.updated_at,
+            "cards": [{"name": dc.name, "qty": dc.qty, "section": dc.section, "is_commander": dc.is_commander,
+                       "matched": dc.card_id is not None, "image_url": card.image_url if card else None,
+                       "card": card_info(card)} for dc, card in rows],
+            "problems": _problems(deck, rows)}
+
+
 @router.post("", status_code=201)
 async def create_deck(data: DeckIn, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
-    deck = Deck(user_id=user.id, name=data.name, game=data.game, in_meta=data.in_meta)
+    deck = Deck(user_id=user.id, name=data.name.strip(), game=data.game, in_meta=bool(data.in_meta),
+                format="commander" if data.game == "mtg" else "casual")
+    _settings(deck, data.format, data.visibility)
     session.add(deck)
     await session.flush()
     report = await _fill(session, deck, data)
@@ -97,56 +192,147 @@ async def create_deck(data: DeckIn, user: User = Depends(current_user), session:
 @router.put("/{deck_id}")
 async def replace_deck(deck_id: int, data: DeckIn, user: User = Depends(current_user),
                        session: AsyncSession = Depends(get_session)):
-    deck = await session.get(Deck, deck_id)
-    if not deck or deck.user_id != user.id:
-        raise HTTPException(404, "Колода не найдена")
-    if await _locked(session, deck_id):
-        raise HTTPException(409, "Турнир уже начался: деклист изменить нельзя")
-    deck.name, deck.game, deck.in_meta = data.name, data.game, data.in_meta
+    """Импорт: заменить список колоды текстом."""
+    deck = await _own(session, deck_id, user, edit=True)
+    deck.name, deck.game = data.name.strip(), data.game
+    if data.in_meta is not None:
+        deck.in_meta = data.in_meta
+    _settings(deck, data.format, data.visibility)
     report = await _fill(session, deck, data)
     await session.commit()
     return {"id": deck.id, **report}
 
 
+@router.put("/{deck_id}/cards")
+async def save_cards(deck_id: int, data: CardsIn, user: User = Depends(current_user),
+                     session: AsyncSession = Depends(get_session)):
+    """Конструктор: сохранить весь список карт. Отвечает замечаниями по формату."""
+    deck = await _own(session, deck_id, user, edit=True)
+    ids = {r.card_id for r in data.cards if r.card_id}
+    cards = {c.id: c for c in (await session.execute(select(Card).where(Card.id.in_(ids), Card.game == deck.game))).scalars()} if ids else {}
+    merged: dict[tuple, DeckCard] = {}
+    for r in data.cards:
+        if r.section not in ("main", "side", "commander"):
+            raise HTTPException(400, "Раздел: main, side или commander")
+        card = cards.get(r.card_id) if r.card_id else None
+        if r.card_id and card is None:
+            raise HTTPException(400, "Карта не найдена в базе этой игры")
+        name = card.name if card else (r.name or "").strip()
+        if not name:
+            raise HTTPException(400, "Нужна карта из базы или её название")
+        key = (card.id if card else name.lower(), r.section)
+        if key in merged:
+            merged[key].qty += r.qty
+        else:
+            merged[key] = DeckCard(deck_id=deck.id, card_id=card.id if card else None, name=name, qty=r.qty,
+                                   section=r.section, is_commander=r.section == "commander")
+    if sum(dc.qty for dc in merged.values()) > 1000:
+        raise HTTPException(400, "Слишком много карт")
+    await session.execute(delete(DeckCard).where(DeckCard.deck_id == deck.id))
+    session.add_all(merged.values())
+    deck.updated_at = func.now()
+    await session.flush()
+    problems = _problems(deck, await _entries(session, deck.id))
+    await session.commit()
+    return {"ok": True, "problems": problems}
+
+
 @router.get("/mine")
 async def my_decks(user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
-    res = await session.execute(select(Deck).where(Deck.user_id == user.id).order_by(Deck.created_at.desc()))
-    return [{"id": d.id, "name": d.name, "game": d.game, "in_meta": d.in_meta} for d in res.scalars()]
+    counts = dict((await session.execute(
+        select(DeckCard.deck_id, func.sum(DeckCard.qty)).join(Deck, Deck.id == DeckCard.deck_id)
+        .where(Deck.user_id == user.id, DeckCard.section != "side").group_by(DeckCard.deck_id))).all())
+    res = await session.execute(select(Deck).where(Deck.user_id == user.id).order_by(Deck.updated_at.desc(), Deck.id.desc()))
+    return [{"id": d.id, "name": d.name, "game": d.game, "in_meta": d.in_meta, "format": d.format,
+             "visibility": d.visibility, "cards": int(counts.get(d.id) or 0), "updated_at": d.updated_at}
+            for d in res.scalars()]
+
+
+@router.get("/public")
+async def public_decks(format: str | None = None, q: str = "", page: int = 1, session: AsyncSession = Depends(get_session)):
+    """Каталог публичных колод: новые сверху, фильтр по формату и названию/командиру."""
+    per = 30
+    page = max(1, min(page, 200))
+    stmt = (select(Deck, User.nickname).join(User, User.id == Deck.user_id)
+            .where(Deck.visibility == "public", User.is_banned.is_(False)))
+    if format:
+        stmt = stmt.where(Deck.format == format)
+    if q.strip():
+        like = f"%{q.strip().lower()}%"
+        stmt = stmt.where(or_(func.lower(Deck.name).like(like), Deck.id.in_(
+            select(DeckCard.deck_id).where(DeckCard.section == "commander", func.lower(DeckCard.name).like(like)))))
+    total = (await session.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
+    rows = (await session.execute(stmt.order_by(Deck.updated_at.desc(), Deck.id.desc()).limit(per).offset((page - 1) * per))).all()
+    ids = [d.id for d, _ in rows]
+    cmd: dict[int, list] = {}
+    sizes: dict[int, int] = {}
+    price: dict[int, float] = {}
+    if ids:
+        for dc, card in (await session.execute(select(DeckCard, Card).outerjoin(Card, Card.id == DeckCard.card_id)
+                                               .where(DeckCard.deck_id.in_(ids)))).all():
+            if dc.section != "side":
+                sizes[dc.deck_id] = sizes.get(dc.deck_id, 0) + dc.qty
+            if dc.section == "commander":
+                cmd.setdefault(dc.deck_id, []).append({"name": dc.name, "name_ru": card.name_ru if card else None,
+                                                       "image_url": card.image_url if card else None,
+                                                       "color_identity": ((card.extra or {}).get("color_identity") if card else None) or []})
+            usd = ((card.prices or {}).get("usd") if card else None)
+            if usd:
+                try:
+                    price[dc.deck_id] = price.get(dc.deck_id, 0) + float(usd) * dc.qty
+                except ValueError:
+                    pass
+    return {"total": total, "page": page, "per_page": per, "items": [
+        {"id": d.id, "name": d.name, "format": d.format, "game": d.game, "author": nick, "updated_at": d.updated_at,
+         "commanders": cmd.get(d.id, []), "cards": sizes.get(d.id, 0), "usd": round(price.get(d.id, 0), 2) or None}
+        for d, nick in rows]}
 
 
 @router.patch("/{deck_id}")
 async def patch_deck(deck_id: int, data: DeckPatch, user: User = Depends(current_user),
                      session: AsyncSession = Depends(get_session)):
-    """Переименовать колоду или включить/выключить её учёт в мете - без перезаливки деклиста."""
-    deck = await session.get(Deck, deck_id)
-    if not deck or deck.user_id != user.id:
-        raise HTTPException(404, "Колода не найдена")
+    """Название, формат, видимость, учёт в мете - без перезаливки деклиста."""
+    deck = await _own(session, deck_id, user)
     if data.name is not None:
         deck.name = data.name.strip()
     if data.in_meta is not None:
         deck.in_meta = data.in_meta
+    _settings(deck, data.format, data.visibility)
     await session.commit()
-    return {"id": deck.id, "name": deck.name, "game": deck.game, "in_meta": deck.in_meta}
+    rows = await _entries(session, deck.id)
+    return {"id": deck.id, "name": deck.name, "game": deck.game, "in_meta": deck.in_meta, "format": deck.format,
+            "visibility": deck.visibility, "share_key": deck.share_key, "problems": _problems(deck, rows)}
 
 
 @router.get("/{deck_id}")
-async def get_deck(deck_id: int, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+async def get_deck(deck_id: int, key: str | None = None, user: User | None = Depends(optional_user),
+                   session: AsyncSession = Depends(get_session)):
     deck = await session.get(Deck, deck_id)
-    if not deck or not await _can_view(session, deck, user):
+    if not deck or not await _can_view(session, deck, user, key):
         raise HTTPException(404, "Колода не найдена")
-    rows = (await session.execute(select(DeckCard, Card.image_url).outerjoin(Card, Card.id == DeckCard.card_id)
-                                  .where(DeckCard.deck_id == deck_id)
-                                  .order_by(DeckCard.is_commander.desc(), DeckCard.name))).all()
-    return {"id": deck.id, "name": deck.name, "game": deck.game, "in_meta": deck.in_meta,
-            "cards": [{"name": c.name, "qty": c.qty, "section": c.section, "is_commander": c.is_commander,
-                       "matched": c.card_id is not None, "image_url": img} for c, img in rows]}
+    return await _detail(session, deck, user)
+
+
+@router.post("/{deck_id}/copy", status_code=201)
+async def copy_deck(deck_id: int, key: str | None = None, user: User = Depends(current_user),
+                    session: AsyncSession = Depends(get_session)):
+    """Скопировать видимую колоду себе (как «Clone» на Moxfield)."""
+    src = await session.get(Deck, deck_id)
+    if not src or not await _can_view(session, src, user, key):
+        raise HTTPException(404, "Колода не найдена")
+    deck = Deck(user_id=user.id, name=f"{src.name} (копия)"[:128], game=src.game, format=src.format)
+    session.add(deck)
+    await session.flush()
+    for dc, _ in await _entries(session, src.id):
+        session.add(DeckCard(deck_id=deck.id, card_id=dc.card_id, name=dc.name, qty=dc.qty, section=dc.section,
+                             is_commander=dc.is_commander))
+    await session.commit()
+    return {"id": deck.id}
 
 
 @router.delete("/{deck_id}", status_code=204)
 async def delete_deck(deck_id: int, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
-    deck = await session.get(Deck, deck_id)
-    if not deck or deck.user_id != user.id:
-        raise HTTPException(404, "Колода не найдена")
+    deck = await _own(session, deck_id, user)
     if await _locked(session, deck_id):
         raise HTTPException(409, "Колода участвует в начавшемся турнире")
     await session.delete(deck)
