@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import ArticleForm from "@/components/ArticleForm";
 import ConfirmButton from "@/components/ConfirmButton";
@@ -37,6 +38,7 @@ function AdminContent() {
           <CardImport />
         </div>
         <aside className="stack">
+          <Publishers />
           <StaffRoles />
           <Scryfall />
           <Accounts />
@@ -358,5 +360,59 @@ function Categories() {
       <button disabled={busy}>Добавить</button>
       <Status error={error} />
     </form>
+  );
+}
+
+
+/** Издатели игр: видят статистику своих игр по всем клубам (кабинет /publisher). */
+function Publishers() {
+  const [list, setList] = useState<any[]>([]);
+  const [f, setF] = useState({ player_no: "", name: "", games: ["berserk"] as string[] });
+  const { busy, error, done, run } = useAction();
+  const load = () => api<any[]>("/admin/publishers").then(setList).catch(() => {});
+  useEffect(() => { load(); }, []);
+  const GAMES: [string, string][] = [["berserk", "Берсерк"], ["mtg", "Magic"]];
+  return (
+    <div className="panel">
+      <h3>Издатели</h3>
+      <p className="muted small">Издатель видит по своим играм статистику всех клубов, итоги, мету и деклисты игроков с согласием.
+        <Link href="/publisher"> Открыть кабинет издателя</Link></p>
+      {list.length ? (
+        <ul className="news-list">
+          {list.map((p) => (
+            <li key={p.id} className="row" style={{ justifyContent: "space-between", padding: "6px 0" }}>
+              <span>{p.name} <span className="muted small">{p.nickname} №{p.player_no} · {p.games.join(", ")}</span></span>
+              <ConfirmButton className="link-btn" question={`Снять роль издателя с ${p.nickname}?`} confirmLabel="Снять" danger disabled={busy}
+                onConfirm={() => run(() => api(`/admin/publishers/${p.id}`, { method: "DELETE" })).then(load)}>снять</ConfirmButton>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <form className="stack" onSubmit={(e) => {
+        e.preventDefault();
+        run(async () => {
+          await api("/admin/publishers", { method: "PUT", body: { player_no: Number(f.player_no), name: f.name, games: f.games } });
+          setF({ ...f, player_no: "", name: "" });
+          load();
+        }, "Издатель назначен");
+      }}>
+        <div className="row">
+          <input inputMode="numeric" placeholder="Номер игрока" value={f.player_no} required style={{ maxWidth: 140 }}
+            onChange={(e) => setF({ ...f, player_no: e.target.value.replace(/\D/g, "") })} aria-label="Номер игрока" />
+          <input placeholder="Издательство" value={f.name} required onChange={(e) => setF({ ...f, name: e.target.value })} aria-label="Название издательства" />
+        </div>
+        <div className="row">
+          {GAMES.map(([k, l]) => (
+            <label key={k} className="check" style={{ margin: 0 }}>
+              <input type="checkbox" checked={f.games.includes(k)}
+                onChange={(e) => setF({ ...f, games: e.target.checked ? [...f.games, k] : f.games.filter((g) => g !== k) })} />
+              <span>{l}</span>
+            </label>
+          ))}
+          <button disabled={busy || !f.games.length}>Назначить</button>
+        </div>
+      </form>
+      <Status error={error} done={done} />
+    </div>
   );
 }

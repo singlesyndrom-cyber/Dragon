@@ -72,6 +72,7 @@ function Cabinet() {
               </div>
             ) : null}
           </div>
+          <PublisherConsent />
           {me.providers.includes("email") ? <ChangePassword /> : null}
           {rating ? (
             <div className="panel">
@@ -309,6 +310,27 @@ function MyClubs() {
       ) : null}
       {me?.is_club_creator ? <Link href="/clubs/new" className="btn" style={{ marginTop: 12 }}>Создать клуб</Link>
         : <p className="small muted" style={{ marginBottom: 0 }}>Чтобы открыть свой клуб, получите статус «Создатель Клуба»: заявка ниже.</p>}
+    </div>
+  );
+}
+
+
+/** Отдельное согласие на передачу издателям игр результатов с ником и деклистов (по умолчанию выключено). */
+function PublisherConsent() {
+  const { me, reload } = useAuth();
+  const { busy, error, run } = useAction();
+  if (!me) return null;
+  return (
+    <div className="panel">
+      <h3>Данные для издателей игр</h3>
+      <label className="check" style={{ alignItems: "flex-start" }}>
+        <input type="checkbox" checked={!!me.publisher_consent} disabled={busy}
+          onChange={(e) => run(async () => { await api("/me/publisher-consent", { method: "PUT", body: { enabled: e.target.checked } }); await reload(); })} />
+        <span className="small">Разрешаю передавать издателям игр (например, «Берсерка») мои результаты турниров вместе с ником
+          и номером игрока, а также деклисты, поданные на турниры. Согласие можно отозвать в любой момент.</span>
+      </label>
+      <p className="muted small" style={{ marginBottom: 0 }}>Без согласия издатель видит только общую статистику и публичные итоги турниров, а ваши колоды — нет.</p>
+      <Status error={error} />
     </div>
   );
 }

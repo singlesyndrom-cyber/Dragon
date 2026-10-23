@@ -15,7 +15,7 @@ from .. import vk
 from ..config import settings
 from ..db import get_session
 from ..deps import current_user
-from ..models import AuthAccount, GlobalRole, PasswordReset, Provider, User
+from ..models import AuthAccount, GlobalRole, PasswordReset, Provider, Publisher, User
 from ..notify import enqueue
 from ..security import create_token, hash_password, verify_password
 
@@ -307,4 +307,7 @@ async def me(user: User = Depends(current_user), session: AsyncSession = Depends
     return {"id": user.id, "player_no": user.player_no, "nickname": user.nickname, "role": user.role,
             "is_club_creator": user.is_club_creator or user.role == GlobalRole.admin,
             "is_moderator": user.is_moderator or user.role == GlobalRole.admin,
+            "is_publisher": user.role == GlobalRole.admin or (await session.execute(
+                select(Publisher.id).where(Publisher.user_id == user.id))).first() is not None,
+            "publisher_consent": bool(user.publisher_consent),
             "providers": list(providers)}

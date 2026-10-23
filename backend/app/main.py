@@ -9,7 +9,7 @@ from .config import settings
 from .db import engine
 from .schema import sync_schema
 from . import scryfall, system, vkclub
-from .routers import (admin_users, auctions, auth, cards, club_vk, clubs, notice_images, creators, decks, edh, leagues, meta, news, outbox, players,
+from .routers import (admin_users, auctions, auth, cards, club_vk, clubs, notice_images, publisher, creators, decks, edh, leagues, meta, news, outbox, players,
                       system as system_api, tables, tournaments)
 
 log = logging.getLogger("startup")
@@ -63,6 +63,7 @@ app.include_router(system_api.router)
 app.include_router(admin_users.router)
 app.include_router(club_vk.router)
 app.include_router(notice_images.router)
+app.include_router(publisher.router)
 
 
 @app.get("/health")

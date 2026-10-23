@@ -46,6 +46,9 @@ class User(Base):
     is_club_creator: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
     # модератор: рассматривает заявки на статус «Создатель Клуба». Назначает только администратор
     is_moderator: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    # отдельное согласие: передавать издателям игр мои результаты турниров вместе с ником и деклисты
+    publisher_consent: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    publisher_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # растёт при смене пароля: токены входа со старой версией перестают действовать
     token_version: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -144,6 +147,17 @@ class ClubVkChat(Base):
     game: Mapped[str] = mapped_column(String(16))
     peer_id: Mapped[int] = mapped_column(BigInteger)                 # 2000000000 + номер беседы у сообщества
     title: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Publisher(Base):
+    """Учётная запись издателя игры: видит статистику своих игр по всем клубам. Назначает администратор."""
+    __tablename__ = "publishers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    name: Mapped[str] = mapped_column(String(128))                   # название издательства
+    games: Mapped[str] = mapped_column(String(64), default="")       # "berserk,mtg"
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

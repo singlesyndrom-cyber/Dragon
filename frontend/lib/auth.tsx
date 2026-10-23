@@ -3,7 +3,8 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { api, TOKEN_KEY } from "./api";
 
-export type Me = { id: number; player_no: number | null; nickname: string; is_club_creator: boolean; is_moderator: boolean; role: "player" | "admin"; providers: string[] };
+export type Me = { id: number; player_no: number | null; nickname: string; is_club_creator: boolean; is_moderator: boolean; role: "player" | "admin"; providers: string[];
+  is_publisher?: boolean; publisher_consent?: boolean };
 
 type Ctx = {
   me: Me | null;
