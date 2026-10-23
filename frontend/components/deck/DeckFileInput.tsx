@@ -13,7 +13,7 @@ export default function DeckFileInput({ onText }: { onText: (text: string, name:
   const [err, setErr] = useState("");
   return (
     <span className="row" style={{ gap: 8 }}>
-      <label className="btn" style={{ margin: 0, cursor: "pointer" }}>
+      <label className="btn" style={{ margin: 0, cursor: "pointer", display: "inline-flex", alignItems: "center" }}>
         Выбрать файл .txt
         <input type="file" accept=".txt,.dec,.dck,.dek,text/plain" style={{ display: "none" }} onChange={async (e) => {
           const f = e.target.files?.[0];
