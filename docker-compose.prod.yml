@@ -22,6 +22,9 @@ services:
     depends_on:
       db: { condition: service_healthy }
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips="*"
+    # DNS для выхода в интернет (VK, Scryfall): Docker по умолчанию шлёт запросы на 8.8.8.8/1.1.1.1, а с хостинга
+    # они могут не отвечать. Свои серверы - CONTAINER_DNS1 / CONTAINER_DNS2 в .env
+    dns: ["${CONTAINER_DNS1:-77.88.8.8}", "${CONTAINER_DNS2:-77.88.8.1}"]
     volumes: ["./backups:/backups:ro"]   # админка показывает состояние копий
     restart: unless-stopped
 
@@ -33,6 +36,9 @@ services:
     depends_on:
       db: { condition: service_healthy }
     command: python -m app.bot.main
+    # DNS для выхода в интернет (VK, Scryfall): Docker по умолчанию шлёт запросы на 8.8.8.8/1.1.1.1, а с хостинга
+    # они могут не отвечать. Свои серверы - CONTAINER_DNS1 / CONTAINER_DNS2 в .env
+    dns: ["${CONTAINER_DNS1:-77.88.8.8}", "${CONTAINER_DNS2:-77.88.8.1}"]
     volumes: ["./backups:/backups:ro"]   # бот отправляет облегчённую копию администраторам
     restart: unless-stopped
 
