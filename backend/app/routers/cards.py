@@ -87,7 +87,8 @@ async def search_cards_query(q: str = "", game: str | None = None, order: str | 
     total = (await session.execute(select(func.count()).select_from(Card).where(where))).scalar_one()
     order = cardsearch.ORDERS.get((order or "").lower()) or parsed.order
     direction = (dir if dir in ("asc", "desc") else None) or parsed.direction
-    rows = (await session.execute(select(Card).where(where).order_by(*cardsearch.order_by(order, direction))
+    ranking = cardsearch.relevance(parsed.words) if not order else []   # явная сортировка - без «релевантности»
+    rows = (await session.execute(select(Card).where(where).order_by(*ranking, *cardsearch.order_by(order, direction))
                                   .limit(per_page).offset((page - 1) * per_page))).scalars()
     return {"total": total, "page": page, "per_page": per_page, "order": order or "name",
             "dir": direction or "asc", "warnings": parsed.warnings, "items": [_row(c) for c in rows]}

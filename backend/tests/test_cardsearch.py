@@ -89,7 +89,8 @@ async def test_search_language(client):
     assert await names(c, "") == ["Atraxa, Praetors' Voice", "Grizzly Bears", "Lightning Bolt", "Llanowar Elves",
                                   "Sol Ring", "Tarmogoyf"]
     assert len(await names(c, "*")) == 6
-    assert await names(c, "кольцо") == ["Sol Ring"]                       # русское название
+    assert await names(c, "кольцо") == ["Sol Ring"]
+    assert (await names(c, "bolt"))[0] == "Lightning Bolt"                       # русское название
     assert await names(c, "ring sol") == ["Sol Ring"]                     # слова в любом порядке
     assert await names(c, '!"sol ring"') == ["Sol Ring"] and await names(c, '!"sol"') == []
     assert await names(c, "t:creature t:elf") == ["Llanowar Elves"]
@@ -120,6 +121,18 @@ async def test_search_language(client):
     assert await names(c, "(t:elf or t:bear) mv<=1") == ["Llanowar Elves"]
     assert await names(c, "t:elf or t:bear mv<=1") == ["Llanowar Elves"]          # «и» связывает сильнее «или»
     assert await names(c, "тип:существо цвет:g мв:1") == ["Llanowar Elves"]
+
+
+@needs_db
+async def test_exact_name_first(client):
+    c = client
+    async with SessionLocal() as s:     # алфавит поставил бы её первой: «A…» раньше «L…»
+        s.add(Card(game="mtg", external_id="emer", name="Aemeritus of Conflict // Lightning Bolt",
+                   name_lower="aemeritus of conflict // lightning bolt", name_front="aemeritus of conflict", extra={}))
+        await s.commit()
+    assert await names(c, "lightning bolt") == ["Lightning Bolt", "Aemeritus of Conflict // Lightning Bolt"]
+    assert await names(c, "light") == ["Lightning Bolt", "Aemeritus of Conflict // Lightning Bolt"]   # «начинается с»
+    assert (await names(c, "lightning bolt", order="name"))[0] == "Aemeritus of Conflict // Lightning Bolt"
 
 
 @needs_db

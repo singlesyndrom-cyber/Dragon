@@ -82,6 +82,7 @@ class Parsed:
     order: str | None = None
     direction: str | None = None
     game: str | None = None
+    words: list[str] = field(default_factory=list)   # слова названия без ключей - для «точное совпадение выше»
 
 
 class _Tok:
@@ -285,6 +286,8 @@ def parse(q: str) -> Parsed:
             c = or_(Card.name_lower == norm_name(t.value), Card.name_ru_lower == norm_name(t.value))
         else:
             c = _word(t.value)
+            if not t.neg and t.value != "*":
+                p.words.append(t.value)
         if c is None:
             return None
         # NULL (нет русского типа, нет цен) - «не подходит»: иначе NOT NULL выкинул бы карту и из отрицания
@@ -319,6 +322,17 @@ def parse(q: str) -> Parsed:
         if c is not None:
             p.where = and_(p.where, c)
     return p
+
+
+def relevance(words: list[str]) -> list:
+    """Для поиска по названию: точное совпадение, затем «начинается с», затем остальное (по алфавиту дальше)."""
+    if not words:
+        return []
+    phrase = norm_name(" ".join(words))
+    exact = or_(Card.name_lower == phrase, Card.name_front == phrase, Card.name_ru_lower == phrase,
+                Card.name_ru_front == phrase)
+    prefix = or_(Card.name_lower.startswith(phrase), Card.name_ru_lower.startswith(phrase))
+    return [case((exact, 0), (prefix, 1), else_=2)]
 
 
 def order_by(order: str | None, direction: str | None) -> list:
