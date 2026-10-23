@@ -11,6 +11,8 @@ export const metadata: Metadata = {
   description: "Турниры, рейтинги клубов, база карт, мета и аукционы для Magic: The Gathering, EDH и «Берсерка».",
 };
 
+export const viewport = { themeColor: "#141826" };
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ru">
