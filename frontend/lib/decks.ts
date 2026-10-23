@@ -9,9 +9,9 @@ export const COMMANDER_FORMATS = new Set(["commander", "duel", "brawl"]);
 export const formatTitle = (f: string) => DECK_FORMATS.find(([k]) => k === f)?.[1] || f;
 
 export const VISIBILITY: [string, string, string][] = [
-  ["private", "Личная", "видите только вы (и организатор турнира, если подадите её)"],
-  ["link", "По ссылке", "видит тот, кому вы дали ссылку"],
-  ["public", "Публичная", "в каталоге колод сайта, с вашим ником"],
+  ["private", "Личная", "Видите только вы и организатор турнира, если подадите колоду"],
+  ["link", "По ссылке", "Видит тот, кому вы дали ссылку"],
+  ["public", "Публичная", "Колода в каталоге сайта, с вашим ником"],
 ];
 
 export type CardInfo = {

@@ -235,7 +235,12 @@ function CardSearch({ format, isCmd, lang, onAdd, onPreview }: {
             ))}
             {total > items.length ? <li className="muted small">…и ещё {total - items.length}. Уточните запрос.</li> : null}
           </ul>
-        ) : <p className="muted small">Ничего не найдено{legal && format !== "casual" ? " среди легальных в формате — снимите галочку, чтобы искать везде" : ""}.</p>
+        ) : (
+          <p className="muted small">
+            Ничего не найдено{legal && format !== "casual" ? " среди легальных в формате — снимите галочку, чтобы искать везде" : ""}.
+            {/[а-яё]/i.test(query) ? " У части карт в базе нет русского названия — попробуйте по-английски." : ""}
+          </p>
+        )
       ) : null}
     </section>
   );
