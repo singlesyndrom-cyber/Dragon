@@ -38,10 +38,13 @@ async def call(method: str, token: str, **params: Any) -> Any:
     data = {k: (json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else v)
             for k, v in params.items() if v is not None}
     data.update(access_token=token, v=API_VERSION)
-    async with client() as c:
-        r = await c.post(API + method, data=data)
-    r.raise_for_status()
-    body = r.json()
+    try:
+        async with client() as c:
+            r = await c.post(API + method, data=data)
+        r.raise_for_status()
+        body = r.json()
+    except (httpx.HTTPError, ValueError) as e:   # сеть, прокси, не-JSON: понятная ошибка вместо 500
+        raise VkError(0, f"нет связи с VK ({type(e).__name__}: {e})"[:300])
     if "error" in body:
         e = body["error"]
         raise VkError(int(e.get("error_code", 0)), str(e.get("error_msg", "")))
@@ -134,9 +137,12 @@ def vkid_enabled() -> bool:
 
 
 async def _vkid(path: str, data: dict) -> dict:
-    async with client() as c:
-        r = await c.post(VKID + path, data={k: v for k, v in data.items() if v is not None})
-    body = r.json() if r.content else {}
+    try:
+        async with client() as c:
+            r = await c.post(VKID + path, data={k: v for k, v in data.items() if v is not None})
+        body = r.json() if r.content else {}
+    except (httpx.HTTPError, ValueError) as e:
+        raise VkError(0, f"нет связи с VK ID ({type(e).__name__}: {e})"[:300])
     if r.status_code >= 400 or "error" in body:
         raise VkError(r.status_code, str(body.get("error_description") or body.get("error") or r.text)[:300])
     return body
