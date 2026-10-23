@@ -116,7 +116,7 @@ async def test_sync_search_and_decks(client):
     async with fake_scryfall([]) as http:
         assert (await scryfall.sync(client=http, russian=False)).cards == 2
     stats = (await client.get("/cards/stats")).json()
-    assert stats["games"]["mtg"] == {"cards": 2, "russian": 2} and stats["scryfall_updated"]
+    assert stats["games"]["mtg"] == {"cards": 2, "russian": 2, "prints": 3} and stats["scryfall_updated"]
 
     # поиск по-русски и по-английски
     found = (await client.get("/cards?q=кольцо")).json()

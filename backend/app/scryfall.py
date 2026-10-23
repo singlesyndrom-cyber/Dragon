@@ -278,6 +278,7 @@ async def sync(trigger: str = "admin", client: httpx.AsyncClient | None = None, 
                     rows = await _download_oracle(http)
                     run.cards = await upsert_cards(s, rows)
                     del rows
+                    await s.commit()                     # карты сохранены, даже если издания не загрузятся
                     errors = []
                     try:
                         run.prints = await _sync_prints(http, s)
