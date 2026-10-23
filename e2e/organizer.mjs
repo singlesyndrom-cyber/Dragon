@@ -67,17 +67,15 @@ try {
     await visible(row.getByText(`org-${run}@example.com`), "в заявке видны ник, email и дата");
     await ap.screenshot({ path: `shots/${String(++n).padStart(2, "0")}-admin-requests.png`, fullPage: true });
     await row.getByRole("button", { name: "Одобрить" }).click();
-    await visible(ap.getByText("получил статус «Создатель Клуба»"), "администратор одобрил заявку");
+    await visible(ap.getByText("получил статус «Создатель Клуба»"), "администратор одобрил заявку, клуб создан");
     await ap.close();
   }
   await page.reload();
   await visible(page.getByRole("link", { name: "Создать клуб" }), "после одобрения появилась кнопка «Создать клуб»");
 
-  step("Создание клуба с русским названием");
-  await page.getByRole("link", { name: "Создать клуб" }).first().click();
-  await page.getByLabel("Название").fill(`Клуб Е2Е ${run}`);
-  await page.getByLabel("Город").fill("Казань");
-  await page.getByRole("button", { name: "Создать клуб" }).click();
+  step("Клуб из заявки создан сразу при одобрении");
+  await page.goto(BASE + "/clubs");
+  await page.getByRole("link", { name: `Клуб Е2Е ${run}` }).first().click();
   await page.waitForURL(/\/clubs\/klub-e2e-/);
   await visible(page.getByRole("heading", { name: `Клуб Е2Е ${run}` }), "страница клуба открылась по латинскому адресу");
   await shot("club");
