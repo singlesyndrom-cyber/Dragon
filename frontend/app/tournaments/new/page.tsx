@@ -22,6 +22,7 @@ function Wizard() {
   const [allSeasons, setAllSeasons] = useState<any[]>([]);
   const [f, setF] = useState<Fields>(EMPTY);
   const [repeat, setRepeat] = useState(false);
+  const [draftSets, setDraftSets] = useState("");
   const [until, setUntil] = useState("");
   const set = (patch: Partial<Fields>) => setF((cur) => ({ ...cur, ...patch }));
   const { busy, error, run } = useAction();
@@ -72,7 +73,8 @@ function Wizard() {
         e.preventDefault();
         if (!kind) return;
         run(async () => {
-          const body = { club_id: +clubId, game: kind.game, format: kind.format, ...toBody(f, kind.format) };
+          const body: any = { club_id: +clubId, game: kind.game, format: kind.format, ...toBody(f, kind.format) };
+          if (kind.draft) Object.assign(body, { draft: true, draft_config: { sets: draftSets.trim() } });
           if (repeat) {
             await api("/tournaments/series", { body: { tournament: body, until } });
             router.push(`/manage/clubs/${clubId}`);
@@ -108,6 +110,17 @@ function Wizard() {
         {kind && clubId ? (
           <>
             <TournamentFields f={f} set={set} format={kind.format} seasons={seasons} />
+            {kind.draft ? (
+              <fieldset>
+                <legend>Драфт</legend>
+                <label className="inline"><span>Бустеры (выпуски)</span>
+                  <input value={draftSets} onChange={(e) => setDraftSets(e.target.value)} maxLength={40}
+                    placeholder={kind.game === "berserk" ? "7-8-8" : "Например: FDN, FDN, FDN"} style={{ width: 220 }} />
+                </label>
+                <p className="hint">Таймеры пиков, время на сборку колоды (25 мин) и длительность тура (50 мин) настраиваются
+                  на экране драфта до его начала.</p>
+              </fieldset>
+            ) : null}
             <Repeat starts={f.starts_at} repeat={repeat} setRepeat={setRepeat} until={until} setUntil={setUntil}
               seasonEnd={(seasons || []).find((x: any) => String(x.id) === f.league_id)?.ends_on} />
             <div className="row">

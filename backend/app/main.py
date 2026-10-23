@@ -9,7 +9,7 @@ from .config import settings
 from .db import engine
 from .schema import sync_schema
 from . import scryfall, system, vkclub
-from .routers import (admin_users, auctions, auth, cards, club_vk, clubs, images, notice_images, publisher, creators, decks, edh, leagues, meta, news, outbox, players,
+from .routers import (admin_users, auctions, auth, cards, club_vk, clubs, draft, images, notice_images, publisher, creators, decks, edh, leagues, meta, news, outbox, players,
                       system as system_api, tables, tournaments)
 
 log = logging.getLogger("startup")
@@ -48,6 +48,7 @@ app = FastAPI(title="KKI Platform", lifespan=lifespan)
 app.include_router(auth.router)
 app.include_router(clubs.router)
 app.include_router(tournaments.router)
+app.include_router(draft.router)
 app.include_router(edh.router)
 app.include_router(cards.router)
 app.include_router(decks.router)

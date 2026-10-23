@@ -43,7 +43,7 @@ function Hub({ id }: { id: number }) {
   if (!allowed || !t) return <p>Вести турнир могут организаторы клуба и судьи клуба по этой игре.</p>;
 
   const edh = t.format === "edh";
-  const kind = kindOf(t.game, t.format);
+  const kind = kindOf(t.game, t.format, t.draft);
   const tabs: [Tab, string][] = [
     ["players", `Участники (${t.participants.length})`],
     ["rounds", edh ? "Столы" : "Туры"],
@@ -63,6 +63,7 @@ function Hub({ id }: { id: number }) {
         </p>
         <HeadJudge t={t} isOrg={isOrg} reload={load} />
         <p className="small" style={{ margin: "6px 0 0" }}>
+          {t.draft ? <><Link href={`/manage/tournaments/${t.id}/draft`} className="btn primary small">Экран драфта и таймер туров</Link>{" "}</> : null}
           <Link href={`/tournaments/${t.id}`}>Публичная страница</Link>
           {t.self_registration && t.status === "registration" ? <span className="muted"> — ссылка для записи игроков</span> : null}
         </p>
@@ -201,7 +202,7 @@ function SettingsTab({ t, reload }: { t: any; reload: () => Promise<void> }) {
   const [f, setF] = useState<Fields>(EMPTY);
   const [seasons, setSeasons] = useState<any[] | null>(null);
   const { busy, error, done, run } = useAction();
-  const kind = kindOf(t.game, t.format);
+  const kind = kindOf(t.game, t.format, t.draft);
   useEffect(() => {
     const local = t.starts_at ? new Date(t.starts_at) : null;
     const pad = (n: number) => String(n).padStart(2, "0");

@@ -445,3 +445,22 @@ table.members td { vertical-align: middle; }
 .tabs a { padding: 10px 14px; border-bottom: 2px solid transparent; color: var(--muted); text-decoration: none; white-space: nowrap; }
 .tabs a:hover { color: var(--ivory); border-bottom-color: var(--line); }
 .tabs a.on { color: var(--ivory); border-bottom-color: var(--gilt); }
+
+/* экран судьи: драфт и таймер тура (ТВ / проектор) */
+.draftscreen .dclock { text-align: center; padding: 24px 12px; margin-top: 12px; border: 1px solid var(--line);
+  border-radius: var(--radius-m); background: var(--vellum); }
+.draftscreen .dtime { font-family: var(--font-display); font-size: clamp(5rem, 22vw, 16rem); line-height: 1; margin: 8px 0;
+  font-variant-numeric: tabular-nums; color: var(--ivory); }
+.draftscreen .dtime.hot, .draftscreen .dclock.hot .dtime { color: var(--gilt); }
+.draftscreen .dtime.over { color: var(--loss); }
+.draftscreen .ddir { font-size: clamp(1.4rem, 4vw, 2.6rem); margin: 0; color: var(--gilt); }
+.draftscreen .dlabel { font-size: clamp(1rem, 2.4vw, 1.6rem); margin: 4px 0; color: var(--muted); }
+.draftscreen .dpause { font-size: 2rem; letter-spacing: 0.3em; color: var(--loss); margin: 0; }
+.draftscreen .dclock.paused .dtime { opacity: 0.5; }
+.draftscreen .dctl { justify-content: center; margin-top: 16px; }
+.pods { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.seats { list-style: none; padding: 0; margin: 0 0 8px; }
+.seats li { padding: 3px 0; }
+.seats b { display: inline-block; min-width: 1.8em; color: var(--gilt); }
+.picktimes { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.picktimes label { display: flex; flex-direction: column; margin: 0; }

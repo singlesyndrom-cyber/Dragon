@@ -293,6 +293,10 @@ class Tournament(Base):
     announced: Mapped[bool] = mapped_column(default=False, server_default=text("true"))
     # тестовый турнир: никаких оповещений (анонс, напоминания, итоги в чатах и ЛС)
     silent: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    # бустерный драфт: {"config": {...}, "state": {"started_at", "paused_at", "offset"}} (см. app/draft.py)
+    draft: Mapped[dict | None] = mapped_column(_JSONB)
+    round_minutes: Mapped[int | None] = mapped_column(Integer)                 # лимит тура (драфт - 50 минут)
+    round_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     series_id: Mapped[int | None] = mapped_column(Integer, index=True)   # серия еженедельных турниров: id первого
 
     players: Mapped[list["TournamentPlayer"]] = relationship(cascade="all, delete-orphan")
@@ -312,6 +316,8 @@ class TournamentPlayer(Base):
     deck_id: Mapped[int | None] = mapped_column(ForeignKey("decks.id", ondelete="SET NULL"))
     dropped: Mapped[bool] = mapped_column(default=False, server_default=text("false"))   # выбыл: без пар в следующих турах
     reminded: Mapped[bool] = mapped_column(default=False, server_default=text("false"))  # напоминание накануне отправлено
+    pod: Mapped[int | None] = mapped_column(Integer)      # драфт: номер стола
+    seat: Mapped[int | None] = mapped_column(Integer)     # драфт: место за столом (по часовой, с 1)
 
     user: Mapped[User] = relationship()
 

@@ -114,7 +114,7 @@ function Members({ clubId }: { clubId: number }) {
             <select value={tid ?? ""} onChange={(e) => setTid(+e.target.value)}>
               {tours.map((t) => (
                 <option key={t.id} value={t.id}>
-                  {t.name} · {dateTime(t.starts_at)} · {kindOf(t.game, t.format)?.title || t.format}{t.status === "running" ? " (идёт)" : ""}
+                  {t.name} · {dateTime(t.starts_at)} · {kindOf(t.game, t.format, t.draft)?.title || t.format}{t.status === "running" ? " (идёт)" : ""}
                 </option>
               ))}
             </select>

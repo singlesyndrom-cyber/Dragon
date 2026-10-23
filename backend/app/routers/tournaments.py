@@ -17,6 +17,7 @@ from ..db import get_session
 from ..deps import can_judge, current_user, is_club_organizer
 from ..models import (Club, ClubMember, ClubStats, Deck, EdhSeat, WaitlistEntry, EdhTable, EdhTableStatus, League, Match, MatchResult,
                       ResultEdit, Tournament, TournamentFormat, TournamentPlayer, TournamentStatus, User)
+from .. import draft as draft_logic
 from ..swiss import MatchRec, compute_standings, default_rounds, pair_round
 from .decks import check_deck_for
 
@@ -40,6 +41,8 @@ class TournamentIn(BaseModel):
     max_players: int | None = Field(default=None, ge=2, le=512)
     league_id: int | None = None
     silent: bool = False                 # тестовый турнир без оповещений
+    draft: bool = False                  # бустерный драфт перед турами (рассадка, таймеры пиков, сборка колоды)
+    draft_config: dict | None = None     # настройки драфта (см. app/draft.py); пусто - по умолчанию для игры
 
 
 class TournamentPatch(BaseModel):
@@ -134,7 +137,18 @@ async def _make_round(session: AsyncSession, t: Tournament, players, recs):
     active = getattr(t, "_active", None)
     if active is not None and len(active) < 2:
         raise HTTPException(400, "В турнире осталось меньше двух игроков: завершите его")
-    pairs = pair_round(players, recs, active)
+    seating = None
+    if t.draft and t.current_round == 0 and t.draft["config"].get("first_round") == "seats":
+        rows = (await session.execute(select(TournamentPlayer.user_id, TournamentPlayer.pod, TournamentPlayer.seat)
+                                      .where(TournamentPlayer.tournament_id == t.id,
+                                             TournamentPlayer.seat.is_not(None)))).all()
+        seating = [(u, p, st) for u, p, st in rows if active is None or u in active]
+    in_play = set(active) if active is not None else set(players)
+    if seating and {u for u, _, _ in seating} == in_play:
+        pairs = draft_logic.first_round_pairs(seating)       # драфт: первый тур - с сидящим напротив
+    else:
+        pairs = pair_round(players, recs, active)
+    t.round_started_at = datetime.now(timezone.utc)
     t.current_round += 1
     for table, (a, b) in enumerate(pairs, 1):
         session.add(Match(tournament_id=t.id, round_no=t.current_round, table_no=table,
@@ -160,7 +174,13 @@ async def create_tournament(data: TournamentIn, user: User = Depends(current_use
 def _new_tournament(data: TournamentIn, user: User, starts_at: datetime, name: str | None = None) -> Tournament:
     rounds = None if data.format == TournamentFormat.edh else (
         data.rounds or (1 if data.format == TournamentFormat.fast_swiss else None))
-    return Tournament(club_id=data.club_id, name=(name or data.name).strip(), game=data.game, format=data.format,
+    draft = None
+    if data.draft:
+        if data.format == TournamentFormat.edh:
+            raise HTTPException(400, "Драфт проводится перед турами швейцарки, не для EDH")
+        draft = {"config": draft_logic.clean_config(data.draft_config or {}, data.game), "state": {}}
+    return Tournament(draft=draft, round_minutes=draft["config"]["round_minutes"] if draft else None,
+                      club_id=data.club_id, name=(name or data.name).strip(), game=data.game, format=data.format,
                       rounds_total=rounds, created_by=user.id, description=data.description.strip(),
                       deck_policy=data.deck_policy, self_registration=data.self_registration,
                       max_players=data.max_players, league_id=data.league_id, starts_at=starts_at, announced=False,
@@ -212,6 +232,8 @@ def _t_out(t: Tournament, club: Club | None, players: int | None = None) -> dict
             "name": t.name, "game": t.game, "format": t.format, "status": t.status, "round": t.current_round,
             "rounds_total": t.rounds_total, "starts_at": t.starts_at, "players": players,
             "league_id": t.league_id, "deck_policy": t.deck_policy, "self_registration": t.self_registration, "silent": t.silent,
+            "draft": bool(t.draft), "draft_sets": (t.draft or {}).get("config", {}).get("sets") or None,
+            "round_minutes": t.round_minutes, "round_started_at": t.round_started_at,
             "max_players": t.max_players}
 
 
@@ -252,7 +274,9 @@ async def get_tournament(tid: int, session: AsyncSession = Depends(get_session))
             "league": {"id": league.id, "name": league.name, "kind": league.kind.value} if league else None,
             "participants": [{"user_id": tp.user_id, "nickname": nick, "guest": guest, "player_no": no,
                               "bracket": tp.bracket, "checked_in": tp.checked_in, "dropped": tp.dropped,
-                              "has_deck": tp.deck_id is not None} for tp, nick, guest, no in rows]}
+                              "has_deck": tp.deck_id is not None, "pod": tp.pod, "seat": tp.seat}
+                             for tp, nick, guest, no in rows],
+            "server_now": datetime.now(timezone.utc)}
 
 
 @router.patch("/{tid}", status_code=204)
