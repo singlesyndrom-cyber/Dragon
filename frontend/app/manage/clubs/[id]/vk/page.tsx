@@ -100,12 +100,12 @@ function Toggle({ clubId, field, value, label, onChange }: { clubId: number; fie
   );
 }
 
-function TestButton({ clubId, target, disabled }: { clubId: number; target: "chat" | "wall"; disabled?: boolean }) {
+function TestButton({ clubId, target, chatId, disabled }: { clubId: number; target: "chat" | "wall"; chatId?: number; disabled?: boolean }) {
   const { busy, error, done, run } = useAction();
   return (
     <span>
       <button type="button" disabled={busy || disabled} onClick={() =>
-        run(() => api(`/clubs/${clubId}/vk/test`, { body: { target } }), "Отправлено — проверьте VK через минуту")}>
+        run(() => api(`/clubs/${clubId}/vk/test`, { body: { target, chat_id: chatId } }), "Отправлено — проверьте VK через минуту")}>
         Тестовое сообщение
       </button>
       <Status error={error} done={done} />
@@ -114,40 +114,60 @@ function TestButton({ clubId, target, disabled }: { clubId: number; target: "cha
 }
 
 function Chat({ clubId, v, onChange, reload }: P & { reload: () => void }) {
-  const [manual, setManual] = useState("");
+  const games: Record<string, string> = v.games || {};
+  const [game, setGame] = useState(Object.keys(games).find((g) => !v.chats.some((c: any) => c.game === g)) || "all");
   const { busy, error, run } = useAction();
+  const call = (path: string, method: string, body?: any) =>
+    run(async () => onChange(await api(`/clubs/${clubId}/vk${path}`, { method, body })));
   return (
     <section className="panel">
-      <h2 style={{ marginTop: 0 }}>2. Беседа клуба</h2>
-      {v.peer_id ? <p>Беседа подключена (№{v.peer_id - 2000000000}).</p> : <p className="muted">Беседа не подключена.</p>}
+      <h2 style={{ marginTop: 0 }}>2. Беседы клуба</h2>
+      <p className="small muted" style={{ marginTop: 0 }}>Каждой игре — своя беседа: анонсы и итоги турниров уходят в беседу игры турнира.
+        Беседа «Все игры и новости» получает новости клуба и турниры игр, у которых своей беседы нет.</p>
+      {v.chats.length ? (
+        <ul className="vkchats">
+          {v.chats.map((c: any) => (
+            <li key={c.id}>
+              <span className="cname"><b>{c.title || `Беседа №${c.peer_id - 2000000000}`}</b></span>
+              <select value={c.game} disabled={busy} aria-label="Игра беседы" style={{ width: "auto" }}
+                onChange={(e) => call(`/chats/${c.id}`, "PATCH", { game: e.target.value })}>
+                {Object.entries(games).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              </select>
+              <TestButton clubId={clubId} target="chat" chatId={c.id} />
+              <ConfirmButton className="link-btn" question="Отключить беседу?" confirmLabel="Отключить" disabled={busy}
+                onConfirm={() => call(`/chats/${c.id}`, "DELETE")}>Отключить</ConfirmButton>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="muted">Беседы ещё не подключены.</p>}
+
       {v.bind_code ? (
         <div className="panel" style={{ background: "var(--vellum-2)" }}>
-          <p style={{ marginTop: 0 }}>Код привязки: <b className="num" style={{ fontSize: "1.4rem" }}>{v.bind_code}</b></p>
+          <p style={{ marginTop: 0 }}>Код для беседы «{games[v.bind_game] || "Все игры и новости"}»:{" "}
+            <b className="num" style={{ fontSize: "1.4rem" }}>{v.bind_code}</b></p>
           <ol className="small steps">
-            <li>Добавьте сообщество «{v.group_name}» в беседу клуба: в беседе «Добавить участника» → вкладка «Сообщества».</li>
-            <li>Напишите в беседе сообщение с упоминанием сообщества и кодом, например: <code>@club{v.group_id} {v.bind_code}</code></li>
+            <li>Сообщество «{v.group_name}» должно быть участником беседы: в беседе «Добавить участника» → вкладка «Сообщества».</li>
+            <li>Отправьте в беседу: <code>@club{v.group_id} {v.bind_code}</code> — с упоминанием, иначе сообщество сообщение не увидит.</li>
             <li>Бот ответит «Беседа подключена». Нажмите «Проверить».</li>
           </ol>
-          <button type="button" onClick={reload}>Проверить</button>
+          <div className="row">
+            <button type="button" onClick={reload}>Проверить</button>
+            <button type="button" className="link-btn" onClick={() => call("/bind", "DELETE")}>Отменить</button>
+          </div>
         </div>
       ) : (
-        <button type="button" disabled={busy} onClick={() => run(async () => onChange(await api(`/clubs/${clubId}/vk/bind`, { method: "POST" })))}>
-          {v.peer_id ? "Подключить другую беседу" : "Получить код привязки"}
-        </button>
+        <div className="row section" style={{ marginTop: 12 }}>
+          <span className="small">Подключить беседу для</span>
+          <select value={game} onChange={(e) => setGame(e.target.value)} aria-label="Игра" style={{ width: "auto" }}>
+            {Object.entries(games).map(([k, l]) => (
+              <option key={k} value={k}>{l}{v.chats.some((c: any) => c.game === k) ? " (заменить)" : ""}</option>
+            ))}
+          </select>
+          <button type="button" disabled={busy} onClick={() => call("/bind", "POST", { game })}>Получить код привязки</button>
+        </div>
       )}
-      <details className="section" style={{ marginTop: 16 }}>
-        <summary className="small">Указать номер беседы вручную</summary>
-        <form className="row" style={{ marginTop: 8 }} onSubmit={(e) => {
-          e.preventDefault();
-          run(async () => onChange(await api(`/clubs/${clubId}/vk/peer`, { method: "PUT", body: { peer_id: manual.trim() ? Number(manual) : null } })));
-        }}>
-          <input inputMode="numeric" value={manual} onChange={(e) => setManual(e.target.value.replace(/\D/g, ""))} placeholder="например 1 или 2000000001" style={{ width: 220 }} />
-          <button disabled={busy}>Сохранить</button>
-        </form>
-      </details>
-      <div className="row section" style={{ marginTop: 12 }}>
-        <Toggle clubId={clubId} field="chat_enabled" value={v.chat_enabled} label="Отправлять анонсы и итоги в беседу" onChange={onChange} />
-        <TestButton clubId={clubId} target="chat" disabled={!v.peer_id} />
+      <div className="section" style={{ marginTop: 12 }}>
+        <Toggle clubId={clubId} field="chat_enabled" value={v.chat_enabled} label="Отправлять анонсы и итоги в беседы" onChange={onChange} />
       </div>
       <Status error={error} />
     </section>

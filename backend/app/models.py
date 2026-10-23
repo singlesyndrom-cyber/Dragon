@@ -118,8 +118,9 @@ class ClubVk(Base):
     group_id: Mapped[int | None] = mapped_column(BigInteger)
     group_name: Mapped[str | None] = mapped_column(String(255))
     group_token: Mapped[str | None] = mapped_column(Text)            # зашифрован
-    peer_id: Mapped[int | None] = mapped_column(BigInteger)          # беседа: 2000000000 + номер
+    peer_id: Mapped[int | None] = mapped_column(BigInteger)          # устарело: одна беседа (перенесено в club_vk_chats)
     bind_code: Mapped[str | None] = mapped_column(String(16))        # код привязки беседы
+    bind_game: Mapped[str | None] = mapped_column(String(16))        # для какой игры привязывается беседа
     chat_enabled: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
     dm_enabled: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
     wall_enabled: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
@@ -130,6 +131,20 @@ class ClubVk(Base):
     wall_user_name: Mapped[str | None] = mapped_column(String(255))
     last_error: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ClubVkChat(Base):
+    """Беседа VK клуба для одной игры: mtg, berserk или all («все игры и новости»). Турнир уходит в беседу
+    своей игры, а если её нет - в беседу all. Одна беседа может быть назначена нескольким играм."""
+    __tablename__ = "club_vk_chats"
+    __table_args__ = (UniqueConstraint("club_id", "game"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id", ondelete="CASCADE"), index=True)
+    game: Mapped[str] = mapped_column(String(16))
+    peer_id: Mapped[int] = mapped_column(BigInteger)                 # 2000000000 + номер беседы у сообщества
+    title: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ClubMember(Base):

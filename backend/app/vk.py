@@ -108,6 +108,16 @@ async def answer_event(token: str, event_id: str, user_id: int, peer_id: int, te
                event_data={"type": "show_snackbar", "text": text[:90]})
 
 
+async def chat_title(token: str, peer_id: int) -> str | None:
+    """Название беседы (сообщество видит беседы, в которых состоит)."""
+    try:
+        resp = await call("messages.getConversationsById", token, peer_ids=peer_id)
+        items = resp.get("items") or []
+        return (items[0].get("chat_settings") or {}).get("title") if items else None
+    except (VkError, AttributeError, KeyError, TypeError):
+        return None
+
+
 async def users_names(token: str, ids: list[int]) -> dict[int, str]:
     if not ids:
         return {}

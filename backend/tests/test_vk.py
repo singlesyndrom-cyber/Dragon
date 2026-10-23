@@ -66,6 +66,7 @@ class FakeVk:
         resp = {"groups.getById": {"groups": [{"id": 4242, "name": "Клуб Дракон"}], "profiles": []},
                 "groups.setLongPollSettings": 1, "messages.send": 1, "messages.sendMessageEventAnswer": 1,
                 "wall.post": {"post_id": 99},
+                "messages.getConversationsById": {"items": [{"chat_settings": {"title": "Клуб Дракон MTG"}}]},
                 "users.get": [{"id": 555, "first_name": "Пётр", "last_name": "Вконтактов"}]}.get(method, 1)
         return httpx.Response(200, json={"response": resp})
 
@@ -114,13 +115,18 @@ async def test_club_vk_setup_bind_announce_and_button(ctx):
     assert fake.of("groups.setLongPollSettings")[0]["message_event"] == "1"
     assert (await c.get(base)).status_code == 401
 
-    # беседа по коду: бот видит код в беседе 2000000003 и запоминает её
-    code = (await c.post(f"{base}/bind", headers=org)).json()["bind_code"]
-    await vk_bot.handle_update(cid, {"type": "message_new", "object": {"message": {
-        "text": f"@club4242 {code}", "peer_id": 2000000003, "from_id": 1}}})
+    # беседы по коду: MTG - 2000000003, «все игры» - 2000000004
+    async def bind(game, peer):
+        code = (await c.post(f"{base}/bind", json={"game": game}, headers=org)).json()["bind_code"]
+        await vk_bot.handle_update(cid, {"type": "message_new", "object": {"message": {
+            "text": f"@club4242 {code}", "peer_id": peer, "from_id": 1}}})
+    await bind("mtg", 2000000003)
     v = (await c.get(base, headers=org)).json()
-    assert v["peer_id"] == 2000000003 and v["bind_code"] is None
-    assert "Беседа подключена" in fake.of("messages.send")[-1]["message"]
+    assert v["chats"] == [{"id": v["chats"][0]["id"], "game": "mtg", "peer_id": 2000000003, "title": "Клуб Дракон MTG"}]
+    assert v["bind_code"] is None
+    assert "«Magic: The Gathering»" in fake.of("messages.send")[-1]["message"]
+    await bind("all", 2000000004)
+    assert (await c.post(f"{base}/bind", json={"game": "chess"}, headers=org)).status_code == 422
 
     # стена: токен администратора вручную
     r = await c.put(f"{base}/wall/token", json={"token": "vk1.a.admin-user-token"}, headers=org)
@@ -130,7 +136,7 @@ async def test_club_vk_setup_bind_announce_and_button(ctx):
     when = (datetime.now(timezone.utc) + timedelta(hours=20)).replace(tzinfo=None, microsecond=0).isoformat()
     tid = (await c.post("/tournaments", json={"club_id": cid, "name": "Командир", "format": "edh", "starts_at": when,
                                               "max_players": 8}, headers=org)).json()["id"]
-    assert [m.chat_id for m in await outbox("vk")] == [f"{cid}:2000000003"]
+    assert [m.chat_id for m in await outbox("vk")] == [f"{cid}:2000000003"]          # MTG - только в беседу MTG
     assert [m.chat_id for m in await outbox("vkwall")] == [str(cid)] and await outbox("tg") == []
     assert await vk_bot.process_batch() == 2
     sent = fake.of("messages.send")[-1]
@@ -168,6 +174,18 @@ async def test_club_vk_setup_bind_announce_and_button(ctx):
     fake.errors["messages.send"] = (917, "You don't have access to this chat")
     await vk_bot.process_batch()
     assert "беседа" in (await c.get(base, headers=org)).json()["last_error"]
+
+    # Берсерк: своей беседы нет - анонс в беседу «все игры»; назначили беседе игру - уходит туда
+    when2 = (datetime.now(timezone.utc) + timedelta(days=2)).replace(tzinfo=None, microsecond=0).isoformat()
+    bid = (await c.post("/tournaments", json={"club_id": cid, "name": "Берсерк-кубок", "game": "berserk",
+                                              "starts_at": when2}, headers=org)).json()["id"]
+    assert [m.chat_id for m in await outbox("vk") if (m.dedup_key or "").startswith(f"t-announce:{bid}")] == [f"{cid}:2000000004"]
+    chats = (await c.get(base, headers=org)).json()["chats"]
+    allchat = next(x for x in chats if x["game"] == "all")
+    v = (await c.patch(f"{base}/chats/{allchat['id']}", json={"game": "berserk"}, headers=org)).json()
+    assert sorted(x["game"] for x in v["chats"]) == ["berserk", "mtg"]
+    v = (await c.delete(f"{base}/chats/{allchat['id']}", headers=org)).json()
+    assert [x["game"] for x in v["chats"]] == ["mtg"]
 
     # отключение VK клуба
     assert (await c.delete(base, headers=org)).status_code == 204

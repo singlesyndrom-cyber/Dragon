@@ -10,7 +10,7 @@ from sqlalchemy import select
 from .. import tg_actions, vk, vkclub
 from ..botutil import MAX_ATTEMPTS, backoff_seconds
 from ..db import SessionLocal
-from ..models import Club, ClubVk, OutboxMessage, OutboxStatus, Provider
+from ..models import Club, ClubVk, ClubVkChat, OutboxMessage, OutboxStatus, Provider
 
 log = logging.getLogger("vk")
 
@@ -130,12 +130,20 @@ async def _button(s, cfg: ClubVk, token: str, obj: dict) -> None:
 async def _message(s, cfg: ClubVk, token: str, msg: dict) -> None:
     text, peer_id = (msg.get("text") or "").strip(), int(msg.get("peer_id", 0))
     if cfg.bind_code and cfg.bind_code in text and peer_id >= vkclub.PEER_CHAT_BASE:
-        cfg.peer_id, cfg.bind_code, cfg.last_error = peer_id, None, None
+        game = cfg.bind_game if cfg.bind_game in vkclub.GAMES else "all"
+        chat = (await s.execute(select(ClubVkChat).where(ClubVkChat.club_id == cfg.club_id,
+                                                         ClubVkChat.game == game))).scalar_one_or_none()
+        if not chat:
+            chat = ClubVkChat(club_id=cfg.club_id, game=game, peer_id=peer_id)
+            s.add(chat)
+        chat.peer_id, chat.title = peer_id, await vk.chat_title(token, peer_id)
+        cfg.bind_code, cfg.bind_game, cfg.last_error = None, None, None
         club = await s.get(Club, cfg.club_id)
         await s.commit()
+        what = ("новости клуба и турниры игр без своей беседы" if game == "all"
+                else f"анонсы турниров «{vkclub.GAMES[game]}» с записью и итоги")
         await vk.send_message(token, peer_id, f"Беседа подключена к клубу «{club.name if club else ''}». "
-                                              "Сюда будут приходить анонсы турниров с записью и итоги.",
-                              random_id=0)
+                                              f"Сюда будут приходить {what}.", random_id=0)
     elif peer_id < vkclub.PEER_CHAT_BASE and text.lower() in ("начать", "start", "старт", "привет"):
         club = await s.get(Club, cfg.club_id)
         await vk.send_message(token, peer_id, f"Здравствуйте! Это сообщество клуба «{club.name if club else ''}». "

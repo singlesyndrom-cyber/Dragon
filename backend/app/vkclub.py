@@ -2,13 +2,39 @@
 import secrets
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import vk
-from .models import ClubVk
+from .models import ClubVk, ClubVkChat
 from .secretbox import decrypt, encrypt
 
 PEER_CHAT_BASE = 2_000_000_000   # peer_id беседы = 2000000000 + номер беседы
+GAMES = {"mtg": "Magic: The Gathering", "berserk": "Берсерк", "all": "Все игры и новости"}
+
+
+async def chat_peers(session: AsyncSession, club_id: int, game: str | None) -> list[int]:
+    """Беседы для сообщения: турнир - беседа его игры, иначе общая (all); новости (game=None) - общая,
+    а если общей нет - все беседы клуба."""
+    rows = (await session.execute(select(ClubVkChat).where(ClubVkChat.club_id == club_id))).scalars().all()
+    if game:
+        pick = [r for r in rows if r.game == game] or [r for r in rows if r.game == "all"]
+    else:
+        pick = [r for r in rows if r.game == "all"] or rows
+    return list(dict.fromkeys(r.peer_id for r in pick))
+
+
+MIGRATE_PEER = [
+    text("INSERT INTO club_vk_chats (club_id, game, peer_id) SELECT v.club_id, 'all', v.peer_id FROM club_vk v "
+         "WHERE v.peer_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM club_vk_chats c WHERE c.club_id = v.club_id)"),
+    text("UPDATE club_vk SET peer_id = NULL WHERE peer_id IS NOT NULL"),
+]
+
+
+async def migrate_legacy_peer(conn) -> None:
+    """Одна беседа клуба из старых настроек -> беседа «все игры» в club_vk_chats."""
+    for stmt in MIGRATE_PEER:
+        await conn.execute(stmt)
 
 
 def new_bind_code() -> str:

@@ -35,18 +35,21 @@ async def club_vk(session, club_id: int):
 
 
 async def broadcast(session, club: Club, kind: str, text: str, dedup: str, buttons: list | None = None,
-                    photo_url: str | None = None, link: str | None = None) -> int:
-    """Сообщение клуба во все его каналы: чат Telegram, беседа VK, стена сообщества VK. Возвращает число каналов."""
+                    photo_url: str | None = None, link: str | None = None, game: str | None = None) -> int:
+    """Сообщение клуба во все его каналы: чат Telegram, беседы VK (по игре: game турнира; None - новости),
+    стена сообщества VK. Возвращает число каналов."""
     n = 0
     if club.telegram_chat_id:
         await enqueue(session, kind, club.telegram_chat_id, text, photo_url=photo_url, buttons=buttons,
                       dedup_key=f"{dedup}:{club.telegram_chat_id}")
         n += 1
     cfg = await club_vk(session, club.id)
-    if cfg and cfg.group_token and cfg.peer_id and cfg.chat_enabled:
-        await enqueue(session, kind, f"{club.id}:{cfg.peer_id}", text, buttons=buttons, channel="vk",
-                      dedup_key=f"{dedup}:vk:{cfg.peer_id}")
-        n += 1
+    if cfg and cfg.group_token and cfg.chat_enabled:
+        from .vkclub import chat_peers
+        for peer in await chat_peers(session, club.id, game):
+            await enqueue(session, kind, f"{club.id}:{peer}", text, buttons=buttons, channel="vk",
+                          dedup_key=f"{dedup}:vk:{peer}")
+            n += 1
     if cfg and cfg.wall_enabled and cfg.wall_token:
         # на стене кнопок нет: ссылка на сайт - вложением (VK покажет карточку)
         await enqueue(session, kind, str(club.id), text, photo_url=link, channel="vkwall",
@@ -75,7 +78,7 @@ async def announce(session, t: Tournament) -> bool:
     text = format_announce(t.name, club.name, t.game, t.format.value, t.starts_at, settings.app_timezone,
                            url, t.rounds_total)
     if not await broadcast(session, club, "tournament_announce", text, f"t-announce:{t.id}",
-                           buttons=announce_buttons(t), link=url):
+                           buttons=announce_buttons(t), link=url, game=t.game):
         return False
     t.announced = True
     return True
@@ -179,7 +182,8 @@ async def on_tournament_finished(session, t: Tournament, swiss_table=None) -> No
                       podium=podium, standings=standings, league_title=league_title,
                       league=league, stats=stats, url=site_url(f"/tournaments/{t.id}"), tz=settings.app_timezone,
                       judge=judge_label)
-    await broadcast(session, club, "tournament_report", format_report(data), f"t-report:{t.id}", link=data.url)
+    await broadcast(session, club, "tournament_report", format_report(data), f"t-report:{t.id}", link=data.url,
+                    game=t.game)
 
 
 

@@ -8,7 +8,7 @@ from sqlalchemy.exc import InterfaceError, OperationalError
 from .config import settings
 from .db import engine
 from .schema import sync_schema
-from . import scryfall, system
+from . import scryfall, system, vkclub
 from .routers import (admin_users, auctions, auth, cards, club_vk, clubs, creators, decks, edh, leagues, meta, news, outbox, players,
                       system as system_api, tables, tournaments)
 
@@ -31,6 +31,7 @@ async def lifespan(app: FastAPI):
     try:                                     # «русские» названия, совпадающие с английскими, - не перевод
         async with engine.begin() as conn:
             n = await scryfall.clear_fake_russian(conn)
+            await vkclub.migrate_legacy_peer(conn)          # одна беседа VK клуба -> беседа «все игры»
         if n:
             log.info("убраны русские названия, совпадающие с английскими: %s", n)
     except Exception as e:                   # не мешаем запуску сайта
