@@ -35,6 +35,24 @@ def test_icons_in_text():
         "Не более 4{counter}.\n{counter}{tap}: Воздействие. {wolf}: прыжок, {ova}1. Пиво lager"
 
 
+def test_berserk_meta_summary():
+    from app import bkmeta
+    from app.meta import Game
+    prof = lambda name, els, cost, elite, fly: {"name": name, "combo": bkmeta.combo(set(els)), "elements": els,  # noqa: E731
+                                                "size": 30, "avg_cost": cost, "elite_share": elite, "flyer_share": fly}
+    profiles = {1: prof("Слуа", ["Тьма", "Степи"], 4.0, 0.3, 0.1), 2: prof("слуа ", ["Степи", "Тьма"], 5.0, 0.5, 0.0),
+                3: prof("Механический дракон", ["Горы", "Болота", "Тьма"], 6.0, 0.4, 0.2)}
+    games = [Game(1, "win", 0.5), Game(2, "win", 0.5), Game(3, "loss", 0.5), Game(3, "loss", 0.5)]
+    s = bkmeta.summarize(profiles, games, min_games=2)
+    assert s["decks"] == 3
+    assert [(r["key"], r["decks"], r["win_rate"]) for r in s["combos"]] == [("Степи + Тьма", 2, 1.0),
+                                                                             ("Горы + Болота + Тьма", 1, 0.0)]
+    assert s["archetypes"][0]["key"] in ("Слуа", "слуа") and s["archetypes"][0]["decks"] == 2
+    assert {e["element"]: e["decks"] for e in s["elements"]} == {"Степи": 2, "Горы": 1, "Болота": 1, "Тьма": 3}
+    assert s["profile"]["avg_cost"] == 5.0 and s["profile"]["colors"] == 2.33
+    assert bkmeta.combo({"Нейтральная"}) == "Нейтральные"
+
+
 pytestmark_db = pytest.mark.skipif(not os.getenv("RUN_INTEGRATION"), reason="нужен PostgreSQL (RUN_INTEGRATION=1)")
 
 if os.getenv("RUN_INTEGRATION"):
