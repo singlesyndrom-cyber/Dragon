@@ -34,6 +34,8 @@ async def deliver(session, m: OutboxMessage) -> None:
         # random_id = номер сообщения в очереди: VK не отправит дубль, если повторим после сбоя
         await vk.send_message(token, int(peer), vk.html_to_text(m.text), m.buttons, random_id=m.id,
                               attachment=attachment)
+        if attachment and cfg.last_error and cfg.last_error.startswith("картинка"):
+            cfg.last_error = None              # картинки снова доходят - старая ошибка больше не актуальна
     elif m.channel == "vkwall":
         cfg = await session.get(ClubVk, int(m.chat_id))
         if not cfg or not cfg.group_id:
