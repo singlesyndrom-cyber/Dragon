@@ -64,10 +64,13 @@ def _keyed(entry_keys: dict[int, str], games: list[Game], min_games: int) -> lis
 
 
 def summarize(profiles_by_entry: dict[int, dict], games: list[Game], min_games: int = 5) -> dict:
-    """profiles_by_entry: entry_id -> профиль колоды (из deck_profiles)."""
+    """profiles_by_entry: entry_id -> профиль колоды (из deck_profiles). Колоды без карт из базы
+    (список не распознан) не учитываются - иначе они дают «0 карт» и «Нейтральные»."""
+    skipped = sum(1 for p in profiles_by_entry.values() if not p["size"])
+    profiles_by_entry = {e: p for e, p in profiles_by_entry.items() if p["size"]}
     total = len(profiles_by_entry)
     if not total:
-        return {"decks": 0, "combos": [], "archetypes": [], "elements": [], "profile": None}
+        return {"decks": 0, "skipped": skipped, "combos": [], "archetypes": [], "elements": [], "profile": None}
     combos = _keyed({e: p["combo"] for e, p in profiles_by_entry.items()}, games, min_games)
     shown: dict[str, Counter] = defaultdict(Counter)         # как чаще всего пишут название архетипа
     for p in profiles_by_entry.values():
@@ -78,7 +81,7 @@ def summarize(profiles_by_entry: dict[int, dict], games: list[Game], min_games: 
     el = Counter(e for p in profiles_by_entry.values() for e in p["elements"])
     n = lambda k: sum(p[k] for p in profiles_by_entry.values()) / total     # noqa: E731
     return {
-        "decks": total, "combos": combos, "archetypes": arch,
+        "decks": total, "skipped": skipped, "combos": combos, "archetypes": arch,
         "elements": [{"element": e, "decks": el[e], "share": round(el[e] / total, 4)} for e in ELEMENT_ORDER if el[e]],
         "profile": {"size": round(n("size"), 1), "avg_cost": round(n("avg_cost"), 2),
                     "elite_share": round(n("elite_share"), 3), "flyer_share": round(n("flyer_share"), 3),

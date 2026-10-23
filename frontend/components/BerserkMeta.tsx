@@ -22,9 +22,11 @@ export default function BerserkMeta({ bk }: { bk: any }) {
         </span>
       </div>
       {!m.decks ? (
-        <p className="muted">{results ? "Колод с завершённых турниров «Берсерка» за 90 дней пока нет." : "Игроки ещё не отмечали колоды «Учитывать в мете»."}</p>
+        <p className="muted">{results ? "Колод с завершённых турниров «Берсерка» за 90 дней пока нет." : "Игроки ещё не отмечали колоды «Учитывать в мете»."}
+          {m.skipped ? ` Колод без карт из базы (список не распознан): ${m.skipped} — они не учитываются.` : ""}</p>
       ) : (
         <>
+          {m.skipped ? <p className="muted small">Ещё {m.skipped} колод без карт из базы не учтено: их список не распознан.</p> : null}
           <div className="row stat-tiles section">
             <div><b className="num">{m.profile.size}</b><span className="muted small">карт в колоде</span></div>
             <div><b className="num">{m.profile.avg_cost.toFixed(1)}</b><span className="muted small">средняя стоимость</span></div>

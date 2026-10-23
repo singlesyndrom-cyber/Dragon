@@ -97,11 +97,10 @@ async def test_publisher_cabinet(client):
     # мета без имён
     meta = (await c.get("/publisher/berserk/meta", headers=pub_h)).json()
     assert meta["tournament_decks"] == 2 and "Игрок" not in str(meta)
-    bk = meta["berserk"]["tournaments"]          # карт в базе нет - стихий нет: «Нейтральные»
-    assert bk["decks"] == 2 and bk["combos"][0]["key"] == "Нейтральные" and bk["combos"][0]["games"] == 2
-    assert bk["archetypes"][0]["key"] == "Колода" and bk["archetypes"][0]["wins"] == 1
+    bk = meta["berserk"]["tournaments"]          # карт этих колод нет в базе - в мету стихий не попадают
+    assert bk["decks"] == 0 and bk["skipped"] == 2
     pub_meta = (await c.get("/meta/berserk")).json()            # публичная страница меты: «Берсерк» отдельно
-    assert pub_meta["entries"] == 2 and pub_meta["tournaments"]["decks"] == 2
+    assert pub_meta["entries"] == 2 and pub_meta["tournaments"]["skipped"] == 2
     assert (await c.get("/meta/commanders", params={"game": "mtg"})).json()["entries"] == 0
 
     # отзыв согласия и снятие роли
