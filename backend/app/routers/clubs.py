@@ -106,6 +106,13 @@ async def create_club(data: ClubIn, owner: User = Depends(current_user),
     if not can_create_club(owner):
         raise HTTPException(403, "Создавать клубы могут пользователи со статусом «Создатель Клуба». "
                                  "Подайте заявку в личном кабинете")
+    club = await make_club(session, owner.id, data)
+    await session.commit()
+    return {"id": club.id, "slug": club.slug}
+
+
+async def make_club(session: AsyncSession, owner_id: int, data: ClubIn) -> Club:
+    """Новый клуб с владельцем-организатором (без commit). 409 - название занято."""
     if (await session.execute(select(Club).where(func.lower(Club.name) == data.name.strip().lower()))).scalar_one_or_none():
         raise HTTPException(409, "Клуб с таким названием уже есть")
     base = slugify(data.name)
@@ -113,11 +120,11 @@ async def create_club(data: ClubIn, owner: User = Depends(current_user),
     slug, n = base, 2
     while slug in taken:
         slug, n = f"{base}-{n}", n + 1
-    club = Club(**data.model_dump(), slug=slug, stats=ClubStats())
-    club.members.append(ClubMember(user_id=owner.id, role=ClubRole.organizer))
+    club = Club(**{**data.model_dump(), "name": data.name.strip()}, slug=slug, stats=ClubStats())
+    club.members.append(ClubMember(user_id=owner_id, role=ClubRole.organizer))
     session.add(club)
-    await session.commit()
-    return {"id": club.id, "slug": club.slug}
+    await session.flush()
+    return club
 
 
 @router.patch("/{club_id}")

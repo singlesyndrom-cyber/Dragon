@@ -49,6 +49,12 @@ export default function CreatorRequestsAdmin() {
                     {STATUS[r.status]}
                     {r.decided_by ? <div className="muted">{r.decided_by}, {dateTime(r.decided_at)}</div> : null}
                     {r.reject_reason ? <div className="muted">Причина: {r.reject_reason}</div> : null}
+                    {r.status === "approved" && r.club_id ? <div><Link href={`/manage/clubs/${r.club_id}`}>Клуб создан</Link></div> : null}
+                    {r.status === "approved" && !r.club_id ? (
+                      <button type="button" className="small" style={{ marginTop: 4 }} disabled={busy}
+                        onClick={() => run(async () => { await api(`/admin/creator-requests/${r.id}/create-club`, { method: "POST" }); await load(); },
+                          `Клуб «${r.club_name}» создан, ${r.user.nickname} — организатор`)}>Создать клуб из заявки</button>
+                    ) : null}
                   </td>
                   <td className="r">
                     {r.status === "pending" ? (
@@ -68,7 +74,7 @@ export default function CreatorRequestsAdmin() {
                         <div className="row" style={{ justifyContent: "flex-end" }}>
                           <button className="primary" disabled={busy}
                             onClick={() => run(async () => { await api(`/admin/creator-requests/${r.id}/approve`, { method: "POST" }); await load(); },
-                              `${r.user.nickname} получил статус «Создатель Клуба»`)}>Одобрить</button>
+                              `${r.user.nickname} получил статус «Создатель Клуба», клуб «${r.club_name}» создан`)}>Одобрить</button>
                           <button type="button" disabled={busy} onClick={() => { setRejecting(r.id); setReason(""); }}>Отклонить</button>
                         </div>
                       )

@@ -41,7 +41,7 @@ class RolesIn(BaseModel):
 def _out(r: ClubCreatorRequest) -> dict:
     return {"id": r.id, "status": r.status, "status_text": STATUS_TEXT[r.status], "club_name": r.club_name,
             "city": r.city, "about": r.about, "reject_reason": r.reject_reason,
-            "created_at": r.created_at, "decided_at": r.decided_at}
+            "created_at": r.created_at, "decided_at": r.decided_at, "club_id": r.club_id}
 
 
 async def _email(session: AsyncSession, user_id: int) -> str | None:
@@ -122,11 +122,32 @@ async def _decide(session: AsyncSession, request_id: int, moderator: User, appro
     user = await session.get(User, req.user_id)
     if approve:
         user.is_club_creator = True
+        await _create_club(session, req)
     return req, user
+
+
+async def _create_club(session: AsyncSession, req: ClubCreatorRequest) -> None:
+    """Клуб из заявки: название, город и описание - как в заявке, заявитель - организатор.
+    Название уже занято - клуб не создаётся, игрок создаст его сам под другим именем."""
+    from .clubs import ClubIn, make_club
+    if req.club_id:
+        return
+    try:
+        async with session.begin_nested():
+            club = await make_club(session, req.user_id, ClubIn(name=req.club_name, city=req.city or "",
+                                                                 description=req.about or ""))
+        req.club_id = club.id
+    except HTTPException:
+        req.club_id = None
 
 
 def _letter(user: User, req: ClubCreatorRequest) -> tuple[str, str]:
     link = notify.site_url("/clubs/new") or "/clubs/new"
+    if req.status == CreatorRequestStatus.approved.value and req.club_id:
+        manage = notify.site_url(f"/manage/clubs/{req.club_id}") or f"/manage/clubs/{req.club_id}"
+        return ("Клуб создан — заявка одобрена",
+                f"Здравствуйте, {user.nickname}!\n\nВаша заявка одобрена, клуб «{req.club_name}» создан, "
+                f"вы — его организатор. Настройте клуб (часы работы, чат, столы) и добавьте первый турнир: {manage}")
     if req.status == CreatorRequestStatus.approved.value:
         return ("Заявка «Создатель Клуба» одобрена",
                 f"Здравствуйте, {user.nickname}!\n\nВаша заявка на статус «Создатель Клуба» одобрена. "
@@ -152,6 +173,27 @@ async def _notify(session: AsyncSession, background: BackgroundTasks, user: User
 async def approve(request_id: int, background: BackgroundTasks, moderator: User = Depends(require_moderator),
                   session: AsyncSession = Depends(get_session)):
     req, user = await _decide(session, request_id, moderator, approve=True)
+    await _notify(session, background, user, req)
+    await session.commit()
+    return _out(req)
+
+
+@router.post("/admin/creator-requests/{request_id}/create-club")
+async def create_club_for_request(request_id: int, background: BackgroundTasks,
+                                  moderator: User = Depends(require_moderator),
+                                  session: AsyncSession = Depends(get_session)):
+    """Для заявок, одобренных до появления автосоздания: создать клуб из заявки."""
+    req = await session.get(ClubCreatorRequest, request_id)
+    if not req:
+        raise HTTPException(404, "Заявка не найдена")
+    if req.status != CreatorRequestStatus.approved.value:
+        raise HTTPException(400, "Клуб создаётся только по одобренной заявке")
+    if req.club_id:
+        raise HTTPException(409, "Клуб по этой заявке уже создан")
+    await _create_club(session, req)
+    if not req.club_id:
+        raise HTTPException(409, f"Клуб «{req.club_name}» уже есть: игрок создаст клуб под другим названием")
+    user = await session.get(User, req.user_id)
     await _notify(session, background, user, req)
     await session.commit()
     return _out(req)

@@ -701,6 +701,7 @@ class ClubCreatorRequest(Base):
     city: Mapped[str] = mapped_column(String(64), default="")
     about: Mapped[str] = mapped_column(Text, default="")
     reject_reason: Mapped[str] = mapped_column(String(500), default="")
+    club_id: Mapped[int | None] = mapped_column(ForeignKey("clubs.id", ondelete="SET NULL"))   # клуб, созданный при одобрении
     decided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

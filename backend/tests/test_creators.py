@@ -81,11 +81,23 @@ async def test_request_and_approve(client, mails):
     rid = rows[0]["id"]
 
     r = await client.post(f"/admin/creator-requests/{rid}/approve", headers=ah)
-    assert r.status_code == 200 and r.json()["status"] == "approved"
+    assert r.status_code == 200 and r.json()["status"] == "approved" and r.json()["club_id"]
+    club_id = r.json()["club_id"]                         # клуб создан сразу при одобрении
     assert (await client.post(f"/admin/creator-requests/{rid}/reject", json={}, headers=ah)).status_code == 409
     assert (await client.get("/auth/me", headers=ph)).json()["is_club_creator"] is True
     assert mails[-1]["to"] == "c1@example.com" and "одобрена" in mails[-1]["subject"]
-    r = await client.post("/clubs", json={"name": "Драконье логово"}, headers=ph)
+    assert f"/manage/clubs/{club_id}" in mails[-1]["body"]
+    clubs = {c["id"]: c for c in (await client.get("/clubs")).json()}
+    assert clubs[club_id]["name"] == "Драконье логово"
+    assert (await client.patch(f"/clubs/{club_id}", json={"city": "Тверь"}, headers=ph)).status_code == 200   # он организатор
+    assert (await client.post(f"/admin/creator-requests/{rid}/create-club", headers=ah)).status_code == 409
+    # название занято: заявка одобряется, клуб не создаётся - игрок заведёт его сам под другим именем
+    ph2, _ = await reg(client, 2)
+    rid2 = (await client.post("/creator-requests", json=REQ, headers=ph2)).json()["id"]
+    r = await client.post(f"/admin/creator-requests/{rid2}/approve", headers=ah)
+    assert r.status_code == 200 and r.json()["club_id"] is None
+    assert (await client.post(f"/admin/creator-requests/{rid2}/create-club", headers=ah)).status_code == 409
+    r = await client.post("/clubs", json={"name": "Драконье логово 2"}, headers=ph2)
     assert r.status_code == 201, r.text
     # со статусом новая заявка не нужна
     assert (await client.post("/creator-requests", json=REQ, headers=ph)).status_code == 409
