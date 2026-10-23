@@ -275,7 +275,11 @@ function ImportBox({ id, deck, hasCards, onDone }: { id: string; deck: any; hasC
   return (
     <div className="panel section">
       <h3 style={{ marginTop: 0 }}>Импорт списка</h3>
-      <p className="muted small">Вставьте экспорт из Moxfield, MTGGoldfish, Archidekt, Arena или MTGO. Разделы «Commander», «Deck», «Sideboard» и строки «SB:» распознаются; командир последней строкой после пустой — тоже. Русские названия понимаются; издание вида «(CMM) 410» сохраняется.</p>
+      {deck.game === "berserk" ? (
+        <p className="muted small">Загрузите файл NXT (строки «3 60161» — как в выгрузке ProBerserk) или вставьте список «3 Преторианец».</p>
+      ) : (
+        <p className="muted small">Вставьте экспорт из Moxfield, MTGGoldfish, Archidekt, Arena или MTGO. Разделы «Commander», «Deck», «Sideboard» и строки «SB:» распознаются; командир последней строкой после пустой — тоже. Русские названия понимаются; издание вида «(CMM) 410» сохраняется.</p>
+      )}
       <div className="row" style={{ marginBottom: 10 }}>
         <DeckFileInput onText={(t) => setText(t)} />
         <span className="muted small">или вставьте текст</span>

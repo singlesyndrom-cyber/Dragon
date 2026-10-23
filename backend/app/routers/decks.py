@@ -1,3 +1,4 @@
+import re
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -68,7 +69,32 @@ def _settings(deck: Deck, fmt: str | None, visibility: str | None):
             deck.share_key = secrets.token_urlsafe(12)
 
 
+NXT_LINE = re.compile(r"^\s*(\d{1,3})\s+(\d{5,6})\s*$")
+
+
+async def nxt_to_text(session: AsyncSession, text: str) -> str | None:
+    """Формат NXT «Берсерка» (выгрузка ProBerserk, клиенты): «3 60161» = 3 копии карты №161 выпуска 6.
+    Код = выпуск × 10000 + номер. Возвращает обычный список «3 Название» или None, если это не NXT."""
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if not lines or not all(NXT_LINE.match(ln) for ln in lines):
+        return None
+    codes = [(int(m.group(1)), int(m.group(2))) for m in map(NXT_LINE.match, lines)]
+    want = {(str(c // 10000), str(c % 10000)) for _, c in codes}
+    found = {}
+    for card in (await session.execute(select(Card).where(
+            Card.game == "berserk", Card.set_code.in_({s for s, _ in want})))).scalars():
+        num = str((card.extra or {}).get("number") or "").lstrip("0")
+        found.setdefault((card.set_code, num), card.name)
+    out = []
+    for qty, c in codes:
+        name = found.get((str(c // 10000), str(c % 10000)))
+        out.append(f"{qty} {name}" if name else f"{qty} Код {c}")      # неизвестный код - в «не найдено»
+    return "\n".join(out)
+
+
 async def _fill(session: AsyncSession, deck: Deck, data: DeckIn) -> dict:
+    if deck.game == "berserk":
+        data.text = await nxt_to_text(session, data.text) or data.text
     parsed, errors = parse_decklist(data.text)
     parsed = apply_commander(parsed, data.commander)
     if not parsed and data.text.strip():

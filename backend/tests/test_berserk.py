@@ -133,6 +133,13 @@ async def test_sync_search_deck_and_images(client, tmp_path, monkeypatch):
     texts = " ".join(p["text"] for p in (await client.get(f"/decks/{deck['id']}", headers=h)).json()["problems"])
     assert "В колоде 53 карт, можно не больше 50" in texts
 
+    # NXT: «код = выпуск × 10000 + номер»; неизвестный код - в «не найдено»
+    r = (await client.post("/decks", json={"name": "NXT", "game": "berserk", "text": "3 70008\n2 70023\n1 99999\n"},
+                           headers=h)).json()
+    assert r["unmatched"] == ["Код 99999"]
+    got = {c["name"]: c["qty"] for c in (await client.get(f"/decks/{r['id']}", headers=h)).json()["cards"]}
+    assert got == {"Преторианец": 3, "Бернхольм": 2, "Код 99999": 1}
+
     # картинки - через наш сервер, с кэшем
     from app.config import settings
     from app.routers import images

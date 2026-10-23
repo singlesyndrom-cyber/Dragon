@@ -98,7 +98,19 @@ export function stats(rows: Row[]) {
 
 /** Экспорт: «Commander / Deck / Sideboard» понимают Moxfield, MTGGoldfish, Arena; MTGO - основа, пустая строка, сайд.
  *  withPrints: выбранные издания как в Moxfield - «1 Sol Ring (CMM) 410». */
-export function exportText(rows: Row[], style: "text" | "mtgo", withPrints = false): string {
+/** Код карты «Берсерка» в формате NXT: выпуск × 10000 + номер (только для номерных выпусков 1–8). */
+export function nxtCode(r: Row): number | null {
+  const set = Number(r.card?.set), num = Number(r.card?.bk?.number);
+  return r.card?.bk && Number.isInteger(set) && set > 0 && Number.isInteger(num) && num > 0 ? set * 10000 + num : null;
+}
+
+export function exportText(rows: Row[], style: "text" | "mtgo" | "nxt", withPrints = false): string {
+  if (style === "nxt") {
+    return rows.filter((r) => r.section !== "side").map((r) => {
+      const code = nxtCode(r);
+      return code ? `${r.qty} ${code}` : `# ${r.qty} ${r.card?.name || r.name} — нет кода NXT`;
+    }).join("\n") + "\n";
+  }
   const ed = (r: Row) => withPrints && style === "text" && r.card?.print
     ? ` (${r.card.print.set.toUpperCase()})${r.card.print.number ? ` ${r.card.print.number}` : ""}` : "";
   const line = (r: Row) => `${r.qty} ${r.card?.name || r.name}${ed(r)}`;

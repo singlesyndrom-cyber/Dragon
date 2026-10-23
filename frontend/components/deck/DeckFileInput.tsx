@@ -8,14 +8,15 @@ export function nameFromFile(file: string): string {
   return base ? base[0].toUpperCase() + base.slice(1) : "";
 }
 
-/** Загрузка списка колоды из файла (.txt, .dec, .dck): экспорт Moxfield, MTGGoldfish, Arena, MTGO. */
+/** Загрузка списка колоды из файла (.txt, .dec, .dck, .nxt): экспорт Moxfield, MTGGoldfish, Arena, MTGO;
+ *  для «Берсерка» - NXT (строки «3 60161») и списки «3 Название». */
 export default function DeckFileInput({ onText }: { onText: (text: string, name: string) => void }) {
   const [err, setErr] = useState("");
   return (
     <span className="row" style={{ gap: 8 }}>
       <label className="btn" style={{ margin: 0, cursor: "pointer", display: "inline-flex", alignItems: "center" }}>
         Выбрать файл .txt
-        <input type="file" accept=".txt,.dec,.dck,.dek,text/plain" style={{ display: "none" }} onChange={async (e) => {
+        <input type="file" accept=".txt,.dec,.dck,.dek,.nxt,text/plain" style={{ display: "none" }} onChange={async (e) => {
           const f = e.target.files?.[0];
           e.target.value = "";
           if (!f) return;

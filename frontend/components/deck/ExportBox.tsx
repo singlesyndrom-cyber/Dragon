@@ -5,7 +5,8 @@ import { Row, exportText } from "@/lib/decks";
 
 /** Экспорт списка: текст для Moxfield / MTGGoldfish / Arena или MTGO; копировать или скачать .txt. */
 export default function ExportBox({ rows, name }: { rows: Row[]; name: string }) {
-  const [style, setStyle] = useState<"text" | "mtgo">("text");
+  const bk = rows.some((r) => r.card?.bk);
+  const [style, setStyle] = useState<"text" | "mtgo" | "nxt">(bk ? "nxt" : "text");
   const [copied, setCopied] = useState(false);
   const [prints, setPrints] = useState(true);
   const hasPrints = rows.some((r) => r.card?.print);
@@ -29,8 +30,17 @@ export default function ExportBox({ rows, name }: { rows: Row[]; name: string })
     <div>
       <div className="row">
         <select value={style} onChange={(e) => setStyle(e.target.value as any)} aria-label="Формат экспорта" style={{ width: "auto" }}>
-          <option value="text">Moxfield, MTGGoldfish, Arena</option>
-          <option value="mtgo">MTGO</option>
+          {bk ? (
+            <>
+              <option value="nxt">NXT (коды карт)</option>
+              <option value="mtgo">Список «3 Название»</option>
+            </>
+          ) : (
+            <>
+              <option value="text">Moxfield, MTGGoldfish, Arena</option>
+              <option value="mtgo">MTGO</option>
+            </>
+          )}
         </select>
         {style === "text" && hasPrints ? (
           <label className="check" style={{ margin: 0 }}>
