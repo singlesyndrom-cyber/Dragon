@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import Nav from "@/components/Nav";
 import { AuthProvider } from "@/lib/auth";
 import "./globals.css";
@@ -26,8 +27,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Nav />
           <main className="wrap">{children}</main>
           <footer className="footer">
-            <div className="wrap">
-              Dragon — площадка для клубов и магазинов настольных игр. Сделки на аукционе проходят напрямую между игроками.
+            <div className="wrap footer-row">
+              <span>Dragon — площадка для клубов и магазинов настольных игр. Сделки на аукционе проходят напрямую между игроками.</span>
+              <nav aria-label="О сайте" className="footer-links">
+                <Link href="/about">О проекте: данные и разработка</Link>
+                <a href="/guides/dragon-mtg.pdf" target="_blank" rel="noopener">Путеводитель MTG</a>
+                <a href="/guides/dragon-berserk.pdf" target="_blank" rel="noopener">Путеводитель «Берсерк»</a>
+                <a href="/guides/dragon-publisher.pdf" target="_blank" rel="noopener">Для издателей</a>
+              </nav>
             </div>
           </footer>
         </AuthProvider>

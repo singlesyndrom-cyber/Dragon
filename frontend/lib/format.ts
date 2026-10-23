@@ -22,7 +22,7 @@ export const CONDITIONS: Record<string, string> = {
 
 export const WEEKDAYS = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"];
 
-const TZ = "Europe/Moscow";
+export const TZ = "Europe/Moscow";
 
 export function dateTime(v?: string | null): string {
   if (!v) return "—";

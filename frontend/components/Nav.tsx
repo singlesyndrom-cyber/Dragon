@@ -21,7 +21,7 @@ export default function Nav() {
   return (
     <header className="top">
       <div className="wrap">
-        <Link href="/" className="brand">Dragon</Link>
+        <Link href="/" className="brand"><img src="/icon-192.png" alt="" width={32} height={32} />Dragon</Link>
         <nav className="nav" aria-label="Разделы">
           {LINKS.map(([href, label]) => (
             <Link key={href} href={href} aria-current={path.startsWith(href) ? "page" : undefined}>{label}</Link>

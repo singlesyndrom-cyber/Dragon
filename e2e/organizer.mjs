@@ -60,6 +60,8 @@ try {
     const ap = await browser.newPage({ viewport: { width: 1200, height: 900 } });
     ap.on("pageerror", (e) => errors.push(e.message));
     await ap.goto(BASE + "/");
+    await visible(ap.getByRole("heading", { name: "Как это работает" }), "главная для гостя: шаги для новичков");
+    await visible(ap.getByRole("heading", { name: "Сегодня и на неделе" }), "главная: расписание на неделю");
     await ap.evaluate((tok) => localStorage.setItem("dragon_token", tok), adm.access_token);
     await ap.goto(BASE + "/admin");
     await visible(ap.getByRole("heading", { name: "Заявки на статус «Создатель Клуба»" }), "в админке есть раздел заявок");
