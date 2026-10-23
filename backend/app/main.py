@@ -8,7 +8,7 @@ from sqlalchemy.exc import InterfaceError, OperationalError
 from .config import settings
 from .db import engine
 from .schema import sync_schema
-from . import system
+from . import scryfall, system
 from .routers import (admin_users, auctions, auth, cards, clubs, creators, decks, edh, leagues, meta, news, outbox, players,
                       system as system_api, tables, tournaments)
 
@@ -22,6 +22,7 @@ async def lifespan(app: FastAPI):
             try:
                 async with engine.begin() as conn:
                     await conn.run_sync(sync_schema)   # новые таблицы и колонки без пересоздания базы
+                    await scryfall.clear_fake_russian(conn)
                 break
             except (OSError, InterfaceError, OperationalError) as e:
                 if attempt == 29:

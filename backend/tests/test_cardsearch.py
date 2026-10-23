@@ -154,3 +154,16 @@ async def test_sort_paging_and_games(client):
     assert item["power"] == "4" and item["colors"] == ["W", "U", "B", "G"] and item["prices"]["usd"] == "15"
     sets = {s["code"]: s for s in (await c.get("/cards/sets")).json()}
     assert set(sets) == {"c16", "clu", "cmm", "dom", "lea", "mm3"} and sets["cmm"]["name"] == "Commander Masters"
+
+
+@needs_db
+async def test_fake_russian_names_cleared(client):
+    from app.scryfall import clear_fake_russian
+    async with SessionLocal() as s:
+        s.add(Card(game="mtg", external_id="boom", name="Boom // Bust", name_lower="boom // bust", name_front="boom",
+                   name_ru="Boom // Bust", name_ru_lower="boom // bust", name_ru_front="boom", extra={}))
+        await s.commit()
+        assert await clear_fake_russian(await s.connection()) == 1
+        await s.commit()
+    assert "Boom // Bust" not in await names(client, "is:russian")
+    assert await names(client, "кольцо") == ["Sol Ring"]           # настоящие переводы на месте

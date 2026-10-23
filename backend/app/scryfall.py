@@ -182,8 +182,19 @@ async def _apply_russian(session, ru: dict[str, dict]) -> int:
     conn = await session.connection()
     for i in range(0, len(rows), 2000):
         await conn.execute(stmt, rows[i:i + 2000])
+    await clear_fake_russian(conn)
     await session.commit()
     return len(rows)
+
+
+CLEAR_FAKE_RU = text("UPDATE cards SET name_ru = NULL, name_ru_lower = NULL, name_ru_front = NULL "
+                     "WHERE game = 'mtg' AND name_ru_lower = name_lower")
+
+
+async def clear_fake_russian(conn) -> int:
+    """В части источников у split/двусторонних карт «русское» название = английское. Это не перевод: убираем,
+    чтобы название не дублировалось, а поиск is:russian не считал такие карты русскими."""
+    return (await conn.execute(CLEAR_FAKE_RU)).rowcount
 
 
 async def sync(trigger: str = "admin", client: httpx.AsyncClient | None = None, russian: bool = True) -> SyncRun:
