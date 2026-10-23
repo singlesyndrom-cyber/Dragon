@@ -6,6 +6,7 @@ import ConfirmButton from "@/components/ConfirmButton";
 import { Status, useAction } from "@/components/Form";
 import Guard from "@/components/Guard";
 import { api } from "@/lib/api";
+import { viaSite } from "@/lib/img";
 
 export default function NoticeImagesPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -63,7 +64,7 @@ function ImageCard({ img, games, base, onChange }: { img: Img; games: Record<str
   const patch = (body: any) => run(() => api(`${base}/${img.id}`, { method: "PATCH", body })).then(onChange);
   return (
     <figure className={`imgcard ${img.enabled ? "" : "off"}`}>
-      <img src={img.preview} alt={img.card_name || "Картинка оповещения"} loading="lazy" />
+      <img src={viaSite(img.preview) || ""} alt={img.card_name || "Картинка оповещения"} loading="lazy" />
       <figcaption className="stack small">
         <span>{img.kind === "card" ? (img.credit || img.card_name) : `Загружена${img.width ? ` · ${img.width}×${img.height}` : ""}`}</span>
         <select value={img.game} disabled={busy} onChange={(e) => patch({ game: e.target.value })} aria-label="Игра">
@@ -143,7 +144,7 @@ function CardArt({ base, games, onDone }: { base: string; games: Record<string, 
         {items.map((c) => (
           <button key={c.id} type="button" title={`Добавить арт «${c.name}»`}
             onClick={() => run(async () => { await api(`${base}/card`, { body: { card_id: c.id, game: "mtg" } }); onDone(); }, `Добавлен арт «${c.name}»`)}>
-            <img src={c.image_url.replace("/normal/", "/art_crop/")} alt="" loading="lazy" />
+            <img src={viaSite(c.image_url.replace("/normal/", "/art_crop/")) || ""} alt="" loading="lazy" />
             <span className="small">{c.name_ru || c.name}</span>
           </button>
         ))}

@@ -31,6 +31,21 @@ ORACLE = [
                      "oracle_text": "Upkeep", "image_uris": {"normal": "d1.jpg"}},
                     {"name": "Insectile Aberration", "type_line": "Creature — Insect", "oracle_text": "Flying"}]},
 ]
+SOL1 = "0a1b2c3d-0000-4000-8000-000000000001"
+DEFAULT = [   # выгрузка «Default Cards»: по записи на каждое издание
+    {"id": SOL1, "oracle_id": "o-sol", "name": "Sol Ring", "layout": "normal", "set": "cmm", "set_name": "Commander Masters",
+     "collector_number": "410", "rarity": "uncommon", "released_at": "2023-08-04", "artist": "Mike Bierek",
+     "image_uris": {"normal": f"https://cards.scryfall.io/normal/front/0/a/{SOL1}.jpg"}, "prices": {"usd": "1.20"},
+     "finishes": ["nonfoil", "foil"]},
+    {"id": "sol-c21", "oracle_id": "o-sol", "name": "Sol Ring", "layout": "normal", "set": "c21", "set_name": "Commander 2021",
+     "collector_number": "263", "rarity": "uncommon", "released_at": "2021-04-23", "artist": "Mike Bierek",
+     "prices": {"usd": "2.50", "usd_foil": None}, "finishes": ["nonfoil"]},
+    {"id": "sol-arena", "oracle_id": "o-sol", "set": "pz2", "digital": True},       # только цифровая - пропускаем
+    {"id": "tok-1", "oracle_id": "o-tok", "set": "tm3c", "layout": "token"},        # жетон - пропускаем
+    {"id": "del-mid", "oracle_id": "o-del", "set": "mid", "set_name": "Innistrad: Midnight Hunt", "layout": "transform",
+     "released_at": "2021-09-24", "card_faces": [{"image_uris": {"normal": "https://cards.scryfall.io/normal/front/d.jpg"}},
+                                                 {"image_uris": {"normal": "https://cards.scryfall.io/normal/back/d.jpg"}}]},
+]
 RU_PAGE1 = {"has_more": True, "next_page": "https://api.scryfall.com/cards/search?q=lang%3Aru&page=2",
             "data": [{"lang": "ru", "oracle_id": "o-sol", "printed_name": "Кольцо Сола",
                       "printed_type_line": "Артефакт", "printed_text": "{T}: добавьте {C}{C}."}]}
@@ -64,6 +79,9 @@ def fake_scryfall(seen: list):
         if url == "https://data.test/oracle.jsonl.gz":
             body = "\n".join(json.dumps(c, ensure_ascii=False) for c in ORACLE).encode()
             return httpx.Response(200, content=gzip.compress(body), headers={"content-type": "application/gzip"})
+        if url == "https://data.test/default.jsonl.gz":
+            body = "\n".join(json.dumps(c) for c in DEFAULT).encode()
+            return httpx.Response(200, content=gzip.compress(body))
         if request.url.path == "/cards/search":
             return httpx.Response(200, json=RU_PAGE2 if request.url.params.get("page") == "2" else RU_PAGE1)
         return httpx.Response(404)
@@ -86,7 +104,7 @@ async def test_sync_search_and_decks(client):
     seen: list = []
     async with fake_scryfall(seen) as http:
         run = await scryfall.sync(trigger="auto", client=http)
-    assert run.error is None and run.cards == 2 and run.russian == 2
+    assert run.error is None and run.cards == 2 and run.russian == 2 and run.prints == 3
     assert seen[0].headers["user-agent"].startswith("DragonTCGPlatform")
     first_search = next(r for r in seen if r.url.path == "/cards/search")
     assert first_search.url.params["q"] == "lang:ru"
@@ -107,6 +125,13 @@ async def test_sync_search_and_decks(client):
     card = (await client.get(f"/cards/{found[0]['id']}")).json()
     assert card["legalities"]["vintage"] == "restricted" and card["prices"] == {"usd": 1.2, "eur": 1.05}
     assert card["text_ru"] == "{T}: добавьте {C}{C}." and card["extra"]["artist"] == "Mike Bierek"
+    # издания: новые сверху, цифровые и жетоны не попали, повторная загрузка не задвоила
+    assert [(p["set"], p["number"]) for p in card["prints"]] == [("cmm", "410"), ("c21", "263")]
+    assert card["prints"][1]["prices"] == {"usd": 2.5} and card["prints"][0]["finishes"] == ["nonfoil", "foil"]
+    found = (await client.get("/cards/search", params={"q": "s:c21", "game": "mtg"})).json()
+    assert [c["name"] for c in found["items"]] == ["Sol Ring"]           # сет ищется по любому изданию
+    sets = (await client.get("/cards/sets", params={"game": "mtg"})).json()
+    assert [x["code"] for x in sets] == ["cmm", "mid", "c21"] and sets[0]["name"] == "Commander Masters"
     dfc = (await client.get(f"/cards/{(await client.get('/cards?q=похититель')).json()[0]['id']}")).json()
     assert len(dfc["extra"]["faces"]) == 2 and dfc["name_ru"] == "Похититель Тайн // Насекомое-Аберрация"
 
@@ -130,7 +155,7 @@ async def test_legacy_json_array_format(client):
         return httpx.Response(404)
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         run = await scryfall.sync(client=http, russian=False)
-    assert run.error is None and run.cards == 2
+    assert run.cards == 2 and run.prints == 0 and "Издания не загружены" in run.error   # карты есть, изданий нет
 
 
 async def test_admin_endpoints_and_lock(client):
@@ -273,3 +298,24 @@ async def test_upload_russian_names_file(client):
     assert row == ("Кольцо Сола", "кольцо сола", "Артефакт", "{T}: добавьте {C}{C}.\nВторая строка")
     bad = await client.post("/admin/cards/russian", files={"file": ("x.txt", b"nothing here", "text/plain")}, headers=h)
     assert bad.status_code == 400
+
+
+async def test_image_proxy_caches(client, tmp_path, monkeypatch):
+    from app.config import settings
+    from app.routers import images
+    calls: list = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return httpx.Response(200, content=b"JPEGDATA")
+    monkeypatch.setattr(settings, "image_cache_dir", str(tmp_path))
+    monkeypatch.setattr(images, "transport", httpx.MockTransport(handler))
+    path = f"/img/normal/front/0/a/{SOL1}.jpg"
+    for _ in range(2):
+        r = await client.get(path)
+        assert r.status_code == 200 and r.content == b"JPEGDATA" and "immutable" in r.headers["cache-control"]
+    assert calls == [f"https://cards.scryfall.io/normal/front/0/a/{SOL1}.jpg"]     # второй раз - с диска
+    assert (await client.get("/img/normal/../../etc/passwd")).status_code == 404
+    assert (await client.get("/img/evil/front/0/a/x.jpg")).status_code == 404
+    r = await client.get("/img/symbol/2U.svg")
+    assert r.status_code == 200 and calls[-1] == "https://svgs.scryfall.io/card-symbols/2U.svg"

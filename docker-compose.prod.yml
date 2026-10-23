@@ -25,7 +25,7 @@ services:
     # DNS для выхода в интернет (VK, Scryfall): Docker по умолчанию шлёт запросы на 8.8.8.8/1.1.1.1, а с хостинга
     # они могут не отвечать. Свои серверы - CONTAINER_DNS1 / CONTAINER_DNS2 в .env
     dns: ["${CONTAINER_DNS1:-77.88.8.8}", "${CONTAINER_DNS2:-77.88.8.1}"]
-    volumes: ["./backups:/backups:ro"]   # админка показывает состояние копий
+    volumes: ["./backups:/backups:ro", "imgcache:/cache"]   # копии (только чтение) и кэш картинок Scryfall
     restart: unless-stopped
 
   bot:   # ровно один экземпляр
@@ -84,6 +84,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  imgcache:   # картинки карт Scryfall, скачанные сервером (можно удалить - скачаются заново)
   pgdata:
   caddy_data:
   caddy_config:

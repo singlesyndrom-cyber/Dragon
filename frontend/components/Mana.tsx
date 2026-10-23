@@ -2,7 +2,7 @@
 const SYM = /\{([^}]+)\}/g;
 
 function symbolUrl(s: string): string {
-  return `https://svgs.scryfall.io/card-symbols/${s.replace(/\//g, "").toUpperCase()}.svg`;
+  return `/api/img/symbol/${s.replace(/\//g, "").toUpperCase()}.svg`;   // через наш сервер: см. lib/img.ts
 }
 
 export default function Mana({ text, size = 16 }: { text?: string | null; size?: number }) {

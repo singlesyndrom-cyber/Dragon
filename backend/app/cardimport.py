@@ -2,6 +2,7 @@
 import hashlib
 import json
 import re
+from datetime import date
 from typing import Any
 
 CANON = ("external_id", "name", "set_code", "set_name", "type_line", "mana_cost", "text", "rarity", "image_url")
@@ -134,6 +135,37 @@ def normalize_scryfall(obj: dict) -> dict | None:
                             for f in faces] if len(faces) > 1 else []},
     }
     return _finalize(card, "mtg")
+
+
+SKIP_LAYOUTS = ("token", "double_faced_token", "emblem", "art_series")
+
+
+def normalize_print(obj: dict) -> dict | None:
+    """Издание карты из выгрузки Scryfall «Default Cards» (одна запись на печать). card_id подставит загрузка
+    по oracle_id. Цифровые (только Arena/MTGO) и служебные карты пропускаем."""
+    faces = obj.get("card_faces") or []
+    oracle = obj.get("oracle_id") or (faces[0].get("oracle_id") if faces else None)
+    if not oracle or not obj.get("id") or not obj.get("set") or obj.get("digital") or obj.get("layout") in SKIP_LAYOUTS:
+        return None
+    f0 = faces[0] if faces else {}
+    uris = obj.get("image_uris") or f0.get("image_uris") or {}
+    back = (faces[1].get("image_uris") or {}).get("normal") if len(faces) > 1 and not obj.get("image_uris") else None
+    released = None
+    if obj.get("released_at"):
+        try:
+            released = date.fromisoformat(obj["released_at"])
+        except ValueError:
+            released = None
+    prices = obj.get("prices") or {}
+    return {
+        "oracle_id": oracle, "scryfall_id": obj["id"], "set_code": obj["set"][:16], "set_name": (obj.get("set_name") or "")[:255] or None,
+        "collector_number": (obj.get("collector_number") or "")[:16] or None, "rarity": obj.get("rarity"),
+        "released_at": released, "lang": (obj.get("lang") or "en")[:8],
+        "artist": (obj.get("artist") or f0.get("artist") or "")[:255] or None,
+        "image_url": uris.get("normal"), "image_large": uris.get("large"), "back_image": back,
+        "prices": {k: _num(prices.get(k)) for k in ("usd", "usd_foil", "eur") if _num(prices.get(k)) is not None},
+        "finishes": obj.get("finishes") or [], "promo": bool(obj.get("promo")), "full_art": bool(obj.get("full_art")),
+    }
 
 
 def normalize_ru(obj: dict) -> dict | None:

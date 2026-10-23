@@ -414,3 +414,12 @@ table.members td { vertical-align: middle; }
 .artpick button { padding: 0; overflow: hidden; display: flex; flex-direction: column; text-align: left; }
 .artpick img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; }
 .artpick span { padding: 4px 6px; overflow-wrap: anywhere; }
+
+/* Издания карты */
+.prints { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto; }
+.prints button { width: 100%; display: grid; grid-template-columns: 52px minmax(0, 1fr) auto auto; gap: 8px; align-items: center;
+  text-align: left; padding: 6px 8px; border-radius: var(--radius-s); border-color: transparent; background: none; }
+.prints button:hover { background: var(--vellum); }
+.prints button.on { background: var(--gilt-soft); border-color: var(--gilt); }
+.prints .pset { font-family: monospace; font-size: 0.8rem; color: var(--muted); }
+.prints .pname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.875rem; }

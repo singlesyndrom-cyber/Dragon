@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import Mana from "@/components/Mana";
 import { api } from "@/lib/api";
+import { viaSite } from "@/lib/img";
 import { useAuth } from "@/lib/auth";
 import { DECK_FORMATS, formatTitle } from "@/lib/decks";
 import { dateOnly } from "@/lib/format";
@@ -64,7 +65,7 @@ function Catalogue() {
             const ci: string[] = Array.from(new Set(d.commanders.flatMap((c: any) => c.color_identity)));
             return (
               <Link key={d.id} href={`/decks/${d.id}`} className="deckcard">
-                {cmd?.image_url ? <img src={cmd.image_url} alt="" loading="lazy" /> : <span className="noimg">{formatTitle(d.format)}</span>}
+                {cmd?.image_url ? <img src={viaSite(cmd.image_url) || ""} alt="" loading="lazy" /> : <span className="noimg">{formatTitle(d.format)}</span>}
                 <span className="cap">
                   <b>{d.name}</b>
                   <span className="muted small">{formatTitle(d.format)} · {d.author}</span>

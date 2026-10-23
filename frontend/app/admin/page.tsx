@@ -109,7 +109,7 @@ function Scryfall() {
         <p className="small">
           {st.running ? "Идёт загрузка…" : last ? (
             <>Последняя: {dateTime(last.finished || last.started)} ({last.trigger === "auto" ? "автоматически" : "вручную"}),
-              карт {last.cards.toLocaleString("ru-RU")}, русских названий {last.russian.toLocaleString("ru-RU")}.</>
+              карт {last.cards.toLocaleString("ru-RU")}, изданий {(last.prints || 0).toLocaleString("ru-RU")}, русских названий {last.russian.toLocaleString("ru-RU")}.</>
           ) : "Ещё не загружалась."}
           {last?.error ? <span className="loss"> {last.error}</span> : null}
         </p>

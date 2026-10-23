@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { viaSite } from "@/lib/img";
 
 /** Картинка карты; у двусторонних - кнопка «Перевернуть» с анимацией переворота.
  *  Кнопка внутри ссылки (плитка Картотеки) не открывает карту: клик гасится. */
-export default function FlipCard({ front, back, alt, className, lazy }: {
+export default function FlipCard({ front: frontUrl, back: backUrl, alt, className, lazy }: {
   front?: string | null; back?: string | null; alt: string; className?: string; lazy?: boolean;
 }) {
+  const front = viaSite(frontUrl);
+  const back = viaSite(backUrl);
   const [flipped, setFlipped] = useState(false);
   useEffect(() => setFlipped(false), [front]);
   if (!front) return null;

@@ -161,6 +161,31 @@ class Publisher(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class CardPrint(Base):
+    """Издание (печать) карты MTG: сет, номер, редкость, картинка, цена. Карта (Card) - одна на oracle_id,
+    изданий у неё может быть десятки. Источник - выгрузка Scryfall «Default Cards»."""
+    __tablename__ = "card_prints"
+    __table_args__ = (Index("ix_card_prints_set", "set_code"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    card_id: Mapped[int] = mapped_column(ForeignKey("cards.id", ondelete="CASCADE"), index=True)
+    scryfall_id: Mapped[str] = mapped_column(String(64), unique=True)
+    set_code: Mapped[str] = mapped_column(String(16))
+    set_name: Mapped[str | None] = mapped_column(String(255))
+    collector_number: Mapped[str | None] = mapped_column(String(16))
+    rarity: Mapped[str | None] = mapped_column(String(16))
+    released_at: Mapped[date | None] = mapped_column(Date)
+    lang: Mapped[str] = mapped_column(String(8), default="en")
+    artist: Mapped[str | None] = mapped_column(String(255))
+    image_url: Mapped[str | None] = mapped_column(String(512))
+    image_large: Mapped[str | None] = mapped_column(String(512))
+    back_image: Mapped[str | None] = mapped_column(String(512))
+    prices: Mapped[dict | None] = mapped_column(_JSONB)
+    finishes: Mapped[list | None] = mapped_column(_JSONB)               # nonfoil / foil / etched
+    promo: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    full_art: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+
+
 class NoticeImage(Base):
     """Картинка для оповещений клуба. purpose: announce - анонсы турниров; other - итоги и новости.
     game: mtg / berserk / any. Загруженная хранится здесь (уменьшенный JPEG), арт карты - ссылкой на Scryfall."""
@@ -592,6 +617,7 @@ class SyncRun(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cards: Mapped[int] = mapped_column(Integer, default=0)
     russian: Mapped[int] = mapped_column(Integer, default=0)
+    prints: Mapped[int] = mapped_column(Integer, default=0, server_default="0")   # издания (печати) карт
     error: Mapped[str | None] = mapped_column(Text)
 
 

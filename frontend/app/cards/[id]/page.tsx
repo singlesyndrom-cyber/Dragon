@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import FlipCard from "@/components/FlipCard";
+import CardPrints from "@/components/CardPrints";
 import Mana from "@/components/Mana";
 import WotcNotice from "@/components/WotcNotice";
 import { sget } from "@/lib/api";
-import { qv, searchHref } from "@/lib/cards";
+import { searchHref } from "@/lib/cards";
 
 const FORMATS: [string, string][] = [
   ["commander", "Commander (EDH)"], ["standard", "Standard"], ["pioneer", "Pioneer"], ["modern", "Modern"],
@@ -13,7 +13,6 @@ const FORMATS: [string, string][] = [
 const LEGAL: Record<string, [string, string]> = {
   legal: ["разрешена", "win"], not_legal: ["нет", "muted"], banned: ["запрещена", "loss"], restricted: ["ограничена", "gold"],
 };
-const RARITY: Record<string, string> = { common: "обычная", uncommon: "необычная", rare: "редкая", mythic: "мифическая", special: "особая", bonus: "бонусная" };
 
 function OracleText({ text }: { text?: string | null }) {
   if (!text) return null;
@@ -27,7 +26,6 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
   const x = c.extra || {};
   const faces: any[] = x.faces || [];
   const pt = x.power != null ? `${x.power}/${x.toughness}` : x.loyalty ? `верность ${x.loyalty}` : null;
-  const prices = c.prices || {};
 
   const typeQuery = (c.type || "").split(" — ")[0].split(/\s+/).filter(Boolean).map((w: string) => `t:${w}`).join(" ");
   return (
@@ -81,17 +79,7 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
           ) : null}
         </div>
         <aside className="stack">
-          <FlipCard front={c.image_url} back={faces[1]?.image && faces[1].image !== faces[0]?.image ? faces[1].image : null}
-            alt={c.name} className="cardimg" />
-          <dl className="facts">
-            {c.set_name ? (<><dt>Сет</dt><dd><Link href={searchHref(`s:${c.set}`, c.game)}>{c.set_name}</Link></dd></>) : null}
-            {c.rarity ? (<><dt>Редкость</dt><dd>{RARITY[c.rarity] || c.rarity}</dd></>) : null}
-            {x.artist ? (<><dt>Художник</dt><dd><Link href={searchHref(`a:${qv(x.artist)}`, c.game)}>{x.artist}</Link></dd></>) : null}
-            {prices.usd || prices.eur ? (
-              <><dt>Цена</dt><dd className="num">{[prices.usd && `$${prices.usd}`, prices.eur && `€${prices.eur}`].filter(Boolean).join(", ")}
-                {prices.usd_foil ? <span className="muted"> (фойл ${prices.usd_foil})</span> : null}</dd></>
-            ) : null}
-          </dl>
+          <CardPrints card={c} backFallback={faces[1]?.image && faces[1].image !== faces[0]?.image ? faces[1].image : null} />
           {c.scryfall_uri ? <a href={c.scryfall_uri} className="small">Карта на Scryfall</a> : null}
         </aside>
       </div>

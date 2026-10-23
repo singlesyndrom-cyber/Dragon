@@ -17,9 +17,10 @@ from datetime import datetime, timedelta, timezone
 import httpx
 from sqlalchemy import bindparam, func, select, text
 
-from .cardimport import normalize_ru, normalize_scryfall
+from .cardimport import normalize_print, normalize_ru, normalize_scryfall
+from .config import settings
 from .db import SessionLocal
-from .models import Card, SyncRun
+from .models import Card, CardPrint, SyncRun
 
 log = logging.getLogger("scryfall")
 
@@ -34,6 +35,21 @@ REFRESH_EVERY = timedelta(days=7)
 
 class SyncBusy(Exception):
     pass
+
+
+def proxy() -> str | None:
+    """Прокси до Scryfall: auto - тот же, что для Telegram (если задан); direct - без прокси."""
+    p = (settings.scryfall_proxy or "").strip()
+    if p in ("", "direct", "none"):
+        return None
+    if p == "auto":
+        return settings.telegram_proxy or None
+    return p
+
+
+def new_client(**kw) -> httpx.AsyncClient:
+    return httpx.AsyncClient(headers=HEADERS, timeout=httpx.Timeout(60, read=300), follow_redirects=True,
+                             proxy=proxy(), **kw)
 
 
 def explain(e: Exception) -> str:
@@ -109,6 +125,51 @@ async def _download_oracle(client: httpx.AsyncClient) -> list[dict]:
     if not cards:
         raise ValueError("Выгрузка Scryfall скачалась, но карт в ней не найдено")
     return cards
+
+
+PRINT_BATCH = 1000                         # 1000 строк × 17 полей - в пределах 32767 параметров asyncpg
+
+
+async def _download_bulk(client: httpx.AsyncClient, kind: str, path: str) -> None:
+    meta = (await client.get(f"{API}/bulk-data")).raise_for_status().json()
+    uri = bulk_url(meta, kind)
+    with open(path, "wb") as f:
+        async with client.stream("GET", uri) as resp:
+            resp.raise_for_status()
+            async for chunk in resp.aiter_bytes():
+                f.write(chunk)
+
+
+async def _sync_prints(client: httpx.AsyncClient, session) -> int:
+    """Все издания карт (выгрузка «Default Cards», ~100 тыс.): скачиваем во временный файл и пишем пачками,
+    не держа весь файл в памяти. Привязка к карте - по oracle_id."""
+    from itertools import islice
+
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    ids = dict((await session.execute(select(Card.external_id, Card.id).where(Card.game == "mtg"))).all())
+    total = 0
+    with tempfile.NamedTemporaryFile(suffix=".bulk") as tmp:
+        await _download_bulk(client, "default_cards", tmp.name)
+        it = iter_bulk(tmp.name)
+        while True:
+            chunk = await asyncio.to_thread(lambda: list(islice(it, PRINT_BATCH)))   # чтение файла - в потоке
+            if not chunk:
+                break
+            rows = []
+            for obj in chunk:
+                p = normalize_print(obj)
+                cid = ids.get(p.pop("oracle_id")) if p else None
+                if cid:
+                    rows.append({**p, "card_id": cid})
+            if not rows:
+                continue
+            stmt = pg_insert(CardPrint).values(rows)
+            stmt = stmt.on_conflict_do_update(index_elements=[CardPrint.scryfall_id], set_={
+                c: stmt.excluded[c] for c in rows[0] if c != "scryfall_id"})
+            await session.execute(stmt)
+            await session.commit()
+            total += len(rows)
+    return total
 
 
 SEARCH_PAUSE = 0.6                         # поиск у Scryfall строже: не больше ~2 запросов в секунду
@@ -212,19 +273,27 @@ async def sync(trigger: str = "admin", client: httpx.AsyncClient | None = None, 
                 s.add(run)
                 await s.commit()
                 own = client is None
-                http = client or httpx.AsyncClient(headers=HEADERS, timeout=httpx.Timeout(60, read=300),
-                                                   follow_redirects=True)
+                http = client or new_client()
                 try:
                     rows = await _download_oracle(http)
                     run.cards = await upsert_cards(s, rows)
+                    del rows
+                    errors = []
+                    try:
+                        run.prints = await _sync_prints(http, s)
+                    except Exception as e:  # noqa: BLE001  без изданий база карт всё равно полезна
+                        await s.rollback()
+                        errors.append(f"Издания не загружены. {explain(e)}")
+                        log.exception("scryfall prints failed")
                     if russian:
                         try:
                             run.russian = await _apply_russian(s, await _fetch_russian(http))
                         except PartialRussian as p:      # часть получили - применяем, остальное в следующий раз
                             run.russian = await _apply_russian(s, p.got)
-                            run.error = f"Русские названия загружены частично. {explain(p.cause)}"[:2000]
+                            errors.append(f"Русские названия загружены частично. {explain(p.cause)}")
                         except httpx.HTTPError as e:     # без русских названий база всё равно полезна
-                            run.error = f"Русские названия не загружены. {explain(e)}"[:2000]
+                            errors.append(f"Русские названия не загружены. {explain(e)}")
+                    run.error = " ".join(errors)[:2000] or None
                 except Exception as e:  # noqa: BLE001
                     await s.rollback()
                     run.error = explain(e)[:2000]

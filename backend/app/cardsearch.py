@@ -22,7 +22,7 @@
 import re
 from dataclasses import dataclass, field
 
-from sqlalchemy import Float, and_, case, cast, false, func, not_, or_, true
+from sqlalchemy import Float, and_, case, cast, false, func, not_, or_, select, true
 from sqlalchemy.sql.elements import ColumnElement
 
 from .cardimport import norm_name
@@ -225,8 +225,10 @@ def _term(t: _Tok, p: Parsed) -> ColumnElement | None:
         names = {"<": RARITY_NAMES[:r], "<=": RARITY_NAMES[:r + 1], ">": RARITY_NAMES[r + 1:],
                  ">=": RARITY_NAMES[r:], "!=": [x for x in RARITY_NAMES if x != RARITY_NAMES[r]]}.get(op, [RARITY_NAMES[r]])
         return Card.rarity.in_(names) if names else false()
-    if key == "set":
-        return func.lower(Card.set_code) == v.lower()
+    if key == "set":   # карта есть в сете, если хоть одно её издание оттуда
+        from .models import CardPrint
+        return or_(func.lower(Card.set_code) == v.lower(),
+                   Card.id.in_(select(CardPrint.card_id).where(CardPrint.set_code == v.lower())))
     if key in ("format", "banned", "restricted"):
         fmt = FORMATS.get(v.lower())
         if not fmt:

@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     public_base_url: str = ""           # адрес сайта для ссылок в сообщениях
     app_timezone: str = "Europe/Moscow"
     scryfall_auto_sync: bool = True     # бот сам загружает базу MTG при пустой базе и раз в неделю
+    # прокси до Scryfall (с некоторых хостингов он не отвечает): auto - тот же, что для Telegram;
+    # direct - без прокси; иначе адрес socks5://… или http://…
+    scryfall_proxy: str = "auto"
+    image_cache_dir: str = "/cache/images"   # картинки карт Scryfall, скачанные сервером (раздаются через /img)
+    image_cache_max_gb: float = 5.0
     # почта для восстановления пароля; пусто - письма пишутся в лог бэкенда
     backups_dir: str = "/backups"       # куда контейнер backup кладёт копии (смонтировано только для чтения)
     monitor_enabled: bool = True        # письма администраторам, если бот молчит или очередь сообщений встала

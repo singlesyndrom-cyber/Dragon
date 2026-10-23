@@ -11,7 +11,7 @@ from .. import cardsearch, scryfall
 from ..cardimport import extract_rows, norm_name, normalize_generic
 from ..db import get_session
 from ..deps import require_admin
-from ..models import Card, User
+from ..models import Card, CardPrint, User
 
 router = APIRouter(tags=["cards"])
 MAX_UPLOAD = 50 * 1024 * 1024
@@ -31,6 +31,13 @@ async def upsert_cards(session: AsyncSession, rows: list[dict]) -> int:
 
 
 # ---------- публичный поиск ----------
+def _print(p: CardPrint) -> dict:
+    return {"id": p.id, "set": p.set_code, "set_name": p.set_name, "number": p.collector_number, "rarity": p.rarity,
+            "released_at": p.released_at, "artist": p.artist, "image_url": p.image_url, "image_large": p.image_large,
+            "back_image": p.back_image, "prices": p.prices or {}, "finishes": p.finishes or [], "promo": p.promo,
+            "full_art": p.full_art, "lang": p.lang}
+
+
 def _brief(c: Card) -> dict:
     return {"id": c.id, "game": c.game, "name": c.name, "name_ru": c.name_ru, "set": c.set_code,
             "type": c.type_line, "mana_cost": c.mana_cost, "rarity": c.rarity, "image_url": c.image_url}
@@ -61,7 +68,8 @@ async def search_cards(q: str = "", game: str | None = None, set_code: str | Non
 async def card_stats(session: AsyncSession = Depends(get_session)):
     rows = (await session.execute(select(Card.game, func.count(), func.count(Card.name_ru)).group_by(Card.game))).all()
     last = await scryfall.last_run(session)
-    return {"games": {g: {"cards": n, "russian": ru} for g, n, ru in rows},
+    prints = (await session.execute(select(func.count()).select_from(CardPrint))).scalar_one()
+    return {"games": {g: {"cards": n, "russian": ru, **({"prints": prints} if g == "mtg" else {})} for g, n, ru in rows},
             "scryfall_updated": last.finished_at if last and last.cards else None}
 
 
@@ -105,6 +113,13 @@ async def search_cards_query(q: str = "", game: str | None = None, order: str | 
 @router.get("/cards/sets")
 async def card_sets(game: str = "mtg", session: AsyncSession = Depends(get_session)):
     """Сеты игры для расширенного поиска: код, название, сколько карт."""
+    if game == "mtg" and (await session.execute(select(CardPrint.id).limit(1))).first():
+        # все сеты, где карты печатались: новые сверху
+        rows = (await session.execute(select(CardPrint.set_code, func.max(CardPrint.set_name),
+                                             func.count(func.distinct(CardPrint.card_id)), func.max(CardPrint.released_at))
+                                      .group_by(CardPrint.set_code)
+                                      .order_by(func.max(CardPrint.released_at).desc().nulls_last()))).all()
+        return [{"code": s, "name": n or s, "cards": k, "released": r} for s, n, k, r in rows]
     rows = (await session.execute(select(Card.set_code, func.max(Card.set_name), func.count())
                                   .where(Card.game == game, Card.set_code.is_not(None))
                                   .group_by(Card.set_code).order_by(func.coalesce(func.max(Card.set_name), Card.set_code)))).all()
@@ -116,10 +131,13 @@ async def get_card(card_id: int, session: AsyncSession = Depends(get_session)):
     c = await session.get(Card, card_id)
     if not c:
         raise HTTPException(404, "Карта не найдена")
+    prints = (await session.execute(select(CardPrint).where(CardPrint.card_id == c.id)
+                                    .order_by(CardPrint.released_at.desc().nulls_last(), CardPrint.collector_number)
+                                    .limit(400))).scalars().all()
     return {**_brief(c), "set_name": c.set_name, "text": c.text, "type_ru": c.type_ru, "text_ru": c.text_ru,
             "cmc": c.cmc, "commander_legal": c.commander_legal, "is_game_changer": c.is_game_changer,
             "legalities": c.legalities or {}, "prices": c.prices or {}, "scryfall_uri": c.scryfall_uri,
-            "extra": c.extra or {}}
+            "extra": c.extra or {}, "prints": [_print(p) for p in prints]}
 
 
 # ---------- админка: Scryfall ----------
@@ -145,7 +163,7 @@ async def sync_status(admin: User = Depends(require_admin), session: AsyncSessio
     return {"running": await scryfall.is_running(session),
             "last": None if not last else {"started": last.started_at, "finished": last.finished_at,
                                            "trigger": last.trigger, "cards": last.cards,
-                                           "russian": last.russian, "error": last.error}}
+                                           "russian": last.russian, "prints": last.prints or 0, "error": last.error}}
 
 
 # ---------- админка: «Берсерк» и любые другие JSON-базы ----------
