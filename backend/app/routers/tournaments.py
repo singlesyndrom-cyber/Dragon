@@ -39,6 +39,7 @@ class TournamentIn(BaseModel):
     self_registration: bool = True       # False - игроков записывает только организатор
     max_players: int | None = Field(default=None, ge=2, le=512)
     league_id: int | None = None
+    silent: bool = False                 # тестовый турнир без оповещений
 
 
 class TournamentPatch(BaseModel):
@@ -51,6 +52,7 @@ class TournamentPatch(BaseModel):
     self_registration: bool | None = None
     max_players: int | None = Field(default=None, ge=2, le=512)
     league_id: int | None = None
+    silent: bool | None = None
 
 
 class PlayerAdd(BaseModel):
@@ -59,6 +61,7 @@ class PlayerAdd(BaseModel):
     player_no: int | None = Field(default=None, ge=1)
     nickname: str | None = Field(default=None, min_length=2, max_length=64)
     bracket: int = Field(default=2, ge=1, le=5)
+    deck_id: int | None = None           # гостю (без аккаунта): деклист из колод самого организатора
 
 
 class DropIn(BaseModel):
@@ -160,7 +163,8 @@ def _new_tournament(data: TournamentIn, user: User, starts_at: datetime, name: s
     return Tournament(club_id=data.club_id, name=(name or data.name).strip(), game=data.game, format=data.format,
                       rounds_total=rounds, created_by=user.id, description=data.description.strip(),
                       deck_policy=data.deck_policy, self_registration=data.self_registration,
-                      max_players=data.max_players, league_id=data.league_id, starts_at=starts_at, announced=False)
+                      max_players=data.max_players, league_id=data.league_id, starts_at=starts_at, announced=False,
+                      silent=data.silent)
 
 
 class SeriesIn(BaseModel):
@@ -207,7 +211,7 @@ def _t_out(t: Tournament, club: Club | None, players: int | None = None) -> dict
     return {"id": t.id, "club_id": t.club_id, "club": club.name if club else None, "club_slug": club.slug if club else None,
             "name": t.name, "game": t.game, "format": t.format, "status": t.status, "round": t.current_round,
             "rounds_total": t.rounds_total, "starts_at": t.starts_at, "players": players,
-            "league_id": t.league_id, "deck_policy": t.deck_policy, "self_registration": t.self_registration,
+            "league_id": t.league_id, "deck_policy": t.deck_policy, "self_registration": t.self_registration, "silent": t.silent,
             "max_players": t.max_players}
 
 
@@ -264,7 +268,7 @@ async def update_tournament(tid: int, data: TournamentPatch, user: User = Depend
         when = _aware(f["starts_at"]) if f.get("starts_at") else t.starts_at
         await _check_league(session, league_id, t.club_id, t.game, t.format, when)
         t.league_id = league_id
-    for k in ("name", "description", "deck_policy", "self_registration", "max_players"):
+    for k in ("name", "description", "deck_policy", "self_registration", "max_players", "silent"):
         if k in f and (f[k] is not None or k == "max_players"):
             setattr(t, k, f[k].strip() if isinstance(f[k], str) and k in ("name", "description") else f[k])
     if "rounds" in f and t.format != TournamentFormat.edh:
@@ -322,9 +326,17 @@ async def add_player(tid: int, data: PlayerAdd, user: User = Depends(current_use
     if (await session.execute(select(TournamentPlayer).where(
             TournamentPlayer.tournament_id == tid, TournamentPlayer.user_id == player.id))).scalar_one_or_none():
         raise HTTPException(409, f"{player.nickname} уже в списке")
+    deck_id = None
+    if data.deck_id is not None:
+        if not player.is_guest:
+            raise HTTPException(400, "Колоду организатора можно указать только гостю: игрок с аккаунтом подаёт свою")
+        deck = await session.get(Deck, data.deck_id)
+        if not deck or deck.user_id != user.id or deck.game != t.game:
+            raise HTTPException(400, "Укажите свою колоду той же игры, что и турнир")
+        deck_id = deck.id
     await _ensure_member(session, t.club_id, player.id)
     session.add(TournamentPlayer(tournament_id=tid, user_id=player.id, seed=random.randint(0, 10**9),
-                                 bracket=data.bracket, checked_in=late_edh))
+                                 bracket=data.bracket, checked_in=late_edh, deck_id=deck_id))
     await session.commit()
     return {"user_id": player.id, "nickname": player.nickname, "guest": player.is_guest,
             "player_no": None if player.is_guest else player.player_no}

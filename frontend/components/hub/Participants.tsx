@@ -15,6 +15,12 @@ export default function Participants({ t, reload }: { t: any; reload: () => Prom
   const [bracket, setBracket] = useState(2);
   const [mergeFor, setMergeFor] = useState<number | null>(null);
   const [email, setEmail] = useState("");
+  const [myDecks, setMyDecks] = useState<any[]>([]);
+  const [guestDeck, setGuestDeck] = useState("");
+  useEffect(() => {
+    if (t.deck_policy === "none") return;
+    api<any[]>("/decks/mine").then((ds) => setMyDecks(ds.filter((d) => d.game === t.game))).catch(() => {});
+  }, [t.game, t.deck_policy]);
   const input = useRef<HTMLInputElement>(null);
   // отметка «пришёл» переключается сразу, не дожидаясь сервера; при ошибке возвращается назад
   const [arrived, setArrived] = useState<Record<number, boolean>>({});
@@ -55,7 +61,7 @@ export default function Participants({ t, reload }: { t: any; reload: () => Prom
           if (!q.trim()) return;
           if (exact) add({ user_id: exact.user_id }, exact.nickname);
           else if (isNumber) add({ player_no: +term }, `№${term}`);
-          else add({ nickname: q.trim() }, q.trim());
+          else add({ nickname: q.trim(), ...(guestDeck ? { deck_id: +guestDeck } : {}) }, q.trim());
         }}>
           <label style={{ flex: 1, margin: 0 }}>
             <span>Добавить игрока: номер игрока, имя из клуба или новое имя — тогда это гость без аккаунта</span>
@@ -65,6 +71,14 @@ export default function Participants({ t, reload }: { t: any; reload: () => Prom
             <label style={{ margin: 0 }}><span>Брекет</span>
               <select value={bracket} onChange={(e) => setBracket(+e.target.value)}>
                 {[1, 2, 3, 4, 5].map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </label>
+          ) : null}
+          {myDecks.length && q.trim() && !exact && !isNumber ? (
+            <label style={{ margin: 0 }}><span>Колода гостя</span>
+              <select value={guestDeck} onChange={(e) => setGuestDeck(e.target.value)} title="Гость без аккаунта может играть колодой из ваших колод">
+                <option value="">без деклиста</option>
+                {myDecks.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
             </label>
           ) : null}

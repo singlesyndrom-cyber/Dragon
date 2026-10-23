@@ -291,6 +291,8 @@ class Tournament(Base):
     # анонс в чат клуба: новые турниры анонсируются не раньше чем за неделю (серии - по мере приближения).
     # server_default true: турниры, созданные до появления колонки, уже были анонсированы
     announced: Mapped[bool] = mapped_column(default=False, server_default=text("true"))
+    # тестовый турнир: никаких оповещений (анонс, напоминания, итоги в чатах и ЛС)
+    silent: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
     series_id: Mapped[int | None] = mapped_column(Integer, index=True)   # серия еженедельных турниров: id первого
 
     players: Mapped[list["TournamentPlayer"]] = relationship(cascade="all, delete-orphan")

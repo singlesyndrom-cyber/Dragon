@@ -51,11 +51,12 @@ async def promote(session: AsyncSession, t: Tournament) -> list[int]:
             session.add(ClubMember(club_id=t.club_id, user_id=e.user_id))
         session.add(TournamentPlayer(tournament_id=t.id, user_id=e.user_id, seed=random.randint(0, 10**9),
                                      bracket=e.bracket, deck_id=e.deck_id))
-        await notify.to_user(session, e.user_id, "waitlist_promoted",
-                             f"🎉 Освободилось место — вы записаны на «{esc(t.name)}» ({_when(t)}).\n"
-                             "Если не сможете прийти, отмените запись, чтобы место досталось следующему.",
-                             buttons=[[{"text": "Отменить запись", "callback_data": f"unreg:{t.id}"}]],
-                             dedup_key=f"wl:{t.id}:{e.user_id}", club_id=t.club_id)
+        if not t.silent:
+            await notify.to_user(session, e.user_id, "waitlist_promoted",
+                                 f"🎉 Освободилось место — вы записаны на «{esc(t.name)}» ({_when(t)}).\n"
+                                 "Если не сможете прийти, отмените запись, чтобы место досталось следующему.",
+                                 buttons=[[{"text": "Отменить запись", "callback_data": f"unreg:{t.id}"}]],
+                                 dedup_key=f"wl:{t.id}:{e.user_id}", club_id=t.club_id)
         moved.append(e.user_id)
         if free is not None:
             free -= 1

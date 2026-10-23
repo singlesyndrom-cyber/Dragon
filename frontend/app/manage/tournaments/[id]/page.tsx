@@ -207,7 +207,7 @@ function SettingsTab({ t, reload }: { t: any; reload: () => Promise<void> }) {
     const pad = (n: number) => String(n).padStart(2, "0");
     setF({
       name: t.name, description: t.description || "", rounds: t.rounds_total ? String(t.rounds_total) : "",
-      deck_policy: t.deck_policy, self_registration: t.self_registration, max_players: t.max_players ? String(t.max_players) : "",
+      deck_policy: t.deck_policy, self_registration: t.self_registration, silent: !!t.silent, max_players: t.max_players ? String(t.max_players) : "",
       league_id: t.league_id ? String(t.league_id) : "",
       starts_at: local ? `${local.getFullYear()}-${pad(local.getMonth() + 1)}-${pad(local.getDate())}T${pad(local.getHours())}:${pad(local.getMinutes())}` : "",
     });

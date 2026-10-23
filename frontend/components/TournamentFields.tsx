@@ -4,12 +4,12 @@ import { DECK_POLICY } from "@/lib/tournamentKinds";
 
 export type Fields = {
   name: string; starts_at: string; description: string; rounds: string;
-  deck_policy: string; self_registration: boolean; max_players: string; league_id: string;
+  deck_policy: string; self_registration: boolean; max_players: string; league_id: string; silent: boolean;
 };
 
 export const EMPTY: Fields = {
   name: "", starts_at: "", description: "", rounds: "", deck_policy: "optional",
-  self_registration: true, max_players: "", league_id: "",
+  self_registration: true, max_players: "", league_id: "", silent: false,
 };
 
 /** Тело запроса к API из полей формы (пустое -> не задано). */
@@ -17,7 +17,7 @@ export function toBody(f: Fields, format: string) {
   const b: any = {
     name: f.name.trim(), description: f.description.trim(), deck_policy: f.deck_policy,
     self_registration: f.self_registration, max_players: f.max_players ? +f.max_players : null,
-    league_id: f.league_id ? +f.league_id : null,
+    league_id: f.league_id ? +f.league_id : null, silent: f.silent,
   };
   if (f.starts_at) b.starts_at = f.starts_at;
   if (format !== "edh" && f.rounds) b.rounds = +f.rounds;
@@ -85,6 +85,10 @@ export default function TournamentFields({ f, set, format, seasons }: {
           </label>
         </div>
         {f.deck_policy === "required" ? <p className="hint">Перед стартом сайт покажет, кто не подал деклист; начать можно и без них, с подтверждением.</p> : null}
+        <label className="check">
+          <input type="checkbox" checked={f.silent} onChange={(e) => set({ silent: e.target.checked })} />
+          <span>Тестовый турнир — без оповещений: ни анонса, ни напоминаний, ни итогов в Telegram и VK</span>
+        </label>
       </fieldset>
     </>
   );

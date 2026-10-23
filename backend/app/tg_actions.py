@@ -95,6 +95,7 @@ async def tournament_reminders(session: AsyncSession, now: datetime | None = Non
         select(TournamentPlayer, Tournament, Club).join(Tournament, Tournament.id == TournamentPlayer.tournament_id)
         .join(Club, Club.id == Tournament.club_id)
         .where(TournamentPlayer.reminded.is_(False), Tournament.status == TournamentStatus.registration,
+               Tournament.silent.is_(False),
                Tournament.starts_at > now + timedelta(hours=1), Tournament.starts_at <= now + TOURNAMENT_REMIND))).all()
     sent = 0
     for tp, t, club in rows:
