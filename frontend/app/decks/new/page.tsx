@@ -59,7 +59,7 @@ function NewDeck() {
             <DeckFileInput onText={(text, name) => { setF((x) => ({ ...x, text, name: x.name || name })); setOpen(true); }} />
             <span className="muted small">или вставьте текст ниже</span>
           </div>
-          <label style={{ marginTop: 12 }}><span>{f.game === "mtg" ? "Экспорт из Moxfield, MTGGoldfish, Archidekt, Arena или MTGO; строки вида «1 Sol Ring»" : "Файл или текст NXT (строки «3 60161», как в выгрузке ProBerserk) или строки вида «3 Преторианец»"}</span>
+          <label style={{ marginTop: 12 }}><span>{f.game === "mtg" ? "Экспорт из Moxfield, MTGGoldfish, Archidekt, Arena или MTGO; строки вида «1 Sol Ring»" : "Файл NXT («3 60161», как в выгрузке ProBerserk), файл .brsc («60161 3») или строки вида «3 Преторианец»"}</span>
             <textarea value={f.text} onChange={(e) => setF({ ...f, text: e.target.value })} style={{ minHeight: 200 }}
               placeholder={f.game === "mtg" ? "Commander\n1 Atraxa, Praetors' Voice\n\nDeck\n1 Sol Ring\n35 Forest" : "3 Преторианец\n2 Изобретатель Братства"} />
           </label>

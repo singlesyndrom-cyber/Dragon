@@ -139,6 +139,12 @@ async def test_sync_search_deck_and_images(client, tmp_path, monkeypatch):
     assert r["unmatched"] == ["Код 99999"]
     got = {c["name"]: c["qty"] for c in (await client.get(f"/decks/{r['id']}", headers=h)).json()["cards"]}
     assert got == {"Преторианец": 3, "Бернхольм": 2, "Код 99999": 1}
+    # .brsc: «код[вариант] количество [tN:число]»; фойл и альт-арт одной карты складываются; 21001 - «Легенды Лаара»
+    r = (await client.post("/decks", json={"name": "BRSC", "game": "berserk",
+                                           "text": "70008 2 t0:2\n70008f 1\n70023altfpf 1 t0:1\n21001 1\n70001 0 t0:1\n"},
+                           headers=h)).json()
+    got = {c["name"]: c["qty"] for c in (await client.get(f"/decks/{r['id']}", headers=h)).json()["cards"]}
+    assert got == {"Преторианец": 3, "Бернхольм": 1, "Код 21001": 1}      # в образце нет «Легенд Лаара»
 
     # картинки - через наш сервер, с кэшем
     from app.config import settings

@@ -70,16 +70,42 @@ def _settings(deck: Deck, fmt: str | None, visibility: str | None):
 
 
 NXT_LINE = re.compile(r"^\s*(\d{1,3})\s+(\d{5,6})\s*$")
+# .brsc - файл коллекции/колоды: «60161 3», «20120f 1», «30091altfpf 1 t0:1» - код, вариант печати (f - фойл,
+# alt - альтернативный арт, pf/of - промо и т.п.), количество, затем метки tN:число (тиражи; для колоды не нужны)
+BRSC_LINE = re.compile(r"^\s*(\d{5,6})([a-z][a-z0-9_]*)?\s+(\d{1,4})((?:\s+t\d+:\d+)*)\s*$")
+SUBSET = {2: "ll"}          # «Легенды Лаара» идут кодами выпуска 2 с номерами от 1001: 21001 = ll №1
+
+
+def _code_key(code: int) -> tuple[str, str]:
+    """Код карты -> (выпуск в нашей базе, номер): 60161 -> ("6", "161"), 21001 -> ("ll", "1")."""
+    s, n = divmod(code, 10000)
+    if n > 1000 and s in SUBSET:
+        return SUBSET[s], str(n - 1000)
+    return str(s), str(n)
+
+
+def parse_code_list(text: str) -> list[tuple[int, int]] | None:
+    """[(количество, код)] для NXT («3 60161») или .brsc («60161 3 t0:3»); None - это не список кодов."""
+    lines = [ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
+    if not lines:
+        return None
+    if all(NXT_LINE.match(ln) for ln in lines):
+        return [(int(m.group(1)), int(m.group(2))) for m in map(NXT_LINE.match, lines)]
+    if all(BRSC_LINE.match(ln) for ln in lines):
+        merged: dict[int, int] = {}          # варианты печати одной карты (фойл, альт-арт) - одна карта колоды
+        for m in map(BRSC_LINE.match, lines):
+            merged[int(m.group(1))] = merged.get(int(m.group(1)), 0) + int(m.group(3))
+        return [(q, c) for c, q in merged.items() if q > 0]
+    return None
 
 
 async def nxt_to_text(session: AsyncSession, text: str) -> str | None:
-    """Формат NXT «Берсерка» (выгрузка ProBerserk, клиенты): «3 60161» = 3 копии карты №161 выпуска 6.
-    Код = выпуск × 10000 + номер. Возвращает обычный список «3 Название» или None, если это не NXT."""
-    lines = [ln for ln in text.splitlines() if ln.strip()]
-    if not lines or not all(NXT_LINE.match(ln) for ln in lines):
+    """Коды карт «Берсерка» (NXT с ProBerserk и .brsc) -> обычный список «3 Название».
+    Код = выпуск × 10000 + номер. None - если это не список кодов."""
+    codes = parse_code_list(text)
+    if codes is None:
         return None
-    codes = [(int(m.group(1)), int(m.group(2))) for m in map(NXT_LINE.match, lines)]
-    want = {(str(c // 10000), str(c % 10000)) for _, c in codes}
+    want = {_code_key(c) for _, c in codes}
     found = {}
     for card in (await session.execute(select(Card).where(
             Card.game == "berserk", Card.set_code.in_({s for s, _ in want})))).scalars():
@@ -87,7 +113,7 @@ async def nxt_to_text(session: AsyncSession, text: str) -> str | None:
         found.setdefault((card.set_code, num), card.name)
     out = []
     for qty, c in codes:
-        name = found.get((str(c // 10000), str(c % 10000)))
+        name = found.get(_code_key(c))
         out.append(f"{qty} {name}" if name else f"{qty} Код {c}")      # неизвестный код - в «не найдено»
     return "\n".join(out)
 
