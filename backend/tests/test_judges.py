@@ -52,7 +52,7 @@ async def test_judge_role_flow(client):
                              headers=org)).status_code == 400            # организатор и так судит всё
     staff = (await client.get(f"/clubs/{cid}/judges")).json()
     assert [(s["nickname"], s["organizer"], s["games"]) for s in staff] == [
-        ("Игрок0", True, ["mtg", "edh", "berserk"]), ("Игрок1", False, ["mtg"])]
+        ("Игрок0", True, ["mtg", "edh", "berserk", "response"]), ("Игрок1", False, ["mtg"])]
     assert (await client.get("/clubs/judging", headers=jh)).json() == [
         {"id": cid, "name": "Судейский клуб", "slug": club["slug"], "games": ["mtg"]}]
     assert (await client.get("/clubs/judging", headers=org)).json() == []

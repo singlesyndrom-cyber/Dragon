@@ -137,7 +137,7 @@ function ResponseSync() {
   const upload = () => run(async () => {
     const form = new FormData();
     form.append("file", file!);
-    setReport(await api("/admin/cards/import/response", { form }));
+    setReport(await api("/admin/cards/response/import", { form }));
     await load();
   });
   return (

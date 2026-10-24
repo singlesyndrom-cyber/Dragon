@@ -37,7 +37,7 @@ async def test_import_and_deck(client):
         await s.execute(update(User).where(User.id == me["id"]).values(role=GlobalRole.admin))
         await s.commit()
     raw = FIXTURE.read_bytes()
-    r = await c.post("/admin/cards/import/response", files={"file": ("cards.json", raw, "application/json")}, headers=adm)
+    r = await c.post("/admin/cards/response/import", files={"file": ("cards.json", raw, "application/json")}, headers=adm)
     assert r.status_code == 200, r.text
     assert r.json()["cards"] == 50 and r.json()["in_base"] == 50 and r.json()["total_in_api"] == 427
     # без ключа синхронизация по API честно отказывает

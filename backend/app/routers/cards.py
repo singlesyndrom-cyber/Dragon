@@ -321,7 +321,7 @@ async def response_status(admin: User = Depends(require_admin), session: AsyncSe
                      "error": last.error, "trigger": last.trigger} if last else None}
 
 
-@router.post("/admin/cards/import/response")
+@router.post("/admin/cards/response/import")
 async def import_response(file: UploadFile, admin: User = Depends(require_admin),
                           session: AsyncSession = Depends(get_session)):
     """Файл выгрузки API (одна страница или список страниц). Карты добавляются и обновляются, ничего не удаляется."""
