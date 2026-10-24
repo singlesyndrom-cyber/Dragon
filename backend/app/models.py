@@ -687,6 +687,22 @@ class ResultEdit(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class MatchReport(Base):
+    """Результат матча, присланный игроком из приложения (счётчик жизней / кнопка «Результат»).
+    Судья видит отчёты в реальном времени и вносит их; совпавшие отчёты обоих игроков - «согласованные»."""
+    __tablename__ = "match_reports"
+    __table_args__ = (UniqueConstraint("match_id", "user_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    result: Mapped[MatchResult] = mapped_column(Enum(MatchResult))      # в координатах матча: p1 | p2 | draw
+    score: Mapped[str | None] = mapped_column(String(8))               # счёт партий с точки зрения p1, например "2-1"
+    source: Mapped[str] = mapped_column(String(16), default="manual")   # manual | life
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class CreatorRequestStatus(str, enum.Enum):
     pending = "pending"
     approved = "approved"

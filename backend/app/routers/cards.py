@@ -41,7 +41,8 @@ def _print(p: CardPrint) -> dict:
 
 def _brief(c: Card) -> dict:
     return {"id": c.id, "game": c.game, "name": c.name, "name_ru": c.name_ru, "set": c.set_code,
-            "type": c.type_line, "mana_cost": c.mana_cost, "rarity": c.rarity, "image_url": c.image_url}
+            "type": c.type_line, "mana_cost": c.mana_cost, "rarity": c.rarity, "image_url": c.image_url,
+            **({"bk": bk_fields(c.extra or {})} if c.game == "berserk" else {})}
 
 
 @router.get("/cards")

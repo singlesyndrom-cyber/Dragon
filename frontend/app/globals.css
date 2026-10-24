@@ -602,3 +602,63 @@ table.members td { vertical-align: middle; }
 .bracketinfo ul { margin: 6px 0 0; padding-left: 18px; }
 .bracket-pill { display: inline-block; min-width: 28px; text-align: center; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); }
 .bracket-pill.bad { border-color: var(--loss); color: var(--loss); }
+
+/* ---------- За столом: счётчик жизней, набор отряда, мой матч ---------- */
+.play-match { margin-bottom: 16px; }
+.play-opp { font-size: 1.15rem; margin: 6px 0 12px; }
+.play-match button[aria-pressed="true"] { outline: 2px solid var(--gilt); }
+
+.life { position: relative; }
+.life-bar { margin-bottom: 8px; }
+.life-score { margin: 4px 0 10px; }
+.life-grid { display: grid; gap: 8px; grid-template-columns: 1fr; }
+.life-grid.n3, .life-grid.n4 { grid-template-columns: 1fr 1fr; }
+.life-grid.n5, .life-grid.n6 { grid-template-columns: 1fr 1fr; }
+.life-p { position: relative; border-radius: 16px; min-height: 230px; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; color: #fff; overflow: hidden; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+.life-grid:not(.n2) .life-p { min-height: 190px; }
+.life-p.flip { transform: rotate(180deg); }
+.life-name { position: absolute; top: 10px; left: 0; right: 0; text-align: center; font-weight: 700; opacity: 0.9; pointer-events: none; z-index: 2; }
+.life-half { position: absolute; top: 0; bottom: 0; width: 50%; background: transparent; border: none; border-radius: 0; z-index: 1; cursor: pointer; }
+.life-half.minus { left: 0; } .life-half.plus { right: 0; }
+.life-half:active { background: rgba(255, 255, 255, 0.08); }
+.life-half.minus::after, .life-half.plus::after { position: absolute; top: 50%; transform: translateY(-50%); font-size: 2rem; opacity: 0.45; }
+.life-half.minus::after { content: "−"; left: 18px; } .life-half.plus::after { content: "+"; right: 18px; }
+.life-num { font-size: clamp(4rem, 18vw, 7.5rem); font-weight: 800; line-height: 1; pointer-events: none; z-index: 2; font-variant-numeric: lining-nums tabular-nums; }
+.life-tools { position: absolute; bottom: 10px; display: flex; gap: 8px; z-index: 3; }
+.life-tools button { background: rgba(0, 0, 0, 0.28); color: #fff; border: none; border-radius: 999px; padding: 6px 12px; min-width: 44px; }
+.life-cmd { position: absolute; inset: 40px 12px 54px; background: rgba(10, 12, 20, 0.92); border-radius: 12px; padding: 10px; z-index: 4; overflow: auto; }
+.life-cmd .row { justify-content: space-between; margin: 6px 0; }
+.life-modal { position: fixed; left: 16px; right: 16px; bottom: 24px; max-width: 520px; margin: 0 auto; background: var(--vellum);
+  border: 1px solid var(--gilt); border-radius: var(--radius-m); padding: 16px; z-index: 60; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6); }
+.life-extra { margin-top: 10px; }
+.life-log { margin-top: 12px; } .life-log ol { max-height: 220px; overflow: auto; font-size: 0.9rem; color: var(--muted); }
+.life-full { position: fixed; inset: 0; z-index: 50; background: var(--ink); padding: 8px; overflow: auto; }
+.life-full .life-grid.n2 { height: calc(100dvh - 120px); grid-template-rows: 1fr 1fr; }
+.life-full .life-grid:not(.n2) { min-height: calc(100dvh - 120px); }
+
+.squad-crystals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 8px; position: sticky; top: 0; z-index: 5;
+  background: var(--ink); padding: 6px 0; }
+.crys { background: var(--vellum); border-radius: var(--radius-m); padding: 8px; text-align: center; display: flex; flex-direction: column; }
+.crys span { font-size: 0.8rem; color: var(--muted); } .crys b { font-size: 1.9rem; line-height: 1.1; font-variant-numeric: lining-nums; }
+.crys small { color: var(--muted); font-size: 0.75rem; }
+.crys.gold b { color: var(--gilt); } .crys.silver b { color: #c9ced9; }
+.squad-setup { margin: 8px 0; }
+.squad-more { margin: 8px 0; } .squad-more .row button { min-width: 36px; }
+.squad-list { list-style: none; padding: 0; margin: 0 0 8px; display: grid; gap: 4px; }
+.squad-list li { display: flex; align-items: center; gap: 10px; background: var(--vellum); border-radius: var(--radius-s); padding: 6px 10px; }
+.squad-list .nm { flex: 1; }
+.squad-list .fly { background: none; border: none; opacity: 0.3; padding: 0 4px; } .squad-list .fly.on { opacity: 1; }
+.cost { display: inline-grid; place-items: center; min-width: 28px; height: 28px; border-radius: 6px; background: #c9ced9; color: #141826;
+  font-weight: 800; font-variant-numeric: lining-nums; }
+.cost.elite { background: var(--gilt); }
+.squad-cards { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.squad-cards button { position: relative; width: 100%; padding: 0; border: none; background: var(--vellum); border-radius: 8px; overflow: hidden; aspect-ratio: 496 / 700; }
+.squad-cards img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.squad-cards .ph { display: grid; place-items: center; height: 100%; padding: 6px; font-size: 0.8rem; }
+.squad-cards .cost { position: absolute; top: 4px; left: 4px; }
+.squad-cards .qty { position: absolute; bottom: 4px; right: 4px; background: rgba(0, 0, 0, 0.7); border-radius: 999px; padding: 0 8px; font-size: 0.8rem; }
+.squad-cards button:disabled { opacity: 0.3; }
+.squad-cards button.bad { opacity: 0.55; outline: 2px solid var(--loss); }
+.app-reports { margin-bottom: 16px; border-left: 4px solid var(--gilt); }
+@media (max-width: 520px) { .squad-crystals { grid-template-columns: repeat(2, 1fr); } }

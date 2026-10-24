@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ConfirmButton from "@/components/ConfirmButton";
 import { Status, useAction } from "@/components/Form";
 import { api } from "@/lib/api";
+import AppReports from "./AppReports";
 
 /** Туры швейцарки: переключатель туров, ввод и исправление результатов, старт / следующий тур / завершение. */
 export default function SwissRounds({ t, reload }: { t: any; reload: () => Promise<void> }) {
@@ -60,6 +61,7 @@ export default function SwissRounds({ t, reload }: { t: any; reload: () => Promi
         ))}
         {t.rounds_total && t.round < t.rounds_total ? <span className="muted small">из {t.rounds_total}</span> : null}
       </nav>
+      {current && t.status === "running" ? <AppReports tid={t.id} onApplied={load} /> : null}
       {!current && t.status === "running" ? (
         <p className="hint">Это прошлый тур: исправленный результат изменит таблицу, но уже составленные пары останутся прежними.</p>
       ) : null}

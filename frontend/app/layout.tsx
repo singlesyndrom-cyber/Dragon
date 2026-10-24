@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import Nav from "@/components/Nav";
+import SwRegister from "@/components/SwRegister";
 import { AuthProvider } from "@/lib/auth";
 import "./globals.css";
 
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <AuthProvider>
           <Nav />
+          <SwRegister />
           <main className="wrap">{children}</main>
           <footer className="footer">
             <div className="wrap footer-row">

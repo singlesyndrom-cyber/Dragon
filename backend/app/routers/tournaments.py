@@ -599,13 +599,18 @@ async def report_result(match_id: int, data: ResultIn, user: User = Depends(curr
     # прошлый тур можно исправить (как в AetherHub): таблица пересчитается, уже сделанные пары не меняются
     if m.p2_user_id is None:
         raise HTTPException(400, "Это bye, результат не нужен")
+    set_result(session, t, m, data.result, user)
+    await session.commit()
+
+
+def set_result(session: AsyncSession, t: Tournament, m: Match, result, user: User) -> None:
+    """Записать результат матча; исправление уже введённого результата - в журнал."""
     before = getattr(m.result, "value", m.result)
-    after = getattr(data.result, "value", data.result)
-    if before is not None and before != after:   # исправление уже введённого результата - в журнал
+    after = getattr(result, "value", result)
+    if before is not None and before != after:
         session.add(ResultEdit(tournament_id=t.id, match_id=m.id, round_no=m.round_no, user_id=user.id,
                                before=before, after=after))
-    m.result = data.result
-    await session.commit()
+    m.result = MatchResult(after)
 
 
 @router.get("/{tid}/edits")
