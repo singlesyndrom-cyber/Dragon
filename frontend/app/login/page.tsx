@@ -7,6 +7,7 @@ import { Status, useAction } from "@/components/Form";
 import TelegramLogin from "@/components/TelegramLogin";
 import VkButton from "@/components/VkButton";
 import { api } from "@/lib/api";
+import { afterLogin } from "@/lib/afterLogin";
 import { useAuth } from "@/lib/auth";
 
 export default function Login() {
@@ -20,7 +21,7 @@ export default function Login() {
     run(async () => {
       const r = await api("/auth/telegram", { body: data });
       await signIn(r.access_token);
-      router.push("/me");
+      router.push(afterLogin());
     });
   }, [run, signIn, router]);
 
@@ -33,7 +34,7 @@ export default function Login() {
           run(async () => {
             const r = await api("/auth/login", { body: { email, password } });
             await signIn(r.access_token);
-            router.push("/me");
+            router.push(afterLogin());
           });
         }}>
           <label><span>Email</span><input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label>

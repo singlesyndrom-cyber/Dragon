@@ -146,11 +146,20 @@ async def test_club_vk_setup_bind_announce_and_button(ctx):
     assert (post["owner_id"], post["from_group"], post["attachments"]) == ("-4242", "1", f"https://dragon.test/tournaments/{tid}")
     assert {m.status for m in await outbox()} == {OutboxStatus.sent}
 
-    # кнопка «Записаться» в беседе: игрок VK 555 записан, ему - всплывающий ответ
+    # кнопка «Записаться» в беседе: VK 555 не привязан к номеру игрока - открывается ссылка на подтверждение
     await vk_bot.handle_update(cid, {"type": "message_event", "object": {
         "user_id": 555, "peer_id": 2000000003, "event_id": "ev1", "payload": {"cmd": f"reg:{tid}"}}})
+    ans = json.loads(fake.of("messages.sendMessageEventAnswer")[-1]["event_data"])
+    assert ans["type"] == "open_link" and ans["link"].startswith("https://dragon.test/link/")
+    code = ans["link"].rsplit("/", 1)[1]
+    assert (await c.get(f"/auth/link-code/{code}")).json()["who"] == "Пётр Вконтактов"
+    r = (await c.post(f"/auth/link-code/{code}/new")).json()          # аккаунта на сайте не было - создан
+    assert "записаны" in r["message"]
+    # повторное нажатие: VK уже привязан - всплывающий ответ
+    await vk_bot.handle_update(cid, {"type": "message_event", "object": {
+        "user_id": 555, "peer_id": 2000000003, "event_id": "ev2", "payload": {"cmd": f"reg:{tid}"}}})
     ans = fake.of("messages.sendMessageEventAnswer")[-1]
-    assert ans["user_id"] == "555" and "записаны" in json.loads(ans["event_data"])["text"]
+    assert ans["user_id"] == "555" and "уже записаны" in json.loads(ans["event_data"])["text"]
     async with SessionLocal() as s:
         uid = (await s.execute(select(AuthAccount.user_id).where(AuthAccount.provider == Provider.vk,
                                                                 AuthAccount.external_id == "555"))).scalar_one()

@@ -311,3 +311,82 @@ async def me(user: User = Depends(current_user), session: AsyncSession = Depends
                 select(Publisher.id).where(Publisher.user_id == user.id))).first() is not None,
             "publisher_consent": bool(user.publisher_consent),
             "providers": list(providers)}
+
+
+# ---------- привязка Telegram / VK по одноразовой ссылке из кнопки «Записаться» ----------
+PROVIDER_NAME = {Provider.telegram: "Telegram", Provider.vk: "ВКонтакте"}
+
+
+async def _link(session: AsyncSession, code: str):
+    from ..models import LinkCode
+    from ..tg_actions import LINK_TTL
+    lc = (await session.execute(select(LinkCode).where(LinkCode.code == code))).scalar_one_or_none()
+    if not lc:
+        raise HTTPException(404, "Ссылка не найдена. Нажмите «Записаться» под анонсом ещё раз")
+    if lc.used_at:
+        raise HTTPException(410, "Ссылка уже использована")
+    created = lc.created_at if lc.created_at.tzinfo else lc.created_at.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) - created > LINK_TTL:
+        raise HTTPException(410, "Ссылка устарела. Нажмите «Записаться» под анонсом ещё раз")
+    return lc
+
+
+async def _link_done(session: AsyncSession, lc, user: User) -> str | None:
+    """Ссылка использована; если она пришла из анонса - записать на турнир."""
+    from ..models import Tournament
+    from ..tg_actions import register_user
+    lc.used_at = datetime.now(timezone.utc)
+    await session.commit()
+    t = await session.get(Tournament, lc.tournament_id) if lc.tournament_id else None
+    return await register_user(session, user, t) if t else None
+
+
+@router.get("/link-code/{code}")
+async def link_code_info(code: str, session: AsyncSession = Depends(get_session)):
+    from ..models import Club, Tournament
+    lc = await _link(session, code)
+    t = await session.get(Tournament, lc.tournament_id) if lc.tournament_id else None
+    club = await session.get(Club, t.club_id) if t else None
+    linked = await _find_account(session, lc.provider, lc.external_id)
+    return {"provider": lc.provider.value, "provider_name": PROVIDER_NAME[lc.provider],
+            "who": f"@{lc.username}" if lc.username else (lc.display_name or ""), "already_linked": bool(linked),
+            "tournament": {"id": t.id, "name": t.name, "starts_at": t.starts_at, "club": club.name if club else None} if t else None}
+
+
+@router.post("/link-code/{code}/claim")
+async def link_code_claim(code: str, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    """Привязать Telegram/VK из ссылки к своему аккаунту (вошли на сайт) и записаться на турнир."""
+    lc = await _link(session, code)
+    acc = await _find_account(session, lc.provider, lc.external_id)
+    name = PROVIDER_NAME[lc.provider]
+    if acc and acc.user_id != user.id:
+        raise HTTPException(409, f"Этот {name} уже привязан к другому номеру игрока")
+    if not acc:
+        other = (await session.execute(select(AuthAccount).where(AuthAccount.user_id == user.id,
+                                                                AuthAccount.provider == lc.provider))).scalar_one_or_none()
+        if other:
+            raise HTTPException(409, f"К вашему аккаунту уже привязан другой {name}")
+        session.add(AuthAccount(user_id=user.id, provider=lc.provider, external_id=lc.external_id))
+        if lc.provider == Provider.telegram and lc.username:
+            user.tg_username = lc.username
+    msg = await _link_done(session, lc, user)
+    return {"linked": True, "player_no": user.player_no, "message": msg}
+
+
+@router.post("/link-code/{code}/new")
+async def link_code_new(code: str, session: AsyncSession = Depends(get_session)):
+    """Аккаунта на сайте нет: создать его по Telegram/VK из ссылки, войти и записаться на турнир."""
+    lc = await _link(session, code)
+    if await _find_account(session, lc.provider, lc.external_id):
+        raise HTTPException(409, f"Этот {PROVIDER_NAME[lc.provider]} уже привязан к аккаунту — войдите в него")
+    user = User(nickname=((lc.username if lc.provider == Provider.telegram else None) or lc.display_name
+                          or f"{lc.provider.value}{lc.external_id}")[:64],
+                tg_username=lc.username if lc.provider == Provider.telegram else None)
+    session.add(user)
+    await session.flush()
+    session.add(AuthAccount(user_id=user.id, provider=lc.provider, external_id=lc.external_id))
+    await session.commit()
+    await session.refresh(user)          # номер игрока выдаёт база
+    msg = await _link_done(session, lc, user)
+    return {"access_token": create_token(user.id, user.token_version or 0), "token_type": "bearer",
+            "player_no": user.player_no, "message": msg}

@@ -804,3 +804,19 @@ class RatingChange(Base):
     games: Mapped[int] = mapped_column(Integer)
     ignored: Mapped[int] = mapped_column(Integer, default=0)   # партии, не засчитанные защитой от накрутки
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class LinkCode(Base):
+    """Одноразовая ссылка: связать Telegram или VK, с которых нажали «Записаться», с аккаунтом на сайте
+    (или создать аккаунт), и сразу записать на турнир. Кнопка больше не создаёт аккаунты-дубли молча."""
+    __tablename__ = "link_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(48), unique=True, index=True)
+    provider: Mapped[Provider] = mapped_column(Enum(Provider))
+    external_id: Mapped[str] = mapped_column(String(255))
+    username: Mapped[str | None] = mapped_column(String(64))
+    display_name: Mapped[str | None] = mapped_column(String(128))
+    tournament_id: Mapped[int | None] = mapped_column(ForeignKey("tournaments.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -1,9 +1,12 @@
 """Кнопки бота: запись на турнир из анонса, отмена записи и брони из напоминания, напоминания.
 
 Логика отделена от aiogram: функции принимают сессию и данные пользователя Telegram и возвращают текст ответа,
-поэтому их проверяют тесты без Telegram. Игрок Telegram - это аккаунт платформы (тот же, что при входе на сайт
-через Telegram); если такого ещё нет, он создаётся, как при ставке на аукционе.
+поэтому их проверяют тесты без Telegram. Кнопка записывает по номеру игрока, к которому привязан Telegram/VK
+(в кабинете или входом через них). Не привязан - ответ NeedLink: одноразовая ссылка, где игрок входит
+и привязывает аккаунт (или создаёт новый), и запись делается там же. Аккаунты-дубли молча не создаются.
 """
+import secrets
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -12,9 +15,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import notify
-from .auction_service import get_or_create_social_user
 from .config import settings
-from .models import Club, ClubTable, Provider, TableBooking, Tournament, TournamentPlayer, TournamentStatus
+from .models import (AuthAccount, Club, ClubTable, LinkCode, Provider, TableBooking, Tournament, TournamentPlayer,
+                     TournamentStatus, User)
 from .reports import esc
 
 TOURNAMENT_REMIND = timedelta(hours=24)   # напоминание о турнире - за сутки
@@ -29,16 +32,44 @@ def _when(dt: datetime) -> str:
     return _local(dt).strftime("%d.%m в %H:%M")
 
 
-async def register(session: AsyncSession, tg_id: int, username: str | None, name: str | None, tid: int,
-                  provider: Provider = Provider.telegram) -> str:
-    """Кнопка «Записаться» под анонсом. Мест нет - ставим в лист ожидания."""
+LINK_TTL = timedelta(days=3)
+
+
+@dataclass
+class NeedLink:
+    """Telegram или VK ещё не связан с номером игрока: вместо записи - ссылка на подтверждение."""
+    code: str
+    text: str
+
+
+async def find_social_user(session: AsyncSession, provider: Provider, ext_id: int | str,
+                           username: str | None = None) -> User | None:
+    """Аккаунт сайта, к которому привязан этот Telegram или VK (в кабинете или входом через них)."""
+    acc = (await session.execute(select(AuthAccount).where(
+        AuthAccount.provider == provider, AuthAccount.external_id == str(ext_id)))).scalar_one_or_none()
+    if not acc:
+        return None
+    user = await session.get(User, acc.user_id)
+    if provider == Provider.telegram and username and user.tg_username != username:
+        user.tg_username = username
+        await session.commit()
+    return user
+
+
+async def make_link_code(session: AsyncSession, provider: Provider, ext_id: int | str, username: str | None,
+                         name: str | None, tid: int | None) -> str:
+    code = secrets.token_urlsafe(18)
+    session.add(LinkCode(code=code, provider=provider, external_id=str(ext_id), username=username,
+                         display_name=(name or "")[:128] or None, tournament_id=tid))
+    await session.commit()
+    return code
+
+
+async def register_user(session: AsyncSession, user: User, t: Tournament) -> str:
+    """Записать игрока; мест нет - в лист ожидания. Текст ответа для кнопки или страницы."""
     from .routers.tournaments import FullError, join_waitlist, self_register   # роутер импортирует этот модуль не напрямую
-    user = await get_or_create_social_user(session, provider, tg_id, username, name)
-    t = await session.get(Tournament, tid)
-    if not t:
-        return "Турнир не найден"
     if (await session.execute(select(TournamentPlayer.id).where(
-            TournamentPlayer.tournament_id == tid, TournamentPlayer.user_id == user.id))).first():
+            TournamentPlayer.tournament_id == t.id, TournamentPlayer.user_id == user.id))).first():
         return f"Вы уже записаны на «{t.name}» ({_when(t.starts_at)})."
     try:
         await self_register(session, t, user)
@@ -54,18 +85,38 @@ async def register(session: AsyncSession, tg_id: int, username: str | None, name
     except HTTPException as e:
         await session.rollback()
         return str(e.detail)
-    taken = len((await session.execute(select(TournamentPlayer.id).where(TournamentPlayer.tournament_id == tid))).all())
+    taken = len((await session.execute(select(TournamentPlayer.id).where(TournamentPlayer.tournament_id == t.id))).all())
     seats = f" Записано {taken} из {t.max_players}." if t.max_players else f" Записано: {taken}."
-    return f"✅ {user.nickname}, вы записаны на «{t.name}» ({_when(t.starts_at)}).{seats}"
+    return f"✅ {user.nickname} (№{user.player_no}), вы записаны на «{t.name}» ({_when(t.starts_at)}).{seats}"
 
 
-async def unregister(session: AsyncSession, tg_id: int, username: str | None, name: str | None, tid: int,
-                    provider: Provider = Provider.telegram) -> str:
-    from .routers.tournaments import self_unregister
-    user = await get_or_create_social_user(session, provider, tg_id, username, name)
+async def register(session: AsyncSession, tg_id: int, username: str | None, name: str | None, tid: int,
+                   provider: Provider = Provider.telegram) -> str | NeedLink:
+    """Кнопка «Записаться» под анонсом: запись по номеру игрока, к которому привязан этот Telegram/VK.
+    Не привязан - ссылка: войти и привязать (или создать аккаунт), запись произойдёт там же."""
     t = await session.get(Tournament, tid)
     if not t:
         return "Турнир не найден"
+    user = await find_social_user(session, provider, tg_id, username)
+    if user is None:
+        if t.status != TournamentStatus.registration:
+            return "Регистрация закрыта"
+        code = await make_link_code(session, provider, tg_id, username, name, tid)
+        where = "Telegram" if provider == Provider.telegram else "ВКонтакте"
+        return NeedLink(code, f"Ваш {where} ещё не связан с номером игрока. Откройте ссылку: войдите на сайт — "
+                              f"мы привяжем {where} и сразу запишем вас на «{t.name}».")
+    return await register_user(session, user, t)
+
+
+async def unregister(session: AsyncSession, tg_id: int, username: str | None, name: str | None, tid: int,
+                     provider: Provider = Provider.telegram) -> str:
+    from .routers.tournaments import self_unregister
+    t = await session.get(Tournament, tid)
+    if not t:
+        return "Турнир не найден"
+    user = await find_social_user(session, provider, tg_id, username)
+    if user is None:
+        return "Вы не были записаны на этот турнир."
     try:
         done = await self_unregister(session, t, user)
         await session.commit()
@@ -78,7 +129,9 @@ async def unregister(session: AsyncSession, tg_id: int, username: str | None, na
 async def cancel_booking(session: AsyncSession, tg_id: int, username: str | None, name: str | None, booking_id: int,
                          provider: Provider = Provider.telegram) -> str:
     from .routers.tables import cancel_booking as cancel
-    user = await get_or_create_social_user(session, provider, tg_id, username, name)
+    user = await find_social_user(session, provider, tg_id, username)
+    if user is None:
+        return "Отменить бронь может тот, кто бронировал, или организатор клуба"
     try:
         b = await cancel(session, booking_id, user)
         await session.commit()

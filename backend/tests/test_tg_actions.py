@@ -41,6 +41,14 @@ async def club_and_event(c, **extra):
     return org, cid, tid
 
 
+async def linked(*players):
+    """Игроки, у которых Telegram привязан к аккаунту сайта (как после привязки в кабинете)."""
+    from app.auction_service import get_or_create_tg_user
+    async with SessionLocal() as s:
+        for tg_id, username, name in players:
+            await get_or_create_tg_user(s, tg_id, username, name)
+
+
 async def outbox(kind):
     async with SessionLocal() as s:
         return (await s.execute(select(OutboxMessage).where(OutboxMessage.kind == kind)
@@ -49,10 +57,11 @@ async def outbox(kind):
 
 async def test_register_from_announcement_and_waitlist(client):
     org, cid, tid = await club_and_event(client, max_players=2)
+    await linked((444, "vova", None), (111, "masha", "Маша"), (222, None, "Петя"), (333, "x", None))
     async with SessionLocal() as s:
         assert "Записано 1 из 2" in await tg_actions.register(s, 444, "vova", None, tid)
         text = await tg_actions.register(s, 111, "masha", "Маша", tid)
-    assert text.startswith("✅ masha, вы записаны на «Командир»") and "Записано 2 из 2" in text
+    assert text.startswith("✅ masha (№") and "вы записаны на «Командир»" in text and "Записано 2 из 2" in text
     async with SessionLocal() as s:
         # повторное нажатие
         assert (await tg_actions.register(s, 111, "masha", "Маша", tid)).startswith("Вы уже записаны на «Командир»")
@@ -81,6 +90,7 @@ async def test_register_from_announcement_and_waitlist(client):
 
 async def test_tournament_reminders(client):
     org, cid, tid = await club_and_event(client)
+    await linked((111, "masha", "Маша"))
     async with SessionLocal() as s:
         await tg_actions.register(s, 111, "masha", "Маша", tid)
     r = await client.post("/auth/register", json={"email": "site@example.com", "password": "password1", "nickname": "Сайт"})
@@ -127,3 +137,38 @@ async def test_booking_reminder_and_cancel_button(client):
             "Отменить бронь может тот, кто бронировал, или организатор клуба"
         assert (await tg_actions.cancel_booking(s, 111, "masha", "Маша", bid)).startswith("Бронь на ")
         assert (await s.execute(select(TableBooking.status))).scalar_one() == "cancelled"
+
+
+async def test_unlinked_button_asks_to_link_instead_of_new_account(client):
+    """Кнопка у непривязанного Telegram не создаёт дубль: ссылка - войти и привязать или создать аккаунт."""
+    org, cid, tid = await club_and_event(client)
+    r = await client.post("/auth/register", json={"email": "p@example.com", "password": "password1", "nickname": "Маша"})
+    site = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    me = (await client.get("/auth/me", headers=site)).json()
+    async with SessionLocal() as s:
+        need = await tg_actions.register(s, 111, "masha_tg", "Маша", tid)
+        users_before = len((await s.execute(select(User.id))).all())
+    assert isinstance(need, tg_actions.NeedLink) and "не связан с номером игрока" in need.text
+    info = (await client.get(f"/auth/link-code/{need.code}")).json()
+    assert info["provider_name"] == "Telegram" and info["who"] == "@masha_tg" and info["tournament"]["name"] == "Командир"
+    assert (await client.post(f"/auth/link-code/{need.code}/claim")).status_code == 401
+    r = (await client.post(f"/auth/link-code/{need.code}/claim", headers=site)).json()
+    assert r["player_no"] == me["player_no"] and "вы записаны на «Командир»" in r["message"]
+    assert [p["nickname"] for p in (await client.get(f"/tournaments/{tid}")).json()["participants"]] == ["Маша"]
+    assert (await client.post(f"/auth/link-code/{need.code}/claim", headers=site)).status_code == 410   # одноразовая
+    async with SessionLocal() as s:
+        assert len((await s.execute(select(User.id))).all()) == users_before                # дубля нет
+        # дальше кнопка работает сразу, по тому же номеру
+        assert (await tg_actions.register(s, 111, "masha_tg", "Маша", tid)).startswith("Вы уже записаны")
+        assert await tg_actions.unregister(s, 111, "masha_tg", "Маша", tid) == "Запись на «Командир» отменена."
+        # второй Telegram к тому же аккаунту не привязать
+        other = await tg_actions.register(s, 999, "second", None, tid)
+    assert (await client.post(f"/auth/link-code/{other.code}/claim", headers=site)).status_code == 409
+
+    # аккаунта на сайте нет: создаётся по ссылке, сразу вход и запись
+    async with SessionLocal() as s:
+        need = await tg_actions.register(s, 222, None, "Петя", tid)
+    r = (await client.post(f"/auth/link-code/{need.code}/new")).json()
+    assert r["player_no"] and r["access_token"] and "Петя (№" in r["message"]
+    assert (await client.get("/auth/me", headers={"Authorization": f"Bearer {r['access_token']}"})).json()["nickname"] == "Петя"
+    assert (await client.get("/auth/link-code/nope")).status_code == 404

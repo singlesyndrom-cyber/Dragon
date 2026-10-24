@@ -24,6 +24,11 @@ async def _answer(cb: CallbackQuery, action, arg: int) -> None:
         except Exception:  # noqa: BLE001
             log.exception("кнопка %s", cb.data)
             text = "Не получилось, попробуйте ещё раз или запишитесь на сайте."
+    if isinstance(text, tg_actions.NeedLink):
+        # Telegram не привязан к номеру игрока: открываем личный чат с ботом, там - ссылка на подтверждение
+        me = await cb.bot.me()
+        await cb.answer(url=f"https://t.me/{me.username}?start=link_{text.code}")
+        return
     await cb.answer(text[:200], show_alert=True)
 
 

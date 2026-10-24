@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Status, useAction } from "@/components/Form";
 import { api } from "@/lib/api";
+import { afterLogin } from "@/lib/afterLogin";
 import { useAuth } from "@/lib/auth";
 
 export default function Register() {
@@ -20,7 +21,7 @@ export default function Register() {
         run(async () => {
           const r = await api("/auth/register", { body: f });
           await signIn(r.access_token);
-          router.push("/me");
+          router.push(afterLogin());
         });
       }}>
         <label><span>Ник — так вас увидят в таблицах</span><input required minLength={2} maxLength={64} value={f.nickname} onChange={(e) => setF({ ...f, nickname: e.target.value })} /></label>

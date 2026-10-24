@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from .. import noticeimages, tg_actions, vk, vkclub
 from ..botutil import MAX_ATTEMPTS, backoff_seconds
+from ..config import settings
 from ..db import SessionLocal
 from ..models import Club, ClubVk, ClubVkChat, OutboxMessage, OutboxStatus, Provider
 
@@ -135,6 +136,13 @@ async def _button(s, cfg: ClubVk, token: str, obj: dict) -> None:
     except Exception:  # noqa: BLE001
         log.exception("vk кнопка %s", payload)
         text = "Не получилось, попробуйте ещё раз или запишитесь на сайте."
+    if isinstance(text, tg_actions.NeedLink) and settings.public_base_url:
+        # VK не привязан к номеру игрока: открываем страницу подтверждения на сайте
+        await vk.answer_event_link(token, obj.get("event_id", ""), user_id, peer_id,
+                                   settings.public_base_url.rstrip("/") + f"/link/{text.code}")
+        return
+    if isinstance(text, tg_actions.NeedLink):
+        text = text.text
     await vk.answer_event(token, obj.get("event_id", ""), user_id, peer_id, vk.html_to_text(text))
 
 

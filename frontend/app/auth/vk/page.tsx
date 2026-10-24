@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { afterLogin } from "@/lib/afterLogin";
 import { useAuth } from "@/lib/auth";
 import { takePending } from "@/lib/vkid";
 
@@ -42,7 +43,7 @@ function VkReturn() {
         if (pending.purpose === "login") {
           const r = await api<any>("/auth/vk", { body });
           await signIn(r.access_token);
-          router.replace(pending.back || "/me");
+          router.replace(pending.back || afterLogin());
         } else if (pending.purpose === "link") {
           await api("/auth/vk/link", { body });
           router.replace("/me?vk=linked");

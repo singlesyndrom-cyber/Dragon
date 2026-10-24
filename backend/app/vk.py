@@ -109,6 +109,12 @@ async def answer_event(token: str, event_id: str, user_id: int, peer_id: int, te
                event_data={"type": "show_snackbar", "text": text[:90]})
 
 
+async def answer_event_link(token: str, event_id: str, user_id: int, peer_id: int, link: str) -> None:
+    """Ответ на нажатие callback-кнопки: открыть ссылку у нажавшего."""
+    await call("messages.sendMessageEventAnswer", token, event_id=event_id, user_id=user_id, peer_id=peer_id,
+               event_data={"type": "open_link", "link": link})
+
+
 async def chat_title(token: str, peer_id: int) -> str | None:
     """Название беседы (сообщество видит беседы, в которых состоит)."""
     try:
