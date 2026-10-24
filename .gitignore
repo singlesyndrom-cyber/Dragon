@@ -7,3 +7,4 @@ node_modules/
 backend/season-report.md
 deploy/tgproxy/keys/
 backups/
+frontend/tsconfig.tsbuildinfo
