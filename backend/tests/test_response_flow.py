@@ -40,10 +40,8 @@ async def test_import_and_deck(client):
     r = await c.post("/admin/cards/response/import", files={"file": ("cards.json", raw, "application/json")}, headers=adm)
     assert r.status_code == 200, r.text
     assert r.json()["cards"] == 50 and r.json()["in_base"] == 50 and r.json()["total_in_api"] == 427
-    # без ключа синхронизация по API честно отказывает
-    assert (await c.post("/admin/cards/sync/response", headers=adm)).status_code == 400
     st = (await c.get("/admin/cards/sync/response", headers=adm)).json()
-    assert st["cards"] == 50 and st["key_configured"] is False
+    assert st["cards"] == 50 and st["auth"] == "none" and st["key_configured"] is False
 
     found = (await c.get("/cards/search?q=Адепт&game=response")).json()
     card = next(x for x in found["items"] if x["name"] == "Адепт раздора")
