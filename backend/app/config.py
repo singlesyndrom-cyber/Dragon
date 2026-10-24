@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     response_client_secret: str = ""
     response_oauth_scope: str = ""
     response_auto_sync: bool = True                # бот раз в 6 часов сверяет версию каталога и обновляет базу
+    # приложение для Android (TWA): отпечаток SHA-256 ключа подписи APK - для /.well-known/assetlinks.json.
+    # Не секрет. Несколько отпечатков (например, ключ RuStore и свой) - через запятую.
+    android_package: str = "games.dragonclub.app"
+    android_cert_sha256: str = ""
     image_cache_dir: str = "/cache/images"   # картинки карт Scryfall, скачанные сервером (раздаются через /img)
     image_cache_max_gb: float = 5.0
     # почта для восстановления пароля; пусто - письма пишутся в лог бэкенда

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Dragon</string>
+    <string name="start_url">https://dragonclub.games/play</string>
+    <!-- связь приложения с сайтом: сайт отдаёт /.well-known/assetlinks.json с отпечатком ключа подписи -->
+    <string name="asset_statements" translatable="false">[{\"relation\": [\"delegate_permission/common.handle_all_urls\"], \"target\": {\"namespace\": \"web\", \"site\": \"https://dragonclub.games\"}}]</string>
+</resources>

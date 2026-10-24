@@ -1,0 +1,46 @@
+// Приложение Dragon для Android: Trusted Web Activity - сайт dragonclub.games на весь экран, без адресной строки.
+// Подпись релиза - из переменных окружения (секреты GitHub), см. android/README.md
+plugins { id "com.android.application" }
+
+def env = System.getenv()
+def signed = env.KEYSTORE_FILE != null && new File(env.KEYSTORE_FILE).exists()
+
+android {
+    namespace "games.dragonclub.app"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "games.dragonclub.app"
+        minSdk 21
+        targetSdk 34
+        versionCode((env.VERSION_CODE ?: "1") as int)
+        versionName env.VERSION_NAME ?: "1.0"
+    }
+
+    signingConfigs {
+        release {
+            if (signed) {
+                storeFile file(env.KEYSTORE_FILE)
+                storePassword env.KEYSTORE_PASSWORD
+                keyAlias env.KEY_ALIAS
+                keyPassword env.KEY_PASSWORD
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signed ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation "com.google.androidbrowserhelper:androidbrowserhelper:2.5.0"
+}

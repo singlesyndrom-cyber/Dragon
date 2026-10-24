@@ -1,0 +1,71 @@
+# Сборка приложения Android (TWA) для RuStore: APK и AAB.
+# Запуск вручную: GitHub → Actions → Android → Run workflow. Ключ подписи - секреты репозитория (android/README.md).
+name: Android
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Выложить APK в Releases (ссылка «Скачать» на сайте)"
+        type: boolean
+        default: false
+  push:
+    paths: ["android/**", ".github/workflows/android.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: "8.9" }
+
+      - name: Ключ подписи
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/dragon.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/dragon.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Секрет ANDROID_KEYSTORE_B64 не задан: сборка подписана отладочным ключом (для RuStore не годится)"
+          fi
+
+      - name: Сборка
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: 1.0.${{ github.run_number }}
+        run: gradle -p android --no-daemon assembleRelease bundleRelease
+
+      - name: Отпечаток ключа (для ANDROID_CERT_SHA256 в .env)
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          FP=$(keytool -printcert -jarfile "$APK" | grep -m1 "SHA256:" | sed 's/.*SHA256: //')
+          echo "SHA-256 отпечаток подписи: $FP"
+          echo "### Отпечаток для .env\n\`ANDROID_CERT_SHA256=$FP\`" >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p out
+          cp "$APK" out/dragon.apk
+          cp android/app/build/outputs/bundle/release/app-release.aab out/dragon.aab
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dragon-android-${{ github.run_number }}
+          path: out/
+
+      - name: Выложить APK в Releases
+        if: ${{ inputs.release && env.KEYSTORE_FILE != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "android-${{ github.run_number }}" out/dragon.apk \
+            --title "Dragon для Android 1.0.${{ github.run_number }}" \
+            --notes "Приложение клуба «Дракон»: dragonclub.games на весь экран — «За столом», турниры, личный кабинет." \
+            --latest
