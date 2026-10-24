@@ -31,6 +31,9 @@ async def main() -> None:
              asyncio.create_task(vk_bot.outbox_loop()), asyncio.create_task(vk_bot.longpoll_manager())]  # VK клубов
     if settings.scryfall_auto_sync:
         tasks.append(asyncio.create_task(scryfall.auto_sync_loop()))
+    if settings.response_auto_sync:
+        from .. import response
+        tasks.append(asyncio.create_task(response.auto_sync_loop()))
     try:
         await dp.start_polling(bot)
     finally:

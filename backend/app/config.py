@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     response_api_key: str = ""
     response_api_header: str = "Authorization"     # как передавать ключ: заголовок…
     response_api_prefix: str = "Bearer "           # …и приставка перед ключом (для X-API-Key - пусто)
+    # OAuth 2 «для сервера» (client credentials): сайт сам получает временный токен по client_id и секрету
+    response_oauth_url: str = "https://response-league.ru/oauth/token"
+    response_client_id: str = ""
+    response_client_secret: str = ""
+    response_oauth_scope: str = ""
+    response_auto_sync: bool = True                # бот раз в 6 часов сверяет версию каталога и обновляет базу
     image_cache_dir: str = "/cache/images"   # картинки карт Scryfall, скачанные сервером (раздаются через /img)
     image_cache_max_gb: float = 5.0
     # почта для восстановления пароля; пусто - письма пишутся в лог бэкенда

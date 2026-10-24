@@ -105,8 +105,12 @@ async def response_image(image_id: str):
     from .. import response
     if not RS_ID.match(image_id):
         raise HTTPException(404, "Нет такой картинки")
+    try:
+        token = await response.access_token()
+    except Exception:  # noqa: BLE001  картинки могут быть открыты и без токена
+        token = None
     return await _serve(("rs", image_id[:2], image_id), response.IMAGES + image_id, "image/jpeg", direct_first=True,
-                        headers=response.api_headers())
+                        headers=response.api_headers(token))
 
 
 @router.get("/img/bk/{path:path}")

@@ -293,7 +293,7 @@ async def upload_russian(file: UploadFile = File(...), admin: User = Depends(req
 # ---------- «Респонс»: API разработчика или файл выгрузки ----------
 async def _run_response():
     try:
-        await response.sync(trigger="admin")
+        await response.sync(trigger="admin", force=True)
     except response.SyncBusy:
         pass
 
@@ -301,10 +301,6 @@ async def _run_response():
 @router.post("/admin/cards/sync/response", status_code=202)
 async def sync_response(bg: BackgroundTasks, admin: User = Depends(require_admin),
                         session: AsyncSession = Depends(get_session)):
-    from ..config import settings
-    if not settings.response_api_key:
-        raise HTTPException(400, "Ключ API «Респонса» не задан: впишите RESPONSE_API_KEY в .env сервера и перезапустите. "
-                                 "Пока можно загрузить файл выгрузки")
     if await response.is_running(session):
         raise HTTPException(409, "Загрузка уже идёт")
     bg.add_task(_run_response)
@@ -313,10 +309,12 @@ async def sync_response(bg: BackgroundTasks, admin: User = Depends(require_admin
 
 @router.get("/admin/cards/sync/response")
 async def response_status(admin: User = Depends(require_admin), session: AsyncSession = Depends(get_session)):
-    from ..config import settings
+    from .. import system
     last = await response.last_run(session)
+    st = await system.get_status(session, response.STATUS_KEY)
     return {"running": await response.is_running(session), "cards": await response.count(session),
-            "key_configured": bool(settings.response_api_key),
+            "auth": response.auth_mode(), "key_configured": response.auth_mode() != "none",
+            "catalog_version": st.value[:12] if st and st.value else None,
             "last": {"started_at": last.started_at, "finished_at": last.finished_at, "cards": last.cards,
                      "error": last.error, "trigger": last.trigger} if last else None}
 

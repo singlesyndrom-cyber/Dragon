@@ -144,20 +144,21 @@ function ResponseSync() {
     <div className="panel">
       <h3>База «Респонса» из API разработчика</h3>
       <p className="small muted">
-        Карты, рулинги и картинки берутся из API response-league.ru по ключу. Ключ хранится только на сервере:
-        строка <code>RESPONSE_API_KEY=…</code> в файле .env (и при необходимости RESPONSE_API_HEADER / RESPONSE_API_PREFIX).
-        Без ключа базу можно загрузить файлом выгрузки API — одна страница или все сразу.
+        Карты, рулинги и картинки берутся из API response-league.ru. Доступ — по OAuth: строки <code>RESPONSE_CLIENT_ID=…</code>
+        и <code>RESPONSE_CLIENT_SECRET=…</code> в файле .env на сервере (в браузер не попадают). Бот раз в 6 часов сверяет
+        версию каталога и обновляет базу, только если она изменилась. Без доступа к API базу можно загрузить файлом выгрузки.
       </p>
       {st ? (
         <p className="small">
-          В базе карт: {(st.cards || 0).toLocaleString("ru-RU")}. Ключ API: {st.key_configured ? "задан" : "не задан"}.{" "}
+          В базе карт: {(st.cards || 0).toLocaleString("ru-RU")}. Доступ к API: {st.auth === "oauth" ? "OAuth" : st.auth === "key" ? "ключ" : "без авторизации"}
+          {st.catalog_version ? <>, версия каталога {st.catalog_version}</> : null}.{" "}
           {st.running ? "Идёт загрузка…" : last ? <>Последняя загрузка: {dateTime(last.finished_at || last.started_at)}
             ({last.trigger === "file" ? "файлом" : "по API"}), карт {last.cards.toLocaleString("ru-RU")}.</> : "Ещё не загружалась."}
           {last?.error ? <span className="loss"> {last.error}</span> : null}
         </p>
       ) : null}
       <div className="row">
-        <button className="primary" disabled={busy || st?.running || !st?.key_configured}
+        <button className="primary" disabled={busy || st?.running}
           onClick={() => run(() => api("/admin/cards/sync/response", { method: "POST" })).then(load)}>Загрузить по API</button>
         <input type="file" accept=".json,application/json" aria-label="Файл выгрузки «Респонса»" style={{ maxWidth: 260 }}
           onChange={(e) => setFile(e.target.files?.[0] || null)} />

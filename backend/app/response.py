@@ -4,12 +4,16 @@
 Карта: id (слаг), name, types, supertypes, subtypes, factions, keywords, is_hero, cost, strength, durability,
 text, levels (уровни героя: influence, text), rulings (разъяснения), printings (издания с картинками).
 
-Ключ API хранится только в .env сервера (RESPONSE_API_KEY) и в браузер не отдаётся; картинки идут через наш
-сервер (/img/rs/<uuid>). Без ключа базу можно загрузить файлом выгрузки API в админке.
+Доступ: OAuth 2 client credentials (RESPONSE_CLIENT_ID и RESPONSE_CLIENT_SECRET в .env) - сайт сам получает
+временный токен на /oauth/token; запасной вариант - статический ключ (RESPONSE_API_KEY). Секреты в браузер не
+отдаются; картинки идут через наш сервер (/img/rs/<uuid>). Версия каталога (X-Catalog-Version / ETag)
+запоминается: если не изменилась, повторная загрузка ничего не качает. Без доступа к API базу можно загрузить
+файлом выгрузки в админке.
 """
 import asyncio
 import logging
 import re
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -97,22 +101,84 @@ def parse_payload(data) -> tuple[list[dict], dict]:
     return cards, meta
 
 
-def api_headers() -> dict:
+class NotChanged(Exception):
+    """Версия каталога та же, что при прошлой загрузке: качать нечего."""
+
+
+STATUS_KEY = "response_catalog"           # ServiceStatus: версия каталога последней полной загрузки
+_token: dict = {"value": None, "until": 0.0}
+
+
+def auth_mode() -> str:
+    if settings.response_client_id and settings.response_client_secret:
+        return "oauth"
+    return "key" if settings.response_api_key else "none"
+
+
+async def access_token(client: httpx.AsyncClient | None = None) -> str | None:
+    """OAuth client credentials: токен кэшируется до истечения (минус минута)."""
+    if auth_mode() != "oauth":
+        return None
+    if _token["value"] and time.time() < _token["until"]:
+        return _token["value"]
+    data = {"grant_type": "client_credentials", "client_id": settings.response_client_id,
+            "client_secret": settings.response_client_secret}
+    if settings.response_oauth_scope:
+        data["scope"] = settings.response_oauth_scope
+    own = client is None
+    http = client or httpx.AsyncClient(timeout=httpx.Timeout(15, read=30))
+    try:
+        r = await http.post(settings.response_oauth_url, data=data, headers={"Accept": "application/json"})
+    finally:
+        if own:
+            await http.aclose()
+    if r.status_code in (400, 401, 403):
+        raise ValueError("OAuth «Респонса» не принял client_id и секрет: проверьте RESPONSE_CLIENT_ID и RESPONSE_CLIENT_SECRET")
+    r.raise_for_status()
+    body = r.json()
+    _token["value"] = body["access_token"]
+    _token["until"] = time.time() + max(60, int(body.get("expires_in") or 3600) - 60)
+    return _token["value"]
+
+
+def api_headers(token: str | None = None) -> dict:
     h = {"Accept": "application/json", "User-Agent": "DragonClub/1.0 (+https://dragonclub.games)"}
-    if settings.response_api_key:
+    if token:
+        h["Authorization"] = "Bearer " + token
+    elif settings.response_api_key:
         h[settings.response_api_header] = settings.response_api_prefix + settings.response_api_key
     return h
 
 
-async def fetch_all(client: httpx.AsyncClient, pause: float = PAUSE) -> tuple[list[dict], dict]:
-    url = settings.response_api_url
-    cards, page, last, meta = [], 1, 1, {}
+async def _page(client: httpx.AsyncClient, page: int) -> httpx.Response:
+    token = await access_token(client)
+    r = await client.get(settings.response_api_url, params={"page": page}, headers=api_headers(token))
+    if r.status_code == 401 and token:          # токен отозвали раньше срока - берём новый один раз
+        _token["value"] = None
+        r = await client.get(settings.response_api_url, params={"page": page}, headers=api_headers(await access_token(client)))
+    if r.status_code in (401, 403):
+        raise ValueError("API «Респонса» отказал в доступе: нужна авторизация (RESPONSE_CLIENT_ID и RESPONSE_CLIENT_SECRET в .env)")
+    r.raise_for_status()
+    return r
+
+
+def catalog_version(r: httpx.Response, meta: dict) -> str | None:
+    return r.headers.get("x-catalog-version") or meta.get("catalog_version") or (r.headers.get("etag") or "").strip('"') or None
+
+
+async def fetch_all(client: httpx.AsyncClient, pause: float = PAUSE, known: str | None = None) -> tuple[list[dict], dict]:
+    """Все страницы каталога. known - версия прошлой загрузки: если не изменилась, NotChanged после первой страницы."""
+    cards, page, last, meta, version = [], 1, 1, {}, None
     while page <= last:
-        r = await client.get(url, params={"page": page})
-        if r.status_code in (401, 403):
-            raise ValueError("API «Респонса» не принял ключ: проверьте RESPONSE_API_KEY и способ передачи в .env")
-        r.raise_for_status()
+        r = await _page(client, page)
         got, meta = parse_payload(r.json())
+        v = catalog_version(r, meta)
+        if page == 1:
+            version = v
+            if known and v and v == known:
+                raise NotChanged(v)
+        elif v and version and v != version:
+            raise ValueError("Каталог «Респонса» обновился во время загрузки — запустите ещё раз")
         cards += got
         last = int(meta.get("last_page") or page)
         page += 1
@@ -120,6 +186,7 @@ async def fetch_all(client: httpx.AsyncClient, pause: float = PAUSE) -> tuple[li
             await asyncio.sleep(pause)
     if not cards:
         raise ValueError("API «Респонса» ответило, но карт в ответе нет")
+    meta["catalog_version"] = version
     return cards, meta
 
 
@@ -134,26 +201,35 @@ async def store(session, cards: list[dict], full: bool) -> int:
     return n
 
 
-async def sync(trigger: str = "admin", client: httpx.AsyncClient | None = None, pause: float = PAUSE) -> SyncRun:
+async def sync(trigger: str = "admin", client: httpx.AsyncClient | None = None, pause: float = PAUSE,
+               force: bool = False) -> SyncRun | None:
+    """Полная загрузка каталога. Без force и при той же версии каталога ничего не качает и возвращает None."""
+    from . import system
     from .scryfall import explain
     async with SessionLocal() as lock_session:
         if not (await lock_session.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": LOCK_ID})).scalar():
             raise SyncBusy("Загрузка уже идёт")
         try:
             async with SessionLocal() as s:
-                run = SyncRun(source=SOURCE, trigger=trigger)
-                s.add(run)
-                await s.commit()
+                st = await system.get_status(s, STATUS_KEY)
+                known = None if force or not await count(s) else (st.value if st else None)
                 own = client is None
-                http = client or httpx.AsyncClient(headers=api_headers(), timeout=httpx.Timeout(15, read=60),
-                                                   follow_redirects=True)
+                http = client or httpx.AsyncClient(timeout=httpx.Timeout(15, read=60), follow_redirects=True)
+                run = SyncRun(source=SOURCE, trigger=trigger)
                 try:
-                    cards, meta = await fetch_all(http, pause)
+                    cards, meta = await fetch_all(http, pause, known)
+                    s.add(run)
                     total = int(meta.get("total") or 0)
                     # убираем пропавшие карты только если пришло всё, что API обещало
                     run.cards = await store(s, cards, full=not total or len(cards) >= total)
+                    if meta.get("catalog_version"):
+                        await system.set_status(s, STATUS_KEY, meta["catalog_version"])
+                        await s.commit()
+                except NotChanged:
+                    return None
                 except Exception as e:  # noqa: BLE001
                     await s.rollback()
+                    s.add(run)
                     run.error = explain(e)[:2000]
                     log.exception("response sync failed")
                 finally:
@@ -165,6 +241,21 @@ async def sync(trigger: str = "admin", client: httpx.AsyncClient | None = None, 
                 return run
         finally:
             await lock_session.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": LOCK_ID})
+
+
+async def auto_sync_loop() -> None:
+    """Бот: при пустой базе и затем раз в 6 часов сверяет версию каталога; изменилась - обновляет базу."""
+    await asyncio.sleep(120)
+    while True:
+        try:
+            run = await sync(trigger="auto")
+            if run:
+                log.info("Респонс: загружено %s карт%s", run.cards, f", ошибка: {run.error}" if run.error else "")
+        except SyncBusy:
+            pass
+        except Exception:  # noqa: BLE001
+            log.exception("автообновление «Респонса»")
+        await asyncio.sleep(6 * 3600)
 
 
 async def is_running(session) -> bool:
