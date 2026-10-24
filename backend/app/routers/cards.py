@@ -1,4 +1,5 @@
 import gzip
+from datetime import datetime, timezone
 import json
 import re
 
@@ -7,11 +8,11 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import berserk, cardsearch, scryfall
+from .. import berserk, cardsearch, response, scryfall
 from ..cardimport import extract_rows, norm_name, normalize_generic
 from ..db import get_session
 from ..deps import require_admin
-from ..models import Card, CardPrint, User
+from ..models import Card, CardPrint, SyncRun, User
 
 router = APIRouter(tags=["cards"])
 MAX_UPLOAD = 50 * 1024 * 1024
@@ -70,9 +71,11 @@ async def card_stats(session: AsyncSession = Depends(get_session)):
     last = await scryfall.last_run(session)
     prints = (await session.execute(select(func.count()).select_from(CardPrint))).scalar_one()
     bk = await berserk.last_run(session)
+    rs = await response.last_run(session)
     return {"games": {g: {"cards": n, "russian": ru, **({"prints": prints} if g == "mtg" else {})} for g, n, ru in rows},
             "scryfall_updated": last.finished_at if last and last.cards else None,
-            "berserk_updated": bk.finished_at if bk and bk.cards else None}
+            "berserk_updated": bk.finished_at if bk and bk.cards else None,
+            "response_updated": rs.finished_at if rs and rs.cards else None}
 
 
 def _back(ex: dict) -> str | None:
@@ -90,7 +93,8 @@ def _row(c: Card) -> dict:
             "loyalty": ex.get("loyalty"), "colors": ex.get("colors"), "prices": c.prices or {},
             "color_identity": ex.get("color_identity") or [], "legalities": c.legalities or {},
             "back_image": _back(ex),
-            "is_game_changer": c.is_game_changer, **({"bk": bk_fields(ex)} if c.game == "berserk" else {})}
+            "is_game_changer": c.is_game_changer, **({"bk": bk_fields(ex)} if c.game == "berserk" else {}),
+            **({"rs": response.rs_fields(ex)} if c.game == "response" else {})}
 
 
 def bk_fields(ex: dict) -> dict:
@@ -146,7 +150,8 @@ async def get_card(card_id: int, session: AsyncSession = Depends(get_session)):
             "cmc": c.cmc, "commander_legal": c.commander_legal, "is_game_changer": c.is_game_changer,
             "legalities": c.legalities or {}, "prices": c.prices or {}, "scryfall_uri": c.scryfall_uri,
             "extra": c.extra or {}, "back_image": _back(c.extra or {}), "prints": [_print(p) for p in prints],
-            **({"bk": bk_fields(c.extra or {})} if c.game == "berserk" else {})}
+            **({"bk": bk_fields(c.extra or {})} if c.game == "berserk" else {}),
+            **({"rs": response.rs_fields(c.extra or {})} if c.game == "response" else {})}
 
 
 # ---------- админка: Scryfall ----------
@@ -283,3 +288,56 @@ async def upload_russian(file: UploadFile = File(...), admin: User = Depends(req
     total = (await session.execute(select(func.count()).select_from(Card).where(
         Card.game == "mtg", Card.name_ru.is_not(None)))).scalar_one()
     return {"in_file": len(ru), "updated": updated, "cards_with_russian": total}
+
+
+# ---------- «Респонс»: API разработчика или файл выгрузки ----------
+async def _run_response():
+    try:
+        await response.sync(trigger="admin")
+    except response.SyncBusy:
+        pass
+
+
+@router.post("/admin/cards/sync/response", status_code=202)
+async def sync_response(bg: BackgroundTasks, admin: User = Depends(require_admin),
+                        session: AsyncSession = Depends(get_session)):
+    from ..config import settings
+    if not settings.response_api_key:
+        raise HTTPException(400, "Ключ API «Респонса» не задан: впишите RESPONSE_API_KEY в .env сервера и перезапустите. "
+                                 "Пока можно загрузить файл выгрузки")
+    if await response.is_running(session):
+        raise HTTPException(409, "Загрузка уже идёт")
+    bg.add_task(_run_response)
+    return {"started": True}
+
+
+@router.get("/admin/cards/sync/response")
+async def response_status(admin: User = Depends(require_admin), session: AsyncSession = Depends(get_session)):
+    from ..config import settings
+    last = await response.last_run(session)
+    return {"running": await response.is_running(session), "cards": await response.count(session),
+            "key_configured": bool(settings.response_api_key),
+            "last": {"started_at": last.started_at, "finished_at": last.finished_at, "cards": last.cards,
+                     "error": last.error, "trigger": last.trigger} if last else None}
+
+
+@router.post("/admin/cards/import/response")
+async def import_response(file: UploadFile, admin: User = Depends(require_admin),
+                          session: AsyncSession = Depends(get_session)):
+    """Файл выгрузки API (одна страница или список страниц). Карты добавляются и обновляются, ничего не удаляется."""
+    import json
+    raw = await file.read(30 * 1024 * 1024 + 1)
+    if len(raw) > 30 * 1024 * 1024:
+        raise HTTPException(413, "Файл больше 30 МБ")
+    try:
+        data = json.loads(raw.decode("utf-8-sig"))
+    except (UnicodeDecodeError, ValueError):
+        raise HTTPException(422, "Это не JSON-выгрузка API «Респонса»")
+    cards, meta = response.parse_payload(data)
+    if not cards:
+        raise HTTPException(422, "В файле не нашлось карт «Респонса»")
+    n = await response.store(session, cards, full=False)
+    session.add(SyncRun(source=response.SOURCE, trigger="file", cards=n, finished_at=datetime.now(timezone.utc)))
+    await session.commit()
+    return {"cards": n, "total_in_api": meta.get("total"), "page": meta.get("current_page"),
+            "last_page": meta.get("last_page"), "in_base": await response.count(session)}

@@ -25,13 +25,14 @@ function issue(r: Row, format: string, identity: Set<string> | null): string | n
 }
 
 /** Список колоды по типам, как на Moxfield. ops - режим редактора (кнопки ±, перенос, удаление). */
-export default function DeckList({ rows, format, lang, ops, onHover }: {
-  rows: Row[]; format: string; lang: "ru" | "en"; ops?: Ops; onHover?: (r: Row) => void;
+export default function DeckList({ rows, format, lang, ops, onHover, game }: {
+  rows: Row[]; format: string; lang: "ru" | "en"; ops?: Ops; onHover?: (r: Row) => void; game?: string;
 }) {
+  const rs = game === "response" || rows.some((r) => r.card?.rs);
   const isCmd = COMMANDER_FORMATS.has(format);
   const commanders = rows.filter((r) => r.section === "commander" && r.card);
   const identity = isCmd && commanders.length ? new Set(commanders.flatMap((r) => r.card?.color_identity || [])) : null;
-  const groups = grouped(rows);
+  const groups = grouped(rows, rs ? "response" : game);
   if (!groups.length) return <p className="muted">Колода пуста. Найдите карты в поиске выше и добавьте их.</p>;
   return (
     <div className="decklist">
@@ -68,8 +69,10 @@ export default function DeckList({ rows, format, lang, ops, onHover }: {
                       <option value="">⋯</option>
                       {r.card && ops.print ? <option value="print">Выбрать издание…</option> : null}
                       {r.section !== "main" ? <option value="main">В основную колоду</option> : null}
-                      {r.section !== "side" ? <option value="side">В сайдборд</option> : null}
+                      {r.section !== "side" ? <option value="side">{rs ? "В дополнительную колоду" : "В сайдборд"}</option> : null}
                       {isCmd && r.section !== "commander" ? <option value="commander">Сделать командиром</option> : null}
+                      {rs && r.card?.rs?.hero && r.section !== "commander" ? <option value="commander">Сделать героем</option> : null}
+                      {rs && r.card?.rs?.order && r.section !== "orders" ? <option value="orders">В приказы</option> : null}
                       <option value="remove">Удалить</option>
                     </select>
                   ) : null}

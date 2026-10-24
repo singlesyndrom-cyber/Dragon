@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-GAME_LABELS = {"mtg": "Magic: The Gathering", "berserk": "Берсерк"}
+GAME_LABELS = {"mtg": "Magic: The Gathering", "berserk": "Берсерк", "response": "Респонс"}
 FORMAT_LABELS = {"swiss": "Швейцарская система", "fast_swiss": "Быстрый швейцарец",
                  "edh": "EDH — банк с нулевой суммой"}
 MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}

@@ -7,8 +7,8 @@ import Mana from "@/components/Mana";
 import { api } from "@/lib/api";
 import { viaSite } from "@/lib/img";
 import { useAuth } from "@/lib/auth";
-import { BK_FORMATS, DECK_FORMATS, formatTitle } from "@/lib/decks";
-import { dateOnly } from "@/lib/format";
+import { formatTitle, formatsFor } from "@/lib/decks";
+import { dateOnly, GAME_LIST } from "@/lib/format";
 
 export default function DecksPage() {
   return <Suspense fallback={<h1>Колоды</h1>}><Catalogue /></Suspense>;
@@ -19,7 +19,7 @@ function Catalogue() {
   const router = useRouter();
   const path = usePathname();
   const { me } = useAuth();
-  const game = p.get("game") === "berserk" ? "berserk" : "mtg";
+  const game = ["berserk", "response"].includes(p.get("game") || "") ? p.get("game")! : "mtg";
   const format = p.get("format") || "";
   const q = p.get("q") || "";
   const page = Math.max(1, Number(p.get("page")) || 1);
@@ -49,17 +49,17 @@ function Catalogue() {
       </div>
       <p className="lead">Публичные колоды игроков. Откройте любую, чтобы посмотреть статистику, разыграть тестовую руку или скопировать себе.</p>
       <div className="tabs section" role="tablist" aria-label="Игра">
-        {([["mtg", "Magic: The Gathering"], ["berserk", "Берсерк"]] as const).map(([g, l]) => (
+        {GAME_LIST.map(([g, l]) => (
           <button key={g} type="button" role="tab" aria-selected={game === g} className={game === g ? "on" : ""}
             onClick={() => go({ game: g === "mtg" ? "" : g, format: "" })}>{l}</button>
         ))}
       </div>
       <form className="row" onSubmit={(e) => { e.preventDefault(); go({ q: text.trim() }); }}>
-        <input type="search" value={text} onChange={(e) => setText(e.target.value)} placeholder={game === "berserk" ? "Название колоды" : "Название колоды или командир"}
+        <input type="search" value={text} onChange={(e) => setText(e.target.value)} placeholder={game === "berserk" ? "Название колоды" : game === "response" ? "Название колоды или герой" : "Название колоды или командир"}
           aria-label="Поиск колод" style={{ flex: 1, minWidth: 200 }} />
         <select value={format} onChange={(e) => go({ format: e.target.value })} aria-label="Формат" style={{ width: "auto" }}>
           <option value="">Все форматы</option>
-          {(game === "berserk" ? BK_FORMATS : DECK_FORMATS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          {formatsFor(game).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </select>
         <button type="submit">Найти</button>
       </form>

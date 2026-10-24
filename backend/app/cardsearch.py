@@ -50,6 +50,9 @@ KEYS = {
     "el": "element", "element": "element", "стихия": "element",               # «Берсерк»
     "class": "class", "класс": "class",
     "hp": "health", "health": "health", "здоровье": "health", "жизнь": "health", "жизни": "health",
+    "faction": "faction", "фракция": "faction", "фр": "faction",                 # «Респонс»
+    "str": "strength", "strength": "strength", "сила": "strength",
+    "dur": "durability", "durability": "durability", "прочность": "durability",
     "order": "order", "сортировка": "order", "dir": "dir",
 }
 COLOR_WORDS = {
@@ -67,6 +70,8 @@ GUILDS = {  # пары и тройки цветов по названиям, к�
 RARITY = {"common": 0, "c": 0, "обычная": 0, "uncommon": 1, "u": 1, "необычная": 1, "rare": 2, "r": 2, "редкая": 2,
           "mythic": 3, "m": 3, "мифическая": 3, "special": 4, "особая": 4, "bonus": 5, "бонусная": 5,
           "ultra": 6, "ультраредкая": 6, "ур": 6}
+RS_FACTIONS = {f.lower()[:5]: f for f in ("Порядок", "Хаос", "Жизнь", "Смерть", "Природа", "Технологии")}
+RS_FACTIONS["техно"] = "Технологии"
 RARITY_NAMES = ["common", "uncommon", "rare", "mythic", "special", "bonus", "ultra"]
 ELEMENTS = {"степи": "Степи", "степь": "Степи", "горы": "Горы", "леса": "Леса", "лес": "Леса", "болота": "Болота",
             "болото": "Болота", "тьма": "Тьма", "нейтральная": "Нейтральная", "нейтрал": "Нейтральная"}
@@ -198,7 +203,7 @@ def _term(t: _Tok, p: Parsed) -> ColumnElement | None:
         elif key == "dir":
             p.direction = "desc" if v.lower() in ("desc", "убыв") else "asc"
         else:
-            p.game = {"magic": "mtg", "mtg": "mtg", "мтг": "mtg", "берсерк": "berserk"}.get(v.lower(), v.lower())
+            p.game = {"magic": "mtg", "mtg": "mtg", "мтг": "mtg", "берсерк": "berserk", "респонс": "response", "response": "response"}.get(v.lower(), v.lower())
         return None
     if not v:
         p.warnings.append(f"Пустое значение у «{t.key}{op}»")
@@ -222,14 +227,21 @@ def _term(t: _Tok, p: Parsed) -> ColumnElement | None:
         return Card.extra["elements"].contains([el])
     if key == "class":
         return Card.extra["class"].astext.ilike(_like(v))
-    if key in ("mv", "pow", "tou", "loy", "usd", "eur", "health"):
+    if key == "faction":
+        fr = RS_FACTIONS.get(v.lower().replace("ё", "е")[:5])
+        if not fr:
+            p.warnings.append(f"Фракция «{v}»: порядок, хаос, жизнь, смерть, природа, технологии")
+            return None
+        return Card.extra["factions"].contains([fr])
+    if key in ("mv", "pow", "tou", "loy", "usd", "eur", "health", "strength", "durability"):
         n = _num(v)
         if n is None:
             p.warnings.append(f"«{t.key}{op}{v}»: нужно число")
             return None
         col = {"mv": Card.cmc, "usd": Card.prices["usd"].as_float(), "eur": Card.prices["eur"].as_float(),
                "pow": _numeric_extra("power"), "tou": _numeric_extra("toughness"),
-               "loy": _numeric_extra("loyalty"), "health": _numeric_extra("health")}[key]
+               "loy": _numeric_extra("loyalty"), "health": _numeric_extra("health"),
+               "strength": _numeric_extra("strength"), "durability": _numeric_extra("durability")}[key]
         return _cmp(col, op, n)
     if key == "rarity":
         r = RARITY.get(v.lower())

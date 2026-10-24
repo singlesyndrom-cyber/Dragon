@@ -24,7 +24,7 @@ from ..swiss import compute_standings
 from .meta import load_scope
 
 router = APIRouter(tags=["publisher"])
-GAMES = {"mtg": "Magic: The Gathering", "berserk": "Берсерк"}
+GAMES = {"mtg": "Magic: The Gathering", "berserk": "Берсерк", "response": "Респонс"}
 
 
 def _games(p: Publisher | None) -> list[str]:

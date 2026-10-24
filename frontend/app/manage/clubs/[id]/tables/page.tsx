@@ -129,7 +129,7 @@ function TableCard({ clubId, t, reload }: { clubId: number; t: Table; reload: ()
   );
 }
 
-const JUDGE_LABEL: Record<string, string> = { mtg: "Magic", edh: "EDH", berserk: "Берсерк" };
+const JUDGE_LABEL: Record<string, string> = { mtg: "Magic", edh: "EDH", berserk: "Берсерк", response: "Респонс" };
 
 /** Кто получает сообщения о бронях: организаторы и судьи клуба с галочками + проверка своей лички. */
 function NotifyTest({ clubId }: { clubId: number }) {

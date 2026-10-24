@@ -36,6 +36,17 @@ BERSERK_PICK_SECONDS = {12: 60, 11: 55, 10: 50, 9: 45, 8: 40, 7: 35, 6: 30, 5: 2
 
 
 def default_config(game: str) -> dict:
+    if game == "response":
+        # «Респонс», режим «Драфт»: 4, 6 или 8 игроков, три бустера; героя и приказы из бустера игрок
+        # откладывает, из остальных 14 карт - пики с передачей налево, направо, налево
+        return {
+            "boosters": 3, "cards": 14,
+            "pick_seconds": {str(k): v for k, v in MTG_PICK_SECONDS.items()},
+            "review_first": 60, "review_step": 30,
+            "build_minutes": 25, "round_minutes": 50,
+            "sets": "", "first_round": "seats",
+            "pod_max": 8, "pods_pow2": False,
+        }
     if game == "berserk":
         return {
             "boosters": 3, "cards": 12,

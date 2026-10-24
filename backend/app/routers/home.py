@@ -19,7 +19,7 @@ from .tournaments import _t_out
 
 router = APIRouter(prefix="/home", tags=["home"])
 
-GAME = "^(mtg|berserk)$"
+GAME = "^(mtg|berserk|response)$"
 LEAGUE_KIND = {"mtg": LeagueKind.edh, "berserk": LeagueKind.berserk}
 META_TOP = 5
 
@@ -110,6 +110,8 @@ def _season_out(league: League, club: Club, rows: list[dict], top: int = 5) -> d
 
 async def current_season(session: AsyncSession, game: str) -> dict | None:
     """Активный сезон игры с наибольшим числом турниров (на главной - один, самый живой)."""
+    if game not in LEAGUE_KIND:
+        return None
     leagues = await _active_leagues(session, game)
     if not leagues:
         return None
@@ -204,7 +206,7 @@ async def home_me(game: str = Query("mtg", pattern=GAME), user: User = Depends(c
 
     season = None
     my_clubs = (await session.execute(select(ClubMember.club_id).where(ClubMember.user_id == user.id))).scalars().all()
-    for league, club in await _active_leagues(session, game, list(my_clubs)):
+    for league, club in (await _active_leagues(session, game, list(my_clubs)) if game in LEAGUE_KIND else []):
         table = await _table(session, league)
         me = next((r for r in table if r["user_id"] == user.id), None)
         if me:

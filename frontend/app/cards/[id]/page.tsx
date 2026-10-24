@@ -6,6 +6,7 @@ import WotcNotice from "@/components/WotcNotice";
 import { sget } from "@/lib/api";
 import { BK_CREDIT, BK_ICON_RU, Bk, bkIconUrl } from "@/lib/berserk";
 import { qv, searchHref } from "@/lib/cards";
+import { RS_CREDIT, type Rs } from "@/lib/response";
 
 const FORMATS: [string, string][] = [
   ["commander", "Commander (EDH)"], ["standard", "Standard"], ["pioneer", "Pioneer"], ["modern", "Modern"],
@@ -36,7 +37,7 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
       {c.name_ru ? <p className="lead" style={{ marginTop: "-0.4em" }}>{c.name}</p> : null}
       <div className="split">
         <div>
-          {c.bk ? <BerserkPanel c={c} /> : faces.length ? faces.map((f, i) => (
+          {c.rs ? <ResponsePanel c={c} /> : c.bk ? <BerserkPanel c={c} /> : faces.length ? faces.map((f, i) => (
             <section key={i} className="panel">
               <h3><Mana text={f.mana_cost} /> {f.name}</h3>
               <p className="muted">{f.type_line}</p>
@@ -89,6 +90,7 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
       </div>
       {c.game === "mtg" ? <WotcNotice /> : null}
       {c.game === "berserk" ? <p className="muted small section">{BK_CREDIT}</p> : null}
+      {c.game === "response" ? <p className="muted small section">{RS_CREDIT}</p> : null}
     </>
   );
 }
@@ -129,5 +131,50 @@ function BerserkPanel({ c }: { c: any }) {
       </dl>
       <div style={{ marginTop: 12 }}><OracleText text={c.text} /></div>
     </section>
+  );
+}
+
+/** Карта «Респонса»: тип, стоимость (влияние), фракции, сила/прочность, уровни героя, разъяснения, издания. */
+function ResponsePanel({ c }: { c: any }) {
+  const r: Rs = c.rs || {};
+  const types = [...(r.supertypes || []), ...(r.types || [])];
+  return (
+    <>
+      <section className="panel">
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <span className="muted">
+            {types.map((t, i) => <span key={t}>{i ? " " : ""}<Link href={searchHref(`t:${qv(t)}`, "response")} className="muted">{t}</Link></span>)}
+            {r.subtypes?.length ? <> — {r.subtypes.join(", ")}</> : null}
+          </span>
+          {c.mana_cost != null ? <span className="gold" title="Стоимость (влияние)">♛ {c.mana_cost}</span> : null}
+        </div>
+        <dl className="facts small" style={{ marginTop: 10 }}>
+          <dt>Фракции</dt>
+          <dd>{(r.factions || []).map((f, i) => (
+            <span key={f}>{i ? ", " : ""}<Link href={searchHref(`фракция:${f.toLowerCase()}`, "response")}>{f}</Link></span>
+          ))}</dd>
+          {r.strength != null ? <><dt>Сила</dt><dd className="num">{r.strength}</dd></> : null}
+          {r.durability != null ? <><dt>Прочность</dt><dd className="num">{r.durability}</dd></> : null}
+          {c.rarity ? <><dt>Редкость</dt><dd>{c.rarity}</dd></> : null}
+          {r.legendary ? <><dt>Ограничение</dt><dd>легендарная — одна копия в колоде</dd></> : null}
+        </dl>
+        {r.hero && r.levels?.length ? (
+          <div style={{ marginTop: 12 }}>
+            {r.levels.map((lv, i) => (
+              <p key={i} style={{ margin: "0 0 0.6em" }}><b>Уровень {i + 1}</b> <span className="muted">· влияние {lv.influence ?? "—"}</span><br />{lv.text}</p>
+            ))}
+          </div>
+        ) : <div style={{ marginTop: 12 }}><OracleText text={c.text} /></div>}
+      </section>
+      {r.rulings?.length ? (
+        <section className="panel">
+          <h3>Разъяснения</h3>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>{r.rulings.map((t) => <li key={t} style={{ marginBottom: 6 }}>{t}</li>)}</ul>
+        </section>
+      ) : null}
+      {r.printings?.length ? (
+        <p className="muted small">Издания: {r.printings.map((p) => `${p.set} №${p.number} (${p.rarity})`).join("; ")}</p>
+      ) : null}
+    </>
   );
 }

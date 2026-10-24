@@ -8,8 +8,12 @@ export const DECK_FORMATS: [string, string][] = [
 export const BK_FORMATS: [string, string][] = [
   ["berserk", "Констрактед (30–50, до 3 копий)"], ["berserk_limited", "Лимитед: драфт, силед"], ["casual", "Свободный"],
 ];
+export const RS_FORMATS: [string, string][] = [
+  ["response", "Дуэль (30 карт, до 2 копий, фракции героя)"], ["response_limited", "Драфт / силед (без ограничений)"], ["casual", "Свободный"],
+];
+export const formatsFor = (game: string) => game === "berserk" ? BK_FORMATS : game === "response" ? RS_FORMATS : DECK_FORMATS;
 export const COMMANDER_FORMATS = new Set(["commander", "duel", "brawl"]);
-export const formatTitle = (f: string) => [...DECK_FORMATS, ...BK_FORMATS].find(([k]) => k === f)?.[1] || f;
+export const formatTitle = (f: string) => [...DECK_FORMATS, ...BK_FORMATS, ...RS_FORMATS].find(([k]) => k === f)?.[1] || f;
 
 export const VISIBILITY: [string, string, string][] = [
   ["private", "Личная", "Видите только вы и организатор турнира, если подадите колоду"],
@@ -24,16 +28,19 @@ export type CardInfo = {
   prices?: Record<string, string | null>; legalities?: Record<string, string>; is_game_changer?: boolean;
   back_image?: string | null;
   print?: { id: number; set: string; set_name?: string | null; number?: string | null } | null;
-  bk?: import("./berserk").Bk; text?: string | null;
+  bk?: import("./berserk").Bk; rs?: import("./response").Rs; text?: string | null;
 };
-export type Row = { key: string; name: string; qty: number; section: "main" | "side" | "commander"; card: CardInfo | null };
+export type Row = { key: string; name: string; qty: number; section: "main" | "side" | "commander" | "orders"; card: CardInfo | null };
 
 export const GROUPS: [string, string][] = [
   ["commander", "Командир"], ["creature", "Существа"], ["planeswalker", "Planeswalker'ы"], ["battle", "Битвы"],
   ["instant", "Мгновенные"], ["sorcery", "Волшебство"], ["artifact", "Артефакты"], ["enchantment", "Чары"],
   ["land", "Земли"], ["flyer", "Летающие"], ["bk-artifact", "Артефакты"], ["terrain", "Местности"],
+  ["orders", "Приказы"], ["rs-unit", "Юниты"], ["rs-spell", "Заклинания"], ["rs-boost", "Усиления"], ["rs-trap", "Ловушки"],
+  ["rs-location", "Локации"],
   ["other", "Прочее"], ["side", "Сайдборд"],
 ];
+const RS_GROUP: Record<string, string> = { "Юнит": "rs-unit", "Заклинание": "rs-spell", "Усиление": "rs-boost", "Ловушка": "rs-trap", "Локация": "rs-location" };
 
 export function typeGroup(type?: string | null): string {
   const t = (type || "").split("//")[0].toLowerCase();
@@ -50,11 +57,16 @@ export function typeGroup(type?: string | null): string {
 export function rowGroup(r: Row): string {
   if (r.section === "commander") return "commander";
   if (r.section === "side") return "side";
+  if (r.section === "orders") return "orders";
+  if (r.card?.rs) return RS_GROUP[(r.card.rs.types || [])[0]] || "other";
   return typeGroup(r.card?.type);
 }
 
-export function grouped(rows: Row[]): [string, string, Row[]][] {
-  return GROUPS.map(([g, label]) => [g, label, rows.filter((r) => rowGroup(r) === g)
+/** Подписи разделов: у «Респонса» командир - герой, сайдборд - дополнительная колода. */
+const RS_LABELS: Record<string, string> = { commander: "Герой", side: "Дополнительная колода" };
+
+export function grouped(rows: Row[], game?: string): [string, string, Row[]][] {
+  return GROUPS.map(([g, label]) => [g, (game === "response" && RS_LABELS[g]) || label, rows.filter((r) => rowGroup(r) === g)
     .sort((a, b) => (a.card?.cmc ?? 99) - (b.card?.cmc ?? 99) || a.name.localeCompare(b.name))] as [string, string, Row[]])
     .filter(([, , rs]) => rs.length);
 }
@@ -105,6 +117,11 @@ export function nxtCode(r: Row): number | null {
 }
 
 export function exportText(rows: Row[], style: "text" | "mtgo" | "nxt", withPrints = false): string {
+  if (rows.some((r) => r.section === "orders" || r.card?.rs)) {        // «Респонс»: герой, приказы, колода, доп. колода
+    const sec = (s: string) => rows.filter((r) => r.section === s).map((r) => `${r.qty} ${r.card?.name || r.name}`);
+    return ([["Герой", "commander"], ["Приказы", "orders"], ["Колода", "main"], ["Дополнительная колода", "side"]] as const)
+      .filter(([, s]) => sec(s).length).map(([t, s]) => `${t}\n${sec(s).join("\n")}`).join("\n\n") + "\n";
+  }
   if (style === "nxt") {
     return rows.filter((r) => r.section !== "side").map((r) => {
       const code = nxtCode(r);

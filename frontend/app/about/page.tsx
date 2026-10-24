@@ -44,6 +44,13 @@ export default function About() {
             <a href="https://proberserk.ru" target="_blank" rel="noopener">proberserk.ru →</a>
           </div>
           <div className="h-card">
+            <span className="h-label">«Респонс»</span>
+            <h3>API «Респонса»</h3>
+            <p>Карты, разъяснения правил и изображения загружаются из API разработчика игры по ключу, с разрешения правообладателя.
+              Правила колод и драфта — по официальным правилам игры.</p>
+            <a href="https://response-game.ru/rules" target="_blank" rel="noopener">Правила «Респонса» →</a>
+          </div>
+          <div className="h-card">
             <h3>Правила и форматы</h3>
             <p className="muted">Проверка колод, отряды и драфт построены по официальным расширенным и турнирным правилам
               «Берсерка» и турнирным правилам Magic: The Gathering.</p>

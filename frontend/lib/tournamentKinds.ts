@@ -1,5 +1,5 @@
 /** Виды турниров для мастера создания: игра + формат + подсказка. */
-export type Kind = { key: string; game: "mtg" | "berserk"; format: "swiss" | "fast_swiss" | "edh"; title: string; text: string;
+export type Kind = { key: string; game: "mtg" | "berserk" | "response"; format: "swiss" | "fast_swiss" | "edh"; title: string; text: string;
   league: "edh" | "berserk" | null; draft?: boolean };
 
 export const KINDS: Kind[] = [
@@ -15,6 +15,10 @@ export const KINDS: Kind[] = [
     text: "Полноценный турнир на несколько туров. Очки 3/1/0 идут в сезон лиги.", league: "berserk" },
   { key: "berserk-draft", game: "berserk", format: "swiss", draft: true, title: "Берсерк: драфт",
     text: "Драфт на трёх бустерах (например, 7-8-8): рассадка, таймеры пиков, сборка колоды, туры по 50 минут.", league: "berserk" },
+  { key: "response-duel", game: "response", format: "swiss", title: "Респонс: дуэль",
+    text: "«Дуэль классический»: колода 30 карт, герой, 5 приказов и до 10 карт доп. колоды; матчи до двух побед, швейцарка.", league: null },
+  { key: "response-draft", game: "response", format: "swiss", draft: true, title: "Респонс: драфт",
+    text: "4, 6 или 8 игроков за столом, три бустера: герой и приказы откладываются, 14 пиков на бустер. Затем дуэли до двух побед.", league: null },
 ];
 
 export const DECK_POLICY: Record<string, string> = {

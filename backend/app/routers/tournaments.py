@@ -33,7 +33,7 @@ Tier = Literal["club", "city", "open", "regional", "pro"]
 class TournamentIn(BaseModel):
     club_id: int
     name: str = Field(min_length=2, max_length=128)
-    game: Literal["mtg", "berserk"] = "mtg"
+    game: Literal["mtg", "berserk", "response"] = "mtg"
     format: TournamentFormat = TournamentFormat.swiss
     rounds: int | None = Field(default=None, ge=1, le=15)
     starts_at: datetime | None = None   # дата и время ивента; без часового пояса - APP_TIMEZONE

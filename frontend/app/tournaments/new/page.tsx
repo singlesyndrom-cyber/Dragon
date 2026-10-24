@@ -115,7 +115,7 @@ function Wizard() {
                 <legend>Драфт</legend>
                 <label className="inline"><span>Бустеры (выпуски)</span>
                   <input value={draftSets} onChange={(e) => setDraftSets(e.target.value)} maxLength={40}
-                    placeholder={kind.game === "berserk" ? "7-8-8" : "Например: FDN, FDN, FDN"} style={{ width: 220 }} />
+                    placeholder={kind.game === "berserk" ? "7-8-8" : kind.game === "response" ? "Например: КоВ, КоВ, КоВ" : "Например: FDN, FDN, FDN"} style={{ width: 220 }} />
                 </label>
                 <p className="hint">Таймеры пиков, время на сборку колоды (25 мин) и длительность тура (50 мин) настраиваются
                   на экране драфта до его начала.</p>

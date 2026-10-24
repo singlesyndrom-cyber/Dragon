@@ -38,20 +38,21 @@ def _cache_path(*parts: str) -> Path:
     return Path(settings.image_cache_dir).joinpath(*parts)
 
 
-async def _fetch(url: str, direct_first: bool = False) -> bytes:
+async def _fetch(url: str, direct_first: bool = False, headers: dict | None = None) -> bytes:
     """Сначала через прокси Scryfall (если есть), при сбое - напрямую. Российские сайты - сразу напрямую."""
     errors = []
     for prx in dict.fromkeys([None] if direct_first else [scryfall.proxy(), None]):
         try:
             net = {"transport": transport} if transport else {"proxy": prx}
             async with httpx.AsyncClient(**net, timeout=httpx.Timeout(10, read=30), follow_redirects=True,
-                                         headers={"User-Agent": scryfall.HEADERS["User-Agent"], "Accept": "image/*"}) as c:
+                                         headers={"User-Agent": scryfall.HEADERS["User-Agent"], **(headers or {}),
+                                                  "Accept": "image/*"}) as c:
                 r = await c.get(url)
             r.raise_for_status()
             return r.content
         except httpx.HTTPError as e:
             errors.append(f"{'прокси' if prx else 'напрямую'}: {type(e).__name__}")
-    raise HTTPException(502, "Scryfall не отдал картинку (" + "; ".join(errors) + ")")
+    raise HTTPException(502, "Источник не отдал картинку (" + "; ".join(errors) + ")")
 
 
 def _prune() -> None:
@@ -70,14 +71,15 @@ def _prune() -> None:
             pass
 
 
-async def _serve(key: tuple[str, ...], url: str, media: str, direct_first: bool = False) -> FileResponse:
+async def _serve(key: tuple[str, ...], url: str, media: str, direct_first: bool = False,
+                 headers: dict | None = None) -> FileResponse:
     global _writes
     path = _cache_path(*key)
     if not path.exists():
         lock = _locks.setdefault(str(path), asyncio.Lock())
         async with lock:                               # одну картинку качаем один раз, даже если её просят 20 человек
             if not path.exists():
-                data = await _fetch(url, direct_first)
+                data = await _fetch(url, direct_first, headers)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 tmp = path.with_suffix(path.suffix + f".{os.getpid()}.tmp")
                 tmp.write_bytes(data)
@@ -92,6 +94,19 @@ async def _serve(key: tuple[str, ...], url: str, media: str, direct_first: bool 
         except OSError:
             pass
     return FileResponse(path, media_type=media, headers=CACHE_HEADERS)
+
+
+RS_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+@router.get("/img/rs/{image_id}")
+async def response_image(image_id: str):
+    """Картинка карты «Респонса» из API разработчика (с ключом, если API его требует)."""
+    from .. import response
+    if not RS_ID.match(image_id):
+        raise HTTPException(404, "Нет такой картинки")
+    return await _serve(("rs", image_id[:2], image_id), response.IMAGES + image_id, "image/jpeg", direct_first=True,
+                        headers=response.api_headers())
 
 
 @router.get("/img/bk/{path:path}")

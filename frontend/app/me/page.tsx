@@ -12,7 +12,7 @@ import VkButton from "@/components/VkButton";
 import { api } from "@/lib/api";
 import { VISIBILITY, formatTitle } from "@/lib/decks";
 
-const DECK_GAMES: [string, string][] = [["mtg", "Magic: The Gathering"], ["berserk", "Берсерк"]];
+const DECK_GAMES: [string, string][] = [["mtg", "Magic: The Gathering"], ["berserk", "Берсерк"], ["response", "Респонс"]];
 import { useAuth } from "@/lib/auth";
 import { rub } from "@/lib/format";
 import { JUDGE_GAMES } from "@/lib/judges";
@@ -190,7 +190,7 @@ function Decks() {
           ))}
         </ul>
       ) : decks.length ? (
-        <p className="muted">Колод {game === "berserk" ? "«Берсерка»" : "Magic"} пока нет. <Link href={`/decks/new?game=${game}`}>Создать колоду</Link></p>
+        <p className="muted">Колод {game === "berserk" ? "«Берсерка»" : game === "response" ? "«Респонса»" : "Magic"} пока нет. <Link href={`/decks/new?game=${game}`}>Создать колоду</Link></p>
       ) : <p className="muted">Колод пока нет. Соберите колоду в конструкторе или вставьте готовый список из Moxfield, MTGGoldfish или Arena.</p>}
       <Status error={error} />
     </section>

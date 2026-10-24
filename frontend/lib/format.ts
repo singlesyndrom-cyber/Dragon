@@ -1,4 +1,6 @@
-export const GAMES: Record<string, string> = { mtg: "Magic: The Gathering", berserk: "Берсерк" };
+export const GAMES: Record<string, string> = { mtg: "Magic: The Gathering", berserk: "Берсерк", response: "Респонс" };
+/** Игры сайта по порядку: код, полное и короткое название. */
+export const GAME_LIST: [string, string, string][] = [["mtg", "Magic: The Gathering", "Magic"], ["berserk", "Берсерк", "Берсерк"], ["response", "Респонс", "Респонс"]];
 
 export const FORMATS: Record<string, string> = {
   swiss: "Швейцарская система",

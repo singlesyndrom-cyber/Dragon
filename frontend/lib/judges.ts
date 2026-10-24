@@ -1,9 +1,9 @@
 /** Судьи клуба: направления и проверка, может ли человек вести турнир. */
-export const JUDGE_GAMES: Record<string, string> = { mtg: "Magic", edh: "EDH", berserk: "Берсерк" };
+export const JUDGE_GAMES: Record<string, string> = { mtg: "Magic", edh: "EDH", berserk: "Берсерк", response: "Респонс" };
 
 export function judgeDirection(game: string, format: string): string {
   if (format === "edh") return "edh";
-  return game === "berserk" ? "berserk" : "mtg";
+  return game === "berserk" || game === "response" ? game : "mtg";
 }
 
 /** membership - ответ /clubs/{id}/membership. Организатор ведёт всё, судья - свои направления. */

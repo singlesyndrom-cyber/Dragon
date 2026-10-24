@@ -1,12 +1,12 @@
 /** Главная: игра, подписи турниров, дни недели. Всё время - по часовому поясу клуба (TZ). */
 import { FORMATS, plural, TZ } from "./format";
 
-export type HomeGame = "mtg" | "berserk";
-export const HOME_GAMES: [HomeGame, string][] = [["mtg", "Magic"], ["berserk", "Берсерк"]];
+export type HomeGame = "mtg" | "berserk" | "response";
+export const HOME_GAMES: [HomeGame, string][] = [["mtg", "Magic"], ["berserk", "Берсерк"], ["response", "Респонс"]];
 export const GAME_COOKIE = "home-game";
 
 export function homeGame(v?: string | null): HomeGame | null {
-  return v === "mtg" || v === "berserk" ? v : null;
+  return v === "mtg" || v === "berserk" || v === "response" ? v : null;
 }
 
 export type HomeEvent = {

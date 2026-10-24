@@ -42,6 +42,7 @@ function AdminContent() {
           <StaffRoles />
           <Scryfall />
           <BerserkSync />
+          <ResponseSync />
           <Accounts />
           <ClubsAdmin />
           <Categories />
@@ -116,6 +117,53 @@ function BerserkSync() {
       ) : null}
       <button className="primary" disabled={busy || st?.running}
         onClick={() => run(() => api("/admin/cards/sync/berserk", { method: "POST" })).then(load)}>Загрузить с ProBerserk</button>
+      <Status error={error} />
+    </div>
+  );
+}
+
+function ResponseSync() {
+  const [st, setSt] = useState<any>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [report, setReport] = useState<any>(null);
+  const { busy, error, run } = useAction();
+  const load = useCallback(() => api("/admin/cards/sync/response").then(setSt).catch(() => {}), []);
+  useEffect(() => {
+    load();
+    const h = setInterval(load, 10000);
+    return () => clearInterval(h);
+  }, [load]);
+  const last = st?.last;
+  const upload = () => run(async () => {
+    const form = new FormData();
+    form.append("file", file!);
+    setReport(await api("/admin/cards/import/response", { form }));
+    await load();
+  });
+  return (
+    <div className="panel">
+      <h3>База «Респонса» из API разработчика</h3>
+      <p className="small muted">
+        Карты, рулинги и картинки берутся из API response-league.ru по ключу. Ключ хранится только на сервере:
+        строка <code>RESPONSE_API_KEY=…</code> в файле .env (и при необходимости RESPONSE_API_HEADER / RESPONSE_API_PREFIX).
+        Без ключа базу можно загрузить файлом выгрузки API — одна страница или все сразу.
+      </p>
+      {st ? (
+        <p className="small">
+          В базе карт: {(st.cards || 0).toLocaleString("ru-RU")}. Ключ API: {st.key_configured ? "задан" : "не задан"}.{" "}
+          {st.running ? "Идёт загрузка…" : last ? <>Последняя загрузка: {dateTime(last.finished_at || last.started_at)}
+            ({last.trigger === "file" ? "файлом" : "по API"}), карт {last.cards.toLocaleString("ru-RU")}.</> : "Ещё не загружалась."}
+          {last?.error ? <span className="loss"> {last.error}</span> : null}
+        </p>
+      ) : null}
+      <div className="row">
+        <button className="primary" disabled={busy || st?.running || !st?.key_configured}
+          onClick={() => run(() => api("/admin/cards/sync/response", { method: "POST" })).then(load)}>Загрузить по API</button>
+        <input type="file" accept=".json,application/json" aria-label="Файл выгрузки «Респонса»" style={{ maxWidth: 260 }}
+          onChange={(e) => setFile(e.target.files?.[0] || null)} />
+        <button disabled={busy || !file} onClick={upload}>Загрузить файл</button>
+      </div>
+      {report ? <p className="small ok">Загружено карт: {report.cards}{report.total_in_api ? ` (страница ${report.page} из ${report.last_page}; всего в API ${report.total_in_api})` : ""}. В базе: {report.in_base}.</p> : null}
       <Status error={error} />
     </div>
   );

@@ -68,7 +68,7 @@ async def is_club_organizer(session: AsyncSession, club_id: int, user: User) -> 
 
 
 # ---------- судьи клуба ----------
-JUDGE_GAMES = {"mtg": "Magic", "edh": "EDH", "berserk": "Берсерк"}
+JUDGE_GAMES = {"mtg": "Magic", "edh": "EDH", "berserk": "Берсерк", "response": "Респонс"}
 
 
 def judge_direction(game: str, fmt) -> str:
@@ -76,7 +76,7 @@ def judge_direction(game: str, fmt) -> str:
     fmt = getattr(fmt, "value", fmt)
     if fmt == "edh":
         return "edh"
-    return "berserk" if game == "berserk" else "mtg"
+    return game if game in ("berserk", "response") else "mtg"
 
 
 def parse_judge_games(value: str | None) -> list[str]:

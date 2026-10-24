@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     # прокси до Scryfall (с некоторых хостингов он не отвечает): auto - тот же, что для Telegram;
     # direct - без прокси; иначе адрес socks5://… или http://…
     scryfall_proxy: str = "auto"
+    # ККИ «Респонс»: API разработчика. Ключ - только здесь (в .env), в браузер не попадает
+    response_api_url: str = "https://response-league.ru/api/v1/cards"
+    response_api_key: str = ""
+    response_api_header: str = "Authorization"     # как передавать ключ: заголовок…
+    response_api_prefix: str = "Bearer "           # …и приставка перед ключом (для X-API-Key - пусто)
     image_cache_dir: str = "/cache/images"   # картинки карт Scryfall, скачанные сервером (раздаются через /img)
     image_cache_max_gb: float = 5.0
     # почта для восстановления пароля; пусто - письма пишутся в лог бэкенда

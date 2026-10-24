@@ -267,7 +267,7 @@ async def set_club_judge(club_id: int, data: JudgeSet, user: User = Depends(curr
         raise HTTPException(403, "Нужны права организатора клуба")
     bad = [g for g in data.games if g not in JUDGE_GAMES]
     if bad:
-        raise HTTPException(422, "Направления судейства: mtg, edh, berserk")
+        raise HTTPException(422, "Направления судейства: mtg, edh, berserk, response")
     target = (await session.execute(select(User).where(User.player_no == data.player_no))).scalar_one_or_none()
     if not target:
         raise HTTPException(404, f"Игрока с номером {data.player_no} нет: проверьте номер в его кабинете")

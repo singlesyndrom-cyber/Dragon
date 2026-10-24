@@ -16,7 +16,7 @@ import Guard from "@/components/Guard";
 import Mana from "@/components/Mana";
 import { api } from "@/lib/api";
 import { bkCost } from "@/lib/berserk";
-import { BK_FORMATS, COMMANDER_FORMATS, CardInfo, DECK_FORMATS, Row, VISIBILITY, count, fromApi, playing } from "@/lib/decks";
+import { COMMANDER_FORMATS, CardInfo, Row, VISIBILITY, count, formatsFor, fromApi, playing } from "@/lib/decks";
 
 export default function EditPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -89,12 +89,14 @@ function Editor({ id }: { id: string }) {
 
   const isCmd = COMMANDER_FORMATS.has(d.format);
   const bk = d.game === "berserk";
-  const formats = bk ? BK_FORMATS : DECK_FORMATS;
+  const rs = d.game === "response";
+  const formats = formatsFor(d.game);
 
   function add(card: CardInfo, section: Row["section"], qty = 1) {
     setRows((prev) => {
       let next = prev;
       if (section === "commander") next = next.filter((r) => !(r.card?.id === card.id && r.section === "main"));
+      if (section === "commander" && rs) next = next.filter((r) => r.section !== "commander");     // герой у колоды один
       const i = next.findIndex((r) => r.card?.id === card.id && r.section === section);
       if (i >= 0) return next.map((r, j) => j === i ? { ...r, qty: section === "commander" ? 1 : r.qty + qty } : r);
       return [...next, { key: newKey(), name: card.name, qty: section === "commander" ? 1 : qty, section, card }];
@@ -102,7 +104,7 @@ function Editor({ id }: { id: string }) {
     setPreview({ name: card.name, image: card.image_url, back: card.back_image });
   }
   const ops: Ops = {
-    print: bk ? undefined : (key) => setPrintKey(key),        // издания есть только у карт MTG
+    print: bk || rs ? undefined : (key) => setPrintKey(key),        // издания есть только у карт MTG
     qty: (key, delta) => setRows((prev) => prev.flatMap((r) => r.key !== key ? [r] : r.qty + delta > 0 ? [{ ...r, qty: r.qty + delta }] : [])),
     remove: (key) => setRows((prev) => prev.filter((r) => r.key !== key)),
     move: (key, section) => setRows((prev) => {
@@ -167,10 +169,13 @@ function Editor({ id }: { id: string }) {
       <div className="builder">
         <div>
           <p className="muted small" style={{ marginTop: 0 }}>
-            В колоде {count(playing(rows))}{isCmd ? " из 100" : bk && d.format === "berserk" ? " (нужно от 30)" : ""}{rows.some((r) => r.section === "side") ? `, в сайдборде ${count(rows.filter((r) => r.section === "side"))}` : ""}.
-            Наведите на карту, чтобы увидеть её; «⋯» — выбрать издание, перенести в сайдборд, сделать командиром или удалить.
+            {rs ? <>Герой: {count(rows.filter((r) => r.section === "commander"))} из 1 · приказы: {count(rows.filter((r) => r.section === "orders"))} из 5 ·
+              колода: {count(rows.filter((r) => r.section === "main"))} из 30{rows.some((r) => r.section === "side") ? ` · доп. колода: ${count(rows.filter((r) => r.section === "side"))} из 10` : ""}.
+              Героя и приказы сайт раскладывает сам; «⋯» — перенести в доп. колоду или удалить.</>
+              : <>В колоде {count(playing(rows))}{isCmd ? " из 100" : bk && d.format === "berserk" ? " (нужно от 30)" : ""}{rows.some((r) => r.section === "side") ? `, в сайдборде ${count(rows.filter((r) => r.section === "side"))}` : ""}.
+            Наведите на карту, чтобы увидеть её; «⋯» — выбрать издание, перенести в сайдборд, сделать командиром или удалить.</>}
           </p>
-          <DeckList rows={rows} format={d.format} lang={lang} ops={ops}
+          <DeckList rows={rows} format={d.format} lang={lang} ops={ops} game={d.game}
             onHover={(r) => setPreview({ name: r.name, image: r.card?.image_url, back: r.card?.back_image })} />
         </div>
         <aside className="builder-side">
@@ -212,6 +217,8 @@ function CardSearch({ game, format, isCmd, lang, onAdd, onPreview }: {
   }, [query, legal, format, game]);
 
   function pick(c: CardInfo, s: Row["section"]) {
+    if (game === "response" && s === "main" && c.rs?.hero) return onAdd(c, "commander");     // герой и приказы - в свои разделы
+    if (game === "response" && s === "main" && c.rs?.order) return onAdd(c, "orders", 1);
     onAdd(c, s, qty);
   }
   return (
@@ -219,6 +226,7 @@ function CardSearch({ game, format, isCmd, lang, onAdd, onPreview }: {
       <form className="cardsearch" onSubmit={(e) => { e.preventDefault(); if (items?.[0]) { pick(items[0], "main"); setQ(""); } }}>
         <input type="search" value={q} onChange={(e) => setQ(e.target.value)} autoFocus
           placeholder={game === "berserk" ? "Добавить карту: название, «3 Преторианец» или запрос el:горы t:существо"
+            : game === "response" ? "Добавить карту: название, «2 Адепт раздора» или запрос фракция:хаос t:юнит"
             : "Добавить карту: название по-русски или по-английски, «4 Lightning Bolt» или запрос t:dragon c:r"}
           aria-label="Поиск карты для колоды" />
         <button type="submit" disabled={!items?.length}>Добавить</button>
@@ -246,6 +254,7 @@ function CardSearch({ game, format, isCmd, lang, onAdd, onPreview }: {
                 <span className="row" style={{ gap: 4 }}>
                   <button type="button" onClick={() => pick(c, "main")} title="В основную колоду">+{qty > 1 ? qty : ""}</button>
                   {game === "mtg" ? <button type="button" onClick={() => pick(c, "side")} title="В сайдборд">сайд</button> : null}
+                  {game === "response" && !c.rs?.hero ? <button type="button" onClick={() => onAdd(c, "side", qty)} title="В дополнительную колоду">доп.</button> : null}
                   {isCmd ? <button type="button" onClick={() => onAdd(c, "commander")} title="Сделать командиром">командир</button> : null}
                 </span>
               </li>
@@ -275,7 +284,10 @@ function ImportBox({ id, deck, hasCards, onDone }: { id: string; deck: any; hasC
   return (
     <div className="panel section">
       <h3 style={{ marginTop: 0 }}>Импорт списка</h3>
-      {deck.game === "berserk" ? (
+      {deck.game === "response" ? (
+        <p className="muted small">Вставьте список «2 Адепт раздора» — по строке на карту. Разделы «Герой», «Приказы», «Колода»,
+          «Дополнительная колода» распознаются, но не обязательны: героя и приказы сайт узнаёт сам.</p>
+      ) : deck.game === "berserk" ? (
         <p className="muted small">Загрузите файл NXT (строки «3 60161» — как в выгрузке ProBerserk), файл .brsc (строки «60161 3»)
           или вставьте список «3 Преторианец». Фойлы и альтернативные арты одной карты считаются одной картой.</p>
       ) : (

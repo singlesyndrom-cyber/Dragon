@@ -20,7 +20,7 @@ type Row = {
   telegram: boolean; registered: boolean;
 };
 type SortKey = "nickname" | "league_points" | "edh_bank" | "events_played" | "last_played" | "joined_at";
-const JUDGE: Record<string, string> = { mtg: "Magic", edh: "EDH", berserk: "Берсерк" };
+const JUDGE: Record<string, string> = { mtg: "Magic", edh: "EDH", berserk: "Берсерк", response: "Респонс" };
 const COLS: [SortKey, string][] = [
   ["nickname", "Игрок"], ["league_points", "Очки лиги"], ["edh_bank", "Банк EDH"], ["events_played", "Ивентов"],
   ["last_played", "Последняя игра"], ["joined_at", "В клубе с"],

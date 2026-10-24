@@ -18,7 +18,7 @@ type Home = {
     next: { id: number; name: string; starts_at: string; status: string; format: string; draft: boolean } | null }[];
 };
 
-const GAME_SHORT: Record<string, string> = { mtg: "Magic", berserk: "Берсерк" };
+const GAME_SHORT: Record<string, string> = { mtg: "Magic", berserk: "Берсерк", response: "Респонс" };
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
@@ -86,7 +86,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                 </li>
               ))}
             </ol>
-          ) : <p className="muted">{season ? "Таблица заполнится после первого турнира сезона." : `Активного сезона по ${game === "mtg" ? "EDH" : "«Берсерку»"} сейчас нет.`}</p>}
+          ) : <p className="muted">{season ? "Таблица заполнится после первого турнира сезона."
+            : game === "response" ? "Сезоны лиги для «Респонса» появятся позже — пока смотрите рейтинг силы." : `Активного сезона по ${game === "mtg" ? "EDH" : "«Берсерку»"} сейчас нет.`}</p>}
           <Link href={season ? `/leagues/${season.id}` : "/leagues"}>{season ? "Вся таблица →" : "Все лиги →"}</Link>
         </section>
       </div>

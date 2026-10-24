@@ -10,7 +10,7 @@ from .models import ClubVk, ClubVkChat
 from .secretbox import decrypt, encrypt
 
 PEER_CHAT_BASE = 2_000_000_000   # peer_id беседы = 2000000000 + номер беседы
-GAMES = {"mtg": "Magic: The Gathering", "berserk": "Берсерк", "all": "Все игры и новости"}
+GAMES = {"mtg": "Magic: The Gathering", "berserk": "Берсерк", "response": "Респонс", "all": "Все игры и новости"}
 
 
 async def chat_peers(session: AsyncSession, club_id: int, game: str | None) -> list[int]:

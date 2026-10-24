@@ -42,6 +42,8 @@ DISCIPLINES: dict[str, str] = {
     "mtg_edh": "Magic: EDH",
     "berserk_constructed": "Берсерк: констракт",
     "berserk_draft": "Берсерк: драфт",
+    "response_constructed": "Респонс: дуэль",
+    "response_draft": "Респонс: драфт / силед",
 }
 
 TIERS: dict[str, str] = {
@@ -56,6 +58,8 @@ def discipline(game: str, fmt, draft) -> str:
     fmt = getattr(fmt, "value", fmt)
     if game == "berserk":
         return "berserk_draft" if draft else "berserk_constructed"
+    if game == "response":
+        return "response_draft" if draft else "response_constructed"
     if fmt == TournamentFormat.edh.value:
         return "mtg_edh"
     return "mtg_draft" if draft else "mtg_constructed"

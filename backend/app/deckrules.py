@@ -1,4 +1,4 @@
-"""Правила форматов MTG для конструктора колод.
+"""Правила форматов для конструктора колод: MTG, «Берсерк» и «Респонс».
 
 Проверка не мешает сохранять колоду: черновик может быть неполным. Она возвращает список замечаний,
 которые редактор показывает рядом с колодой: «error» - колода не пройдёт проверку на турнире, «warn» - стоит
@@ -24,8 +24,14 @@ FORMATS: dict[str, dict] = {
                 "sideboard": False},
     "berserk_limited": {"title": "Берсерк: лимитед", "size": 30, "copies": None, "game": "berserk",
                         "sideboard": False},
+    # ККИ «Респонс» (правила response-game.ru): герой, 5 приказов, 30 карт; дуэль - до 10 карт доп. колоды
+    "response": {"title": "Респонс: дуэль", "size": 30, "copies": 2, "game": "response", "sideboard": True},
+    "response_limited": {"title": "Респонс: драфт / силед", "size": 30, "copies": None, "game": "response",
+                         "sideboard": True},
 }
-GAME_FORMATS = {"berserk": "berserk"}      # формат по умолчанию для колод не-MTG
+GAME_FORMATS = {"berserk": "berserk", "response": "response"}      # формат по умолчанию для колод не-MTG
+RESPONSE_SIDE_MAX = 10
+RESPONSE_ORDERS = 5
 SIDEBOARD_MAX = 15
 COPIES_WORD = {3: "трёх", 4: "четырёх"}
 ANY_NUMBER = re.compile(r"a deck can have any number of cards named", re.I)
@@ -73,9 +79,72 @@ def _pairs(cards: list) -> bool:
     return any("background" in t for t in types) and any("choose a background" in x for x in texts)
 
 
+def _rs(card) -> dict:
+    return (card.extra or {}) if card is not None else {}
+
+
+def _fits_hero(card_factions: set, hero_factions: set) -> bool:
+    """Правило фракций «Респонса»: фракции карты входят во фракции героя или наоборот."""
+    return card_factions <= hero_factions or hero_factions <= card_factions
+
+
+def check_response(entries: list[Entry], rules: dict) -> list[dict]:
+    """«Респонс»: 1 герой, 5 разных приказов, ровно 30 карт, доп. колода до 10; в дуэли - до 2 копий
+    (легендарные - 1) на основную и доп. колоду вместе и правило фракций героя. В драфте и силеде
+    ограничений на копии и фракции нет."""
+    out: list[dict] = []
+    err = lambda t: out.append({"level": "error", "text": t})          # noqa: E731
+    hero = [e for e in entries if e.section == "commander"]
+    orders = [e for e in entries if e.section == "orders"]
+    main = [e for e in entries if e.section == "main"]
+    side = [e for e in entries if e.section == "side"]
+    limited = rules.get("copies") is None
+    n_hero, n_orders, n_main, n_side = (sum(e.qty for e in x) for x in (hero, orders, main, side))
+    if n_hero != 1:
+        err("Не выбран герой" if not n_hero else f"Героев {n_hero}, нужен один")
+    elif hero[0].card is not None and not _rs(hero[0].card).get("hero"):
+        err(f"{hero[0].name} — не герой")
+    if n_orders != RESPONSE_ORDERS:
+        err(f"Приказов {n_orders}, нужно {RESPONSE_ORDERS}")
+    not_orders = [e.name for e in orders if e.card is not None and not _rs(e.card).get("order")]
+    if not_orders:
+        err("Не приказы: " + ", ".join(not_orders[:8]))
+    if not limited and any(e.qty > 1 for e in orders):
+        err("Приказы должны быть разными: " + ", ".join(e.name for e in orders if e.qty > 1))
+    if n_main != rules["size"]:
+        err(f"В основной колоде {n_main} карт, нужно ровно {rules['size']}")
+    wrong = [e.name for e in main if _rs(e.card).get("hero") or _rs(e.card).get("order")]
+    if wrong:
+        err("Герои и приказы не кладутся в основную колоду: " + ", ".join(wrong[:8]))
+    if n_side > RESPONSE_SIDE_MAX:
+        err(f"В дополнительной колоде {n_side} карт, можно не больше {RESPONSE_SIDE_MAX}")
+    if not limited:
+        counts: Counter = Counter()
+        card_of = {}
+        for e in main + side + orders:
+            counts[e.name] += e.qty
+            card_of.setdefault(e.name, e.card)
+        over = [f"{n} ×{q}" for n, q in counts.items() if q > (1 if _rs(card_of[n]).get("legendary") else 2)]
+        if over:
+            err("Больше двух копий (легендарные — одна) на основную и дополнительную колоду: " + ", ".join(sorted(over)[:12]))
+        if hero and hero[0].card is not None:
+            hf = set(_rs(hero[0].card).get("factions") or [])
+            outside = sorted({e.name for e in main + side + orders if e.card is not None
+                              and not _fits_hero(set(_rs(e.card).get("factions") or []), hf)})
+            if outside:
+                err(f"Не подходят по фракциям героя ({', '.join(sorted(hf)) or '—'}): " + ", ".join(outside[:12])
+                    + (" и др." if len(outside) > 12 else ""))
+    unknown = [e.name for e in entries if e.card is None]
+    if unknown:
+        out.append({"level": "warn", "text": "Не найдены в базе: " + ", ".join(unknown[:10])})
+    return out
+
+
 def check(entries: list[Entry], fmt: str) -> list[dict]:
     """Замечания к колоде: [{"level": "error"|"warn", "text": ...}]."""
     rules = FORMATS.get(fmt) or FORMATS["casual"]
+    if rules.get("game") == "response":
+        return check_response(entries, rules)
     out: list[dict] = []
 
     def err(t):

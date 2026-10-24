@@ -15,7 +15,7 @@ type OrgClub = { id: number; name: string; slug: string; today: HomeEvent[]; tod
 type MeData = { tournaments: HomeEvent[]; decks: { id: number; name: string; cards: number }[]; decks_total: number;
   season: Season | null; organizer: OrgClub[] };
 
-const GAME_NAME: Record<HomeGame, string> = { mtg: "Magic: The Gathering", berserk: "«Берсерк»" };
+const GAME_NAME: Record<HomeGame, string> = { mtg: "Magic: The Gathering", berserk: "«Берсерк»", response: "«Респонс»" };
 
 function CardSearch({ game }: { game: HomeGame }) {
   const router = useRouter();
@@ -24,7 +24,8 @@ function CardSearch({ game }: { game: HomeGame }) {
   return (
     <form onSubmit={submit} className="cardsearch big h-search" role="search">
       <input type="search" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Поиск карты"
-        placeholder={game === "mtg" ? "Карта MTG: название по-русски или по-английски" : "Карта «Берсерка»: название, стихия, класс"} />
+        placeholder={game === "mtg" ? "Карта MTG: название по-русски или по-английски" : game === "response" ? "Карта «Респонса»: название, фракция, тип"
+          : "Карта «Берсерка»: название, стихия, класс"} />
       <button type="submit">Найти карту</button>
     </form>
   );

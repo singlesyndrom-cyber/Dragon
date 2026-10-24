@@ -7,7 +7,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..cardimport import front_face, norm_name
-from .. import brackets, deckrules
+from .. import brackets, deckrules, response
 from ..db import get_session
 from ..decklist import ParsedCard, apply_commander, parse_decklist, resolve_tail, validate_edh
 from ..deps import can_judge, current_user, is_club_organizer, optional_user
@@ -142,8 +142,17 @@ async def _fill(session: AsyncSession, deck: Deck, data: DeckIn) -> dict:
         return by_full.get(n) or by_front.get(n) or by_front.get(norm_name(front_face(name)))
 
     # экспорт Moxfield/MTGO без заголовков: командир (или сайдборд) - последним блоком после пустой строки
-    parsed = resolve_tail(parsed, deck.format in ("commander", "duel", "brawl"),
-                          lambda name: (card := lookup(name)) is not None and deckrules.can_be_commander(card, deck.format))
+    if deck.game == "response":
+        # «Респонс»: герой и приказы раскладываются сами, даже если список вставлен без заголовков
+        for c in parsed:
+            ex = ((card := lookup(c.name)) and card.extra) or {}
+            if c.section == "main" and ex.get("hero"):
+                c.section, c.is_commander = "commander", True
+            elif c.section == "main" and ex.get("order"):
+                c.section = "orders"
+    else:
+        parsed = resolve_tail(parsed, deck.format in ("commander", "duel", "brawl"),
+                              lambda name: (card := lookup(name)) is not None and deckrules.can_be_commander(card, deck.format))
 
     # издания из строк «1 Sol Ring (CMM) 410»: точное по номеру, иначе первое в этом сете
     wanted = {(card.id, c.set_code) for c in parsed if c.set_code and (card := lookup(c.name))}
@@ -221,7 +230,8 @@ def card_info(c: Card | None, p: CardPrint | None = None) -> dict | None:
             "image_url": c.image_url, "image_large": ex.get("image_large"), "prices": c.prices or {},
             "legalities": c.legalities or {}, "is_game_changer": c.is_game_changer,
             "back_image": _back(ex), "print": None,
-            **({"bk": bk_fields(ex), "text": c.text} if c.game == "berserk" else {})}
+            **({"bk": bk_fields(ex), "text": c.text} if c.game == "berserk" else {}),
+            **({"rs": response.rs_fields(ex), "text": c.text} if c.game == "response" else {})}
     if p is not None:                          # выбранное издание: его картинка, сет и цена
         if p.image_url:
             info.update(image_url=p.image_url, image_large=p.image_large or ex.get("image_large"), back_image=p.back_image)
@@ -304,7 +314,7 @@ async def save_cards(deck_id: int, data: CardsIn, user: User = Depends(current_u
     print_card = dict((await session.execute(select(CardPrint.id, CardPrint.card_id).where(CardPrint.id.in_(pids)))).all()) if pids else {}
     merged: dict[tuple, DeckCard] = {}
     for r in data.cards:
-        if r.section not in ("main", "side", "commander"):
+        if r.section not in ("main", "side", "commander", "orders"):
             raise HTTPException(400, "Раздел: main, side или commander")
         card = cards.get(r.card_id) if r.card_id else None
         if r.card_id and card is None:

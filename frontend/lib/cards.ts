@@ -24,6 +24,14 @@ export const GAMES: GameInfo[] = [
   },
 ];
 
+GAMES.push({
+  code: "response", title: "Респонс", short: "Респонс",
+  examples: [
+    ["фракция:хаос t:юнит", "Юниты Хаоса"], ["t:герой", "Все герои"], ["t:приказ фракция:природа", "Приказы Природы"],
+    ["сила>=4 mv<=3", "Сильные дешёвые юниты"], ["o:натиск", "Карты с Натиском"], ["t:легендарный", "Легендарные карты"],
+  ],
+});
+
 export function gameInfo(code: string): GameInfo {
   return GAMES.find((g) => g.code === code) || { code, title: code, short: code, examples: [] };
 }

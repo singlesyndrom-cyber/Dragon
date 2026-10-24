@@ -14,7 +14,8 @@ type City = { place: number | null; city: string; players: number; top_avg: numb
 
 export default async function Ratings({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
-  const fallback = (await cookies()).get(GAME_COOKIE)?.value === "berserk" ? "berserk_constructed" : "mtg_constructed";
+  const cg = (await cookies()).get(GAME_COOKIE)?.value;
+  const fallback = cg === "berserk" ? "berserk_constructed" : cg === "response" ? "response_constructed" : "mtg_constructed";
   const d = sp.d && DISCIPLINE_NAME[sp.d] ? sp.d : fallback;
   const view = sp.view === "cities" ? "cities" : "players";
   const all = sp.all === "1";
@@ -46,6 +47,8 @@ export default async function Ratings({ searchParams }: { searchParams: Promise<
         {DISCIPLINES.filter(([, , g]) => g === "mtg").map(([k, l]) => <Link key={k} href={href({ d: k })} className={d === k ? "on" : ""} aria-current={d === k ? "page" : undefined}>{l}</Link>)}
         <span className="grp">Берсерк</span>
         {DISCIPLINES.filter(([, , g]) => g === "berserk").map(([k, l]) => <Link key={k} href={href({ d: k })} className={d === k ? "on" : ""} aria-current={d === k ? "page" : undefined}>{l}</Link>)}
+        <span className="grp">Респонс</span>
+        {DISCIPLINES.filter(([, , g]) => g === "response").map(([k, l]) => <Link key={k} href={href({ d: k })} className={d === k ? "on" : ""} aria-current={d === k ? "page" : undefined}>{l}</Link>)}
       </nav>
 
       <div className="tabs" role="tablist">

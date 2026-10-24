@@ -91,11 +91,11 @@ function Deck({ id }: { id: string }) {
       </div>
       {tab === "list" ? (
         <div className="deckview">
-          <DeckList rows={rows} format={d.format} lang={lang} onHover={setPreview} />
+          <DeckList rows={rows} format={d.format} lang={lang} onHover={setPreview} game={d.game} />
           <aside className="deckpreview"><FlipCard front={img} back={preview?.card?.back_image} alt={preview?.name || ""} /></aside>
         </div>
       ) : tab === "stats" ? <DeckStats rows={rows} />
-        : tab === "hand" ? (d.game === "berserk" ? <SquadBuilder rows={rows} lang={lang} /> : <TestHand rows={rows} lang={lang} />)
+        : tab === "hand" ? (d.game === "berserk" ? <SquadBuilder rows={rows} lang={lang} /> : <TestHand rows={d.game === "response" ? rows.filter((r) => r.section === "main") : rows} lang={lang} />)
         : <ExportBox rows={rows} name={d.name} />}
     </>
   );

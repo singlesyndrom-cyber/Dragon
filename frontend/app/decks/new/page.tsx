@@ -14,7 +14,7 @@ export default function NewDeckPage() {
 
 function NewDeck() {
   const router = useRouter();
-  const [f, setF] = useState({ name: "", game: useSearchParams().get("game") === "berserk" ? "berserk" : "mtg", format: "commander", visibility: "private", text: "", in_meta: false });
+  const [f, setF] = useState({ name: "", game: ["berserk", "response"].includes(useSearchParams().get("game") || "") ? useSearchParams().get("game")! : "mtg", format: "commander", visibility: "private", text: "", in_meta: false });
   const [open, setOpen] = useState(false);
   const { busy, error, run } = useAction();
   return (
@@ -25,7 +25,7 @@ function NewDeck() {
         e.preventDefault();
         run(async () => {
           const body: any = { name: f.name, game: f.game, text: f.text, in_meta: f.in_meta };
-          Object.assign(body, { format: f.game === "mtg" ? f.format : "berserk", visibility: f.visibility });
+          Object.assign(body, { format: f.game === "mtg" ? f.format : f.game, visibility: f.visibility });
           const r = await api<any>("/decks", { body });
           router.push(`/decks/${r.id}/edit`);
         });
@@ -37,6 +37,7 @@ function NewDeck() {
             <select value={f.game} onChange={(e) => setF({ ...f, game: e.target.value })}>
               <option value="mtg">Magic: The Gathering</option>
               <option value="berserk">Берсерк</option>
+              <option value="response">Респонс</option>
             </select>
           </label>
           {f.game === "mtg" ? (

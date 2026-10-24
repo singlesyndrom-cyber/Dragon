@@ -7,6 +7,9 @@ HEADERS = {
     "commander": "commander", "commanders": "commander", "командир": "commander", "командиры": "commander",
     "deck": "main", "main": "main", "maindeck": "main", "mainboard": "main", "колода": "main",
     "sideboard": "side", "side": "side", "сайдборд": "side", "companion": "side", "maybeboard": "side",
+    # «Респонс»: герой, приказы, основная и дополнительная колода
+    "герой": "commander", "hero": "commander", "приказы": "orders", "приказ": "orders", "orders": "orders",
+    "основная колода": "main", "дополнительная колода": "side", "доп. колода": "side", "доп колода": "side",
 }
 BASICS = {"plains", "island", "swamp", "mountain", "forest", "wastes", "равнина", "остров", "болото", "гора", "лес"}
 LINE_RE = re.compile(r"^(?:SB:\s*)?(\d+)\s*[xXхХ]?\s+(.+)$")
@@ -16,7 +19,7 @@ LINE_RE = re.compile(r"^(?:SB:\s*)?(\d+)\s*[xXхХ]?\s+(.+)$")
 class ParsedCard:
     qty: int
     name: str
-    section: str = "main"        # main | side | commander
+    section: str = "main"        # main | side | commander | orders («Респонс»)
     is_commander: bool = False
     tail: bool = False           # последний блок после пустой строки в списке без заголовков (Moxfield/MTGO)
     set_code: str | None = None  # издание из строки «1 Sol Ring (CMM) 410»

@@ -104,7 +104,7 @@ async def staples(club_id: int | None = None, game: str | None = None, format: T
 
 
 @router.get("/pool")
-async def pool(game: str = Query("mtg", pattern="^(mtg|berserk)$"), club_id: int | None = None,
+async def pool(game: str = Query("mtg", pattern="^(mtg|berserk|response)$"), club_id: int | None = None,
                commander: str | None = None, limit: int = Query(40, ge=1, le=200),
                session: AsyncSession = Depends(get_session)):
     """«Популярное у игроков»: колоды из пулов, которые владельцы отметили «Учитывать в мете».
@@ -123,7 +123,7 @@ async def pool(game: str = Query("mtg", pattern="^(mtg|berserk)$"), club_id: int
             rows_by_deck[d].append((name, is_c, sec))
     entries = [build_entry(d, rows_by_deck.get(d, [])) for d in ids]
     cmd = [{"commander": c["commander"], "decks": c["decks"], "pick_rate": c["pick_rate"]}
-           for c in commander_stats(entries, [], 0)] if game == "mtg" else []
+           for c in commander_stats(entries, [], 0)] if game in ("mtg", "response") else []
     return {"game": game, "club_id": club_id, "decks": len(entries), "commanders": cmd[:limit],
             **card_usage(entries, commander, 1, limit)}
 

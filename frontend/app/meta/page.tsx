@@ -1,18 +1,19 @@
 import Link from "next/link";
 import BerserkMeta from "@/components/BerserkMeta";
 import { sget } from "@/lib/api";
-import { pct, signed } from "@/lib/format";
+import { GAME_LIST, pct, signed } from "@/lib/format";
 
 export const metadata = { title: "Мета" };
 
 export default async function Meta({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
-  const game = sp.game === "berserk" ? "berserk" : "mtg";      // у каждой игры своя мета, без смешивания
+  const game = sp.game === "berserk" || sp.game === "response" ? sp.game : "mtg";      // у каждой игры своя мета, без смешивания
+  const rs = game === "response";            // у «Респонса» колоду возглавляет герой - мета по героям
   const qs = new URLSearchParams({ game });
   for (const k of ["club_id", "format", "since_days", "commander"]) if (sp[k]) qs.set(k, sp[k] as string);
   const tabs = (
     <div className="tabs" role="tablist">
-      {([["mtg", "Magic: The Gathering"], ["berserk", "Берсерк"]] as const).map(([g, l]) => {
+      {GAME_LIST.map(([g, l]) => {
         const q = new URLSearchParams({ game: g });
         for (const k of ["club_id", "since_days"]) if (sp[k]) q.set(k, sp[k] as string);
         return <Link key={g} href={`/meta?${q}`} role="tab" aria-selected={game === g} className={game === g ? "on" : ""}>{l}</Link>;
@@ -67,7 +68,7 @@ export default async function Meta({ searchParams }: { searchParams: Promise<Rec
       </>
     );
   }
-  const poolQs = new URLSearchParams({ game: "mtg", limit: "20" });
+  const poolQs = new URLSearchParams({ game, limit: "20" });
   if (sp.club_id) poolQs.set("club_id", sp.club_id);
   const [cmd, cards, clubs, pool] = await Promise.all([
     sget<any>(`/meta/commanders?${qs}&min_games=5`),
@@ -85,12 +86,12 @@ export default async function Meta({ searchParams }: { searchParams: Promise<Rec
       </p>
       {filters(clubs)}
 
-      <h2>Командиры</h2>
+      <h2>{rs ? "Герои" : "Командиры"}</h2>
       <p className="muted small">Колод в выборке: {cmd?.entries ?? 0}. Строки с малым числом партий приглушены: выводы по ним делать рано.</p>
       {cmd?.commanders?.length ? (
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Командир</th><th className="r">Колод</th><th className="r">Доля</th><th className="r">Партий</th><th className="r">Винрейт</th><th className="r">Перевес</th></tr></thead>
+            <thead><tr><th>{rs ? "Герой" : "Командир"}</th><th className="r">Колод</th><th className="r">Доля</th><th className="r">Партий</th><th className="r">Винрейт</th><th className="r">Перевес</th></tr></thead>
             <tbody>
               {cmd.commanders.map((c: any) => (
                 <tr key={c.commander} style={c.reliable ? undefined : { opacity: 0.55 }}>
@@ -108,7 +109,7 @@ export default async function Meta({ searchParams }: { searchParams: Promise<Rec
       ) : <p className="muted">Данных пока нет.</p>}
 
       <h2>{sp.commander ? `Стейплы: ${sp.commander}` : "Мета-стейплы"}</h2>
-      <p className="muted small">Доля колод, в которых встречается карта. Базовые земли и командиры не учитываются.</p>
+      <p className="muted small">Доля колод, в которых встречается карта. {rs ? "Герои не учитываются." : "Базовые земли и командиры не учитываются."}</p>
       {cards?.cards?.length ? (
         <div className="table-wrap">
           <table>
@@ -130,7 +131,7 @@ export default async function Meta({ searchParams }: { searchParams: Promise<Rec
         <div className="split">
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Командир</th><th className="r">Колод</th><th className="r">Доля</th></tr></thead>
+              <thead><tr><th>{rs ? "Герой" : "Командир"}</th><th className="r">Колод</th><th className="r">Доля</th></tr></thead>
               <tbody>
                 {pool.commanders.map((c: any) => (
                   <tr key={c.commander}><td>{c.commander}</td><td className="r">{c.decks}</td><td className="r">{pct(c.pick_rate)}</td></tr>

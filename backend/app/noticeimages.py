@@ -16,7 +16,7 @@ from .config import settings
 from .models import NoticeImage
 
 PURPOSES = {"announce": "Анонсы турниров", "other": "Итоги и новости"}
-GAMES = {"any": "Любая игра", "mtg": "Magic: The Gathering", "berserk": "Берсерк"}
+GAMES = {"any": "Любая игра", "mtg": "Magic: The Gathering", "berserk": "Берсерк", "response": "Респонс"}
 MAX_SIDE = 1600
 MAX_UPLOAD = 15 * 1024 * 1024
 MEDIA_RE = re.compile(r"/media/notice/(\d+)\.jpg$")

@@ -1,15 +1,18 @@
 /** Рейтинг силы: дисциплины и уровни турниров (как в backend/app/rating.py). */
-export const DISCIPLINES: [string, string, "mtg" | "berserk"][] = [
+export const DISCIPLINES: [string, string, "mtg" | "berserk" | "response"][] = [
   ["mtg_constructed", "Констракт", "mtg"],
   ["mtg_draft", "Драфт", "mtg"],
   ["mtg_edh", "EDH", "mtg"],
   ["berserk_constructed", "Констракт", "berserk"],
   ["berserk_draft", "Драфт", "berserk"],
+  ["response_constructed", "Дуэль", "response"],
+  ["response_draft", "Драфт / силед", "response"],
 ];
 
 export const DISCIPLINE_NAME: Record<string, string> = {
   mtg_constructed: "Magic: констракт", mtg_draft: "Magic: драфт", mtg_edh: "Magic: EDH",
   berserk_constructed: "Берсерк: констракт", berserk_draft: "Берсерк: драфт",
+  response_constructed: "Респонс: дуэль", response_draft: "Респонс: драфт / силед",
 };
 
 export const TIERS: [string, string, string][] = [
