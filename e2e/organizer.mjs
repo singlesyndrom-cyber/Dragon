@@ -297,7 +297,8 @@ try {
   const headerH = await page.locator("header.top").evaluate((el) => el.getBoundingClientRect().height);
   check(headerH < 130, `шапка на телефоне компактная (${Math.round(headerH)} px)`);
   await page.setViewportSize({ width: 820, height: 900 });
-  const navLines = await page.locator("nav.nav a").evaluateAll((els) => new Set(els.map((e) => Math.round(e.getBoundingClientRect().top))).size);
+  const navLines = await page.locator("nav.nav a").evaluateAll((els) => new Set(els.map((e) => e.getBoundingClientRect())
+    .filter((r) => r.width > 0).map((r) => Math.round(r.top))).size);   // скрытые пункты меню «Ещё» не считаем
   check(navLines === 1, `меню на ширине 820px в одну строку (строк: ${navLines})`);
   await page.setViewportSize({ width: 375, height: 812 });
   const overflow = await page.evaluate(() => {
