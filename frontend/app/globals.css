@@ -691,3 +691,7 @@ table.members td { vertical-align: middle; }
 h1, h2, h3, p, li, dd, .lead { overflow-wrap: break-word; }
 td, th { overflow-wrap: anywhere; }
 .life-name { padding: 0 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.life-p.out { filter: grayscale(1) brightness(0.55); }
+.edh-seats { list-style: none; padding: 0; margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+.edh-seats li { background: var(--vellum-2); border-radius: 999px; padding: 4px 12px; }
+.edh-seats li.me { outline: 1px solid var(--gilt); }

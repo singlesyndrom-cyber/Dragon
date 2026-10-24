@@ -11,11 +11,12 @@ from sqlalchemy.orm import selectinload
 from .. import edh, leagues, notify, rating
 from ..db import SessionLocal, get_session
 from ..deps import can_judge, current_user, is_club_organizer
-from ..models import (ClubMember, EdhSeat, League, EdhTable, EdhTableStatus, Tournament,
+from ..models import (ClubMember, EdhReport, EdhSeat, League, EdhTable, EdhTableStatus, Tournament,
                       TournamentFormat, TournamentPlayer, TournamentStatus, User)
 from .tournaments import _recompute_club_stats
 
 router = APIRouter(prefix="/edh", tags=["edh"])
+REPORT_GRACE = timedelta(minutes=20)
 
 
 class PlayerPatch(BaseModel):
@@ -90,8 +91,14 @@ async def expire_overdue_loop():
     while True:
         try:
             async with SessionLocal() as s:
+                now = _now()
+                # победа, о которой игрок сообщил из приложения до конца таймера, ждёт судью ещё REPORT_GRACE
+                reported = select(EdhReport.table_id).where(
+                    EdhReport.table_id == EdhTable.id, EdhReport.outcome == "win",
+                    EdhReport.created_at <= EdhTable.ends_at).exists()
                 ids = (await s.execute(select(EdhTable.id).where(
-                    EdhTable.status == EdhTableStatus.playing, EdhTable.ends_at < _now()))).scalars().all()
+                    EdhTable.status == EdhTableStatus.playing, EdhTable.ends_at < now,
+                    ~(reported & (EdhTable.ends_at > now - REPORT_GRACE))))).scalars().all()
                 for i in ids:
                     try:
                         await settle_table(s, i, "timeout")

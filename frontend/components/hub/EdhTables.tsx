@@ -6,6 +6,7 @@ import { Status, useAction } from "@/components/Form";
 import { Delta } from "@/components/Standings";
 import { api } from "@/lib/api";
 import { plural } from "@/lib/format";
+import AppEdhReports from "./AppEdhReports";
 
 /** EDH: рассадка, таймеры столов, победа / ничья / таймаут, завершение ивента. */
 export default function EdhTables({ t, reload }: { t: any; reload: () => Promise<void> }) {
@@ -52,6 +53,7 @@ export default function EdhTables({ t, reload }: { t: any; reload: () => Promise
         </div>
       ) : null}
 
+      {t.status === "running" && open > 0 ? <AppEdhReports tid={t.id} onApplied={loadTables} /> : null}
       {tables.length ? <h2>Столы, тур {t.round}</h2> : null}
       {tables.map((tb) => (
         <div key={tb.table_id} className="panel">

@@ -100,3 +100,54 @@ async def test_play_report_flow(client):
     # прошлый тур закрыт
     assert (await c.post(f"/play/matches/{m1['match_id']}/report", json={"outcome": "win"},
                          headers=h2)).status_code == 400
+
+
+async def test_play_edh_flow(client):
+    c = client
+    org, _ = await auth(c, "o@t.io", "Орг")
+    await make_creator(c, org)
+    cid = (await c.post("/clubs", json={"name": "Дракон", "city": "Севастополь"}, headers=org)).json()["id"]
+    ps = [await auth(c, f"e{i}@t.io", f"Командир {i}") for i in range(4)]
+    tid = (await c.post("/tournaments", json={"club_id": cid, "name": "EDH", "format": "edh"}, headers=org)).json()["id"]
+    for h, me in ps:
+        assert (await c.post(f"/tournaments/{tid}/register?bracket=2", headers=h)).status_code == 204
+        assert (await c.put(f"/edh/{tid}/players/{me['id']}", json={"checked_in": True}, headers=org)).status_code == 204
+    assert (await c.post(f"/edh/{tid}/round", headers=org)).status_code == 200
+
+    h0, me0 = ps[0]
+    cur = (await c.get("/play/current", headers=h0)).json()
+    assert len(cur) == 1 and cur[0]["kind"] == "edh" and len(cur[0]["seats"]) == 4
+    assert cur[0]["seconds_left"] > 0 and sum(s["me"] for s in cur[0]["seats"]) == 1
+    table_id = cur[0]["table_id"]
+    winner = ps[2][1]["id"]
+
+    # победитель должен сидеть за столом; чужой стол - нельзя
+    assert (await c.post(f"/play/edh/{table_id}/report", json={"outcome": "win", "winner_id": 999999},
+                         headers=h0)).status_code == 400
+    _, stranger = await auth(c, "x@t.io", "Чужой")
+    assert (await c.post(f"/play/edh/{table_id}/report", json={"outcome": "draw"},
+                         headers=_)).status_code == 404
+
+    # один отчёт - ещё не согласовано
+    await c.post(f"/play/edh/{table_id}/report", json={"outcome": "win", "winner_id": winner, "source": "life"}, headers=h0)
+    it = (await c.get(f"/play/tournaments/{tid}/edh-reports", headers=org)).json()["items"][0]
+    assert not it["agreed"] and it["suggested"]["winner_id"] == winner and it["in_time"]
+    assert (await c.post(f"/play/tournaments/{tid}/edh-reports/apply", json={}, headers=org)).json()["applied"] == 0
+    # второй игрок сказал «ничья» - конфликт
+    await c.post(f"/play/edh/{table_id}/report", json={"outcome": "draw"}, headers=ps[1][0])
+    it = (await c.get(f"/play/tournaments/{tid}/edh-reports", headers=org)).json()["items"][0]
+    assert it["conflict"] and it["suggested"] is None
+    # исправился - согласовано; другие игроки видят отчёты
+    await c.post(f"/play/edh/{table_id}/report", json={"outcome": "win", "winner_id": winner}, headers=ps[1][0])
+    seen = (await c.get("/play/current", headers=ps[2][0])).json()[0]["reports"]
+    assert len(seen) == 2 and all(r["winner"] == ps[2][1]["nickname"] for r in seen)
+    it = (await c.get(f"/play/tournaments/{tid}/edh-reports", headers=org)).json()["items"][0]
+    assert it["agreed"]
+    assert (await c.get(f"/play/tournaments/{tid}/edh-reports", headers=h0)).status_code == 403
+    assert (await c.post(f"/play/tournaments/{tid}/edh-reports/apply", json={}, headers=org)).json()["applied"] == 1
+    t = next(x for x in (await c.get(f"/edh/{tid}/tables")).json() if x["table_id"] == table_id)
+    assert t["status"] == "finished" and t["outcome"] == "win"
+    cur = (await c.get("/play/current", headers=ps[2][0])).json()[0]
+    assert cur["status"] == "finished" and cur["winner"] == ps[2][1]["nickname"]
+    # стол закрыт - отчёты больше не принимаются
+    assert (await c.post(f"/play/edh/{table_id}/report", json={"outcome": "draw"}, headers=h0)).status_code == 409

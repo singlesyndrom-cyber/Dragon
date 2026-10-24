@@ -6,7 +6,7 @@ import { outcomeOf, scoreText } from "@/lib/play";
 /** Счётчик жизней MTG: 2-6 игроков, яд, урон от командиров, счёт матча до двух побед.
  *  Состояние хранится на телефоне - случайно закрытая вкладка ничего не сбрасывает. */
 
-type P = { name: string; life: number; poison: number; cmd: number[] };
+type P = { name: string; life: number; poison: number; cmd: number[]; out?: boolean };
 type S = { start: number; players: P[]; games: [number, number, number]; log: string[] };
 type Loss = { who: number; why: string };
 
@@ -20,9 +20,11 @@ function load(): S | null {
   try { const s = JSON.parse(window.localStorage.getItem(KEY) || "null"); return s?.players?.length ? s : null; } catch { return null; }
 }
 
-export default function LifeCounter({ me, opponent, onMatch }: {
-  me?: string; opponent?: string;
-  onMatch?: (score: [number, number, number]) => void;     // счёт матча изменился (для отправки судье)
+export default function LifeCounter({ names, commander, onMatch, onWinner }: {
+  names?: string[];                                         // игроки из турнира: вы первым (снизу)
+  commander?: boolean;                                      // EDH-стол: 40 жизней
+  onMatch?: (score: [number, number, number]) => void;     // дуэль: счёт матча (для отправки судье)
+  onWinner?: (name: string | null) => void;                 // стол 3+: кто остался последним
 }) {
   const [s, setS] = useState<S>({ start: 20, players: fresh(2, 20), games: [0, 0, 0], log: [] });
   const [loss, setLoss] = useState<Loss | null>(null);
@@ -32,12 +34,21 @@ export default function LifeCounter({ me, opponent, onMatch }: {
 
   useEffect(() => { const x = load(); if (x) setS(x); ready.current = true; }, []);
   useEffect(() => { if (ready.current) try { window.localStorage.setItem(KEY, JSON.stringify(s)); } catch {} }, [s]);
-  // имена из турнира: я снизу, соперник сверху
+  // имена из турнира: вы снизу, соперники - по столу. Другой состав - новый счётчик.
+  const key = names?.join("\u0001") || "";
   useEffect(() => {
-    if (!me || !opponent) return;
-    setS((x) => x.players.length !== 2 || (x.players[0].name === me && x.players[1].name === opponent) ? x
-      : { ...x, players: [{ ...x.players[0], name: me }, { ...x.players[1], name: opponent }] });
-  }, [me, opponent]);
+    if (!key) return;
+    const list = key.split("\u0001");
+    setS((x) => {
+      if (x.players.length === list.length && x.players.every((p, i) => p.name === list[i])) return x;
+      if (x.players.length === list.length) return { ...x, players: x.players.map((p, i) => ({ ...p, name: list[i] })) };
+      const start = commander ? 40 : x.start;
+      return { start, players: fresh(list.length, start, list), games: [0, 0, 0], log: [] };
+    });
+  }, [key, commander]);
+  const alive = s.players.filter((p) => !p.out);
+  const winner = s.players.length > 2 && alive.length === 1 ? alive[0].name : null;
+  useEffect(() => { onWinner?.(winner); }, [winner, onWinner]);
   useEffect(() => { onMatch?.(s.games); }, [s.games, onMatch]);
 
   // экран не гаснет, пока открыт счётчик
@@ -53,6 +64,7 @@ export default function LifeCounter({ me, opponent, onMatch }: {
   const duel = s.players.length === 2;
   const check = (p: P[], i: number) => {
     const x = p[i];
+    if (x.out) return;
     const why = x.life <= 0 ? "жизни закончились" : x.poison >= 10 ? "10 жетонов яда"
       : x.cmd.some((d) => d >= 21) ? "21 урон от одного командира" : "";
     if (why) setLoss({ who: i, why });
@@ -77,8 +89,14 @@ export default function LifeCounter({ me, opponent, onMatch }: {
     setLoss(null);
     newGame(g);
   };
+  const knock = (i: number) => {
+    setS((x) => ({ ...x, players: x.players.map((p, j) => (j === i ? { ...p, out: true } : p)),
+      log: [`${x.players[i].name} выбывает`, ...x.log].slice(0, 60) }));
+    setLoss(null);
+  };
   const setup = (n: number, start: number) => {
-    setS({ start, players: fresh(n, start, n === 2 && me && opponent ? [me, opponent] : undefined), games: [0, 0, 0], log: [] });
+    const list = names && names.length === n ? names : undefined;
+    setS({ start, players: fresh(n, start, list), games: [0, 0, 0], log: [] });
     setLoss(null);
   };
   const matchOver = duel && (s.games[0] >= 2 || s.games[1] >= 2);
@@ -106,7 +124,7 @@ export default function LifeCounter({ me, opponent, onMatch }: {
 
       <div className={`life-grid n${s.players.length}`}>
         {s.players.map((p, i) => (
-          <section key={i} className={`life-p${duel && i === 1 ? " flip" : ""}`} style={{ background: COLORS[i] }} aria-label={p.name}>
+          <section key={i} className={`life-p${duel && i === 1 ? " flip" : ""}${p.out ? " out" : ""}`} style={{ background: COLORS[i] }} aria-label={p.name}>
             <div className="life-name">{p.name}</div>
             <button type="button" className="life-half minus" aria-label={`${p.name}: минус 1`} onClick={() => life(i, -1)} />
             <button type="button" className="life-half plus" aria-label={`${p.name}: плюс 1`} onClick={() => life(i, 1)} />
@@ -142,12 +160,13 @@ export default function LifeCounter({ me, opponent, onMatch }: {
           <p><b>{s.players[loss.who].name}</b> проигрывает партию: {loss.why}.</p>
           <div className="row">
             {duel ? <button type="button" className="primary" onClick={() => award(loss.who)}>Засчитать партию</button>
-              : <button type="button" className="primary" onClick={() => setLoss(null)}>Понятно</button>}
+              : <button type="button" className="primary" onClick={() => knock(loss.who)}>Игрок выбыл</button>}
             <button type="button" className="link-btn" onClick={() => setLoss(null)}>Продолжить игру</button>
           </div>
         </div>
       ) : null}
 
+      {winner ? <p className="life-score ok" aria-live="polite">Остался последним: <b>{winner}</b>{onWinner ? " — его можно отправить судье в карточке стола выше." : "."}</p> : null}
       {duel ? (
         <div className="row life-extra">
           <button type="button" className="link-btn" onClick={() => award(null)}>Партия: ничья</button>

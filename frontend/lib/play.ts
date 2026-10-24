@@ -3,12 +3,21 @@
 
 export type Outcome = "win" | "loss" | "draw";
 export type MyReport = { outcome: Outcome; score: string | null; source: string; at: string } | null;
+export type Tourn = { id: number; name: string; game: string; format: string; club: string; round: number; rounds_total: number | null };
+export type EdhSays = { outcome: "win" | "draw"; winner_id: number | null; winner: string | null; source: string; at: string };
+export type CurrentEdh = {
+  kind: "edh"; tournament: Tourn; table_id: number; table: number; bracket: number; status: "playing" | "finished";
+  seconds_left: number; seats: { user_id: number; nickname: string; player_no: number | null; me: boolean }[];
+  outcome: string | null; winner: string | null; my_report: EdhSays | null; reports: (EdhSays & { nickname: string })[];
+};
 export type CurrentMatch = {
+  kind: "match";
   tournament: { id: number; name: string; game: string; format: string; club: string; round: number; rounds_total: number | null };
   match_id: number; table: number; side: "p1" | "p2"; bye: boolean;
   opponent: { nickname: string; player_no: number | null; is_guest: boolean; rating: { rating: number; games: number } | null } | null;
   result: Outcome | null; my_report: MyReport; opp_report: MyReport;
 };
+export type Current = CurrentMatch | CurrentEdh;
 
 export const OUTCOME_RU: Record<Outcome, string> = { win: "победа", loss: "поражение", draw: "ничья" };
 

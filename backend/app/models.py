@@ -703,6 +703,21 @@ class MatchReport(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class EdhReport(Base):
+    """EDH: игрок за столом сообщает из приложения, кто победил (или ничья). Судья видит и вносит."""
+    __tablename__ = "edh_reports"
+    __table_args__ = (UniqueConstraint("table_id", "user_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    table_id: Mapped[int] = mapped_column(ForeignKey("edh_tables.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    outcome: Mapped[str] = mapped_column(String(8))                     # win | draw
+    winner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    source: Mapped[str] = mapped_column(String(16), default="manual")   # manual | life
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class CreatorRequestStatus(str, enum.Enum):
     pending = "pending"
     approved = "approved"
