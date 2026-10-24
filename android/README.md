@@ -35,4 +35,4 @@ GitHub → Actions → **Android** → Run workflow. В итогах сборк�
   Тогда https://dragonclub.games/.well-known/assetlinks.json подтвердит связь, и адресная строка исчезнет.
 
 С галочкой «Выложить APK в Releases» файл появится по постоянной ссылке
-https://github.com/singlesyndrom-cyber/Dragon/releases/latest/download/dragon.apk (кнопка «Скачать» на сайте).
+https://github.com/singlesyndrom-cyber/Dragon/releases/latest/download/dragon.apk— её можно дать игрокам до публикации в RuStore.
