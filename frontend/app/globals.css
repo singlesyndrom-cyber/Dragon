@@ -662,3 +662,4 @@ table.members td { vertical-align: middle; }
 .squad-cards button.bad { opacity: 0.55; outline: 2px solid var(--loss); }
 .app-reports { margin-bottom: 16px; border-left: 4px solid var(--gilt); }
 @media (max-width: 520px) { .squad-crystals { grid-template-columns: repeat(2, 1fr); } }
+.life-grid.n2 .life-p.flip { order: -1; }   /* соперник сверху (развёрнут к нему), вы снизу */
